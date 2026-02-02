@@ -139,30 +139,28 @@ async def _fetch_and_group_related_data(db: Database, investigation_ids: list[st
     """Fetch related data in bulk and group by investigation ID."""
     logger.info("Fetching related data (studies, assays, contacts, etc.)...")
 
-    async def collect(gen: AsyncGenerator[dict[str, Any], None]) -> list[dict[str, Any]]:
-        return [row async for row in gen]
-
-    # TODO: also here we're using lists, so generators or cursors
-    study_rows = await collect(db.stream_studies(investigation_ids))
-    assay_rows = await collect(db.stream_assays(investigation_ids))
-    contact_rows = await collect(db.stream_contacts(investigation_ids))
-    pub_rows = await collect(db.stream_publications(investigation_ids))
-    ann_rows = await collect(db.stream_annotation_tables(investigation_ids))
-
-    def group(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    async def group_stream(gen: AsyncGenerator[dict[str, Any], None]) -> tuple[dict[str, list[dict[str, Any]]], int]:
         m = defaultdict(list)
-        for r in rows:
+        count = 0
+        async for r in gen:
             m[str(r["investigation_ref"])].append(r)
-        return dict(m)
+            count += 1
+        return dict(m), count
+
+    studies_by_inv, study_count = await group_stream(db.stream_studies(investigation_ids))
+    assays_by_inv, assay_count = await group_stream(db.stream_assays(investigation_ids))
+    contacts_by_inv, _ = await group_stream(db.stream_contacts(investigation_ids))
+    pubs_by_inv, _ = await group_stream(db.stream_publications(investigation_ids))
+    anns_by_inv, _ = await group_stream(db.stream_annotation_tables(investigation_ids))
 
     return RelatedDataBatch(
-        studies_by_inv=group(study_rows),
-        assays_by_inv=group(assay_rows),
-        contacts_by_inv=group(contact_rows),
-        pubs_by_inv=group(pub_rows),
-        anns_by_inv=group(ann_rows),
-        study_count=len(study_rows),
-        assay_count=len(assay_rows),
+        studies_by_inv=studies_by_inv,
+        assays_by_inv=assays_by_inv,
+        contacts_by_inv=contacts_by_inv,
+        pubs_by_inv=pubs_by_inv,
+        anns_by_inv=anns_by_inv,
+        study_count=study_count,
+        assay_count=assay_count,
     )
 
 
