@@ -31,5 +31,20 @@ class WorkerContext(BaseModel):
     worker_id: int
     total_workers: int
     executor: Any  # ProcessPoolExecutor is not Pydantic-friendly easily, so Any
+    arc_generation_timeout_minutes: int = 30
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class RelatedDataBatch(BaseModel):
+    """Batch of related data grouped by investigation ID."""
+
+    studies_by_inv: dict[str, list[dict[str, Any]]]
+    assays_by_inv: dict[str, list[dict[str, Any]]]
+    contacts_by_inv: dict[str, list[dict[str, Any]]]
+    pubs_by_inv: dict[str, list[dict[str, Any]]]
+    anns_by_inv: dict[str, list[dict[str, Any]]]
+    study_count: int
+    assay_count: int
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

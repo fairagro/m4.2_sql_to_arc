@@ -1,5 +1,6 @@
 """ARC object building logic for the SQL-to-ARC conversion process."""
 
+import gc
 import json
 import logging
 from collections import defaultdict
@@ -264,30 +265,46 @@ def _process_annotation_tables(
                 target.AddTable(table)
 
 
-def build_single_arc_task(data: ArcBuildData) -> ARC:
+def build_single_arc_task(data: ArcBuildData) -> str:
     """Build a single ARC object from data.
 
     This function is designed to run in a separate process.
+    It returns the JSON representation to minimize memory footprint in the main process.
     """
     inv_id = str(data.investigation_row["identifier"])
 
-    # Map Investigation and create ARC
-    arc_inv = map_investigation(data.investigation_row)
-    arc = ARC.from_arc_investigation(arc_inv)
+    try:
+        # Map Investigation and create ARC
+        arc_inv = map_investigation(data.investigation_row)
+        arc = ARC.from_arc_investigation(arc_inv)
 
-    # Identify relevant studies and assays
-    relevant_studies = [s for s in data.studies if s.get("investigation_ref") == inv_id]
-    relevant_assays = [a for a in data.assays if a.get("investigation_ref") == inv_id]
+        # Identify relevant studies and assays
+        relevant_studies = [s for s in data.studies if s.get("investigation_ref") == inv_id]
+        relevant_assays = [a for a in data.assays if a.get("investigation_ref") == inv_id]
 
-    # Add studies and assays
-    study_map = _add_studies_to_arc(arc, relevant_studies)
-    assay_map = _add_assays_to_arc(arc, relevant_assays, study_map)
+        # Add studies and assays
+        study_map = _add_studies_to_arc(arc, relevant_studies)
+        assay_map = _add_assays_to_arc(arc, relevant_assays, study_map)
 
-    # Add contacts and publications
-    _add_contacts_to_arc(arc, inv_id, data.contacts, study_map, assay_map)
-    _add_publications_to_arc(arc, inv_id, data.publications, study_map)
+        # Add contacts and publications
+        _add_contacts_to_arc(arc, inv_id, data.contacts, study_map, assay_map)
+        _add_publications_to_arc(arc, inv_id, data.publications, study_map)
 
-    # Process annotation tables
-    _process_annotation_tables(inv_id, data.annotations, study_map, assay_map)
+        # Process annotation tables
+        _process_annotation_tables(inv_id, data.annotations, study_map, assay_map)
 
-    return arc
+        # Serialize immediately in the worker process
+        json_str: str = arc.ToROCrateJsonString()
+
+        # Explicitly clean up memory before returning
+        del arc
+        del arc_inv
+        del study_map
+        del assay_map
+        gc.collect()
+
+        return json_str
+
+    except Exception:
+        gc.collect()
+        raise
