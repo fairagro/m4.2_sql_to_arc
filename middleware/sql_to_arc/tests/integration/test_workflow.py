@@ -522,12 +522,16 @@ async def test_assay_with_complete_ontology_fields(workflow_tester: WorkflowTest
     assert assay.MeasurementType is not None, "MeasurementType is None"
     assert assay.MeasurementType.Name == "gene expression profiling"
     # Match either full URI or CURIE
-    assert "0001271" in assay.MeasurementType.TermAccessionNumber
+    assert (
+        assay.MeasurementType.TermAccessionNumber is not None and "0001271" in assay.MeasurementType.TermAccessionNumber
+    )
 
     # Verify Technology Type
     assert assay.TechnologyType is not None, "TechnologyType is None"
     assert assay.TechnologyType.Name == "nucleotide sequencing"
-    assert "0000626" in assay.TechnologyType.TermAccessionNumber
+    assert (
+        assay.TechnologyType.TermAccessionNumber is not None and "0000626" in assay.TechnologyType.TermAccessionNumber
+    )
 
     # Verify Technology Platform
     assert assay.TechnologyPlatform is not None, "TechnologyPlatform is None"
