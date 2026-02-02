@@ -5,6 +5,7 @@ and workflow logic in the sql_to_arc pipeline.
 """
 
 import asyncio
+import concurrent.futures
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from middleware.api_client import ApiClient
+from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.main import parse_args
 from middleware.sql_to_arc.models import RelatedDataBatch, WorkerContext
 from middleware.sql_to_arc.processor import (
@@ -40,7 +43,7 @@ class TestParseArgs:
 @pytest.mark.asyncio
 async def test_process_investigation_builds_and_uploads(monkeypatch: pytest.MonkeyPatch) -> None:
     """process_investigation should build ARC via executor and upload it."""
-    mock_client = AsyncMock()
+    mock_client = AsyncMock(spec=ApiClient)
     mock_client.create_or_update_arc.return_value = MagicMock(arcs=[MagicMock(id="1")])
 
     investigation = {"identifier": "1", "title": "Inv", "description_text": "Desc"}
@@ -55,7 +58,7 @@ async def test_process_investigation_builds_and_uploads(monkeypatch: pytest.Monk
     loop_mock.run_in_executor.return_value = loop_future
     monkeypatch.setattr("asyncio.get_event_loop", MagicMock(return_value=loop_mock))
 
-    executor = MagicMock()
+    executor = MagicMock(spec=concurrent.futures.ProcessPoolExecutor)
 
     ctx = WorkerContext(
         client=mock_client,
@@ -103,8 +106,9 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr("middleware.sql_to_arc.processor._fetch_and_group_related_data", mock_fetch_related)
 
-    mock_client = AsyncMock()
-    mock_config = MagicMock(
+    mock_client = AsyncMock(spec=ApiClient)
+    mock_config = MagicMock(spec=Config)
+    mock_config.configure_mock(
         max_concurrent_arc_builds=2,
         max_concurrent_tasks=4,
         db_batch_size=10,

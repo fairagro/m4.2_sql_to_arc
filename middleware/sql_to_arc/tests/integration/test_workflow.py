@@ -13,6 +13,7 @@ from arctrl import ARC  # type: ignore[import-untyped]
 from middleware.api_client import ApiClient
 from middleware.shared.api_models.models import CreateOrUpdateArcsResponse
 from middleware.shared.config.config_base import OtelConfig
+from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.main import main
 from middleware.sql_to_arc.models import WorkerContext
 from middleware.sql_to_arc.processor import process_investigation
@@ -92,12 +93,14 @@ class WorkflowTester:
         )
 
         # Patch configuration
-        self.mock_config = MagicMock()
+        self.mock_config = MagicMock(spec=Config)
+        self.mock_config.api_client = MagicMock()
         self.mock_config.rdi = "test-rdi"
         self.mock_config.rdi_url = "http://test.com"
         self.mock_config.max_concurrent_arc_builds = 1
         self.mock_config.max_concurrent_tasks = 4
         self.mock_config.db_batch_size = 10
+        self.mock_config.arc_generation_timeout_minutes = 30
         self.mock_config.debug_limit = None
         self.mock_config.log_level = "INFO"
         self.mock_config.otel = OtelConfig(endpoint=None, log_console_spans=False, log_level="INFO")

@@ -1,8 +1,11 @@
 """Data models for the SQL-to-ARC conversion process."""
 
+import concurrent.futures
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
+
+from middleware.api_client import ApiClient
 
 
 class ArcBuildData(BaseModel):
@@ -21,7 +24,7 @@ class ArcBuildData(BaseModel):
 class WorkerContext(BaseModel):
     """Context data for a worker process."""
 
-    client: Any  # ApiClient, but Any to allow mocking
+    client: ApiClient
     rdi: str
     studies_by_inv: dict[str, list[dict[str, Any]]]
     assays_by_inv: dict[str, list[dict[str, Any]]]
@@ -30,7 +33,7 @@ class WorkerContext(BaseModel):
     anns_by_inv: dict[str, list[dict[str, Any]]]
     worker_id: int
     total_workers: int
-    executor: Any  # ProcessPoolExecutor is not Pydantic-friendly easily, so Any
+    executor: concurrent.futures.Executor
     arc_generation_timeout_minutes: int = 30
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
