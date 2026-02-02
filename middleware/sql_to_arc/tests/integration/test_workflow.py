@@ -1,17 +1,29 @@
 """Integration tests for the SQL-to-ARC workflow."""
 
-import asyncio
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
+import json
+from collections.abc import AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from arctrl import ARC  # type: ignore[import-untyped]
 
 from middleware.api_client import ApiClient
 from middleware.shared.api_models.models import CreateOrUpdateArcsResponse
 from middleware.shared.config.config_base import OtelConfig
-from middleware.sql_to_arc.main import DatasetContext, ProcessingStats, WorkerContext, main, process_single_dataset
+from middleware.sql_to_arc.main import main
+from middleware.sql_to_arc.models import WorkerContext
+from middleware.sql_to_arc.processor import process_worker_investigations
+
+
+class MockExecutor(ThreadPoolExecutor):
+    """Mock ThreadPoolExecutor to prevent multiprocessing."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the mock executor."""
+        kwargs.pop("mp_context", None)
+        super().__init__(*args, **kwargs)
 
 
 @pytest.fixture
@@ -48,176 +60,698 @@ def mock_api_client() -> AsyncMock:
     return client
 
 
-@pytest.mark.asyncio
-async def test_process_single_dataset(mock_api_client: AsyncMock) -> None:
-    """Test single dataset processing."""
-    investigation_rows: list[dict[str, Any]] = [
-        {"id": 1, "title": "Test 1", "description": "Desc 1", "submission_time": None, "release_time": None},
-        {"id": 2, "title": "Test 2", "description": "Desc 2", "submission_time": None, "release_time": None},
-    ]
-    studies_by_investigation: dict[int, list[dict[str, Any]]] = {1: [], 2: []}
-    assays_by_study: dict[int, list[dict[str, Any]]] = {}
+class WorkflowTester:
+    """Helper class to simplify integration tests for sql_to_arc."""
 
-    mp_context = multiprocessing.get_context("spawn")
-    with ProcessPoolExecutor(max_workers=5, mp_context=mp_context) as executor:
-        ctx = WorkerContext(
-            client=mock_api_client,
-            rdi="edaphobase",
-            executor=executor,
-            max_studies=5000,
-            max_assays=10000,
-            arc_generation_timeout_minutes=60,
+    def __init__(self, mocker: MagicMock, mock_api_client: AsyncMock) -> None:
+        """
+        Initialize the WorkflowTester with mock dependencies.
+
+        Args:
+            mocker (MagicMock): Mocking utility for patching dependencies.
+            mock_api_client (AsyncMock): Mocked API client for simulating API interactions.
+        """
+        self.mocker = mocker
+        self.api_client = mock_api_client
+        self.db = MagicMock()
+        self.db.to_jsonld.return_value = "{}"
+        self.captured_arcs: list[ARC] = []
+
+        # Default empty mocks
+        self.set_db_content()
+
+        # Patch Database class
+        mocker.patch("middleware.sql_to_arc.main.Database", return_value=self.db)
+
+        # Patch API Client context manager
+        mocker.patch(
+            "middleware.sql_to_arc.main.ApiClient",
+            return_value=AsyncMock(__aenter__=AsyncMock(return_value=self.api_client)),
         )
-        semaphore = asyncio.Semaphore(1)
-        stats = ProcessingStats()
 
-        for inv in investigation_rows:
-            # Build a minimal DatasetContext as expected by process_single_dataset
-            dataset_context = DatasetContext(
-                investigation_row=inv,
-                studies=studies_by_investigation.get(inv["id"], []),
-                assays_by_study=assays_by_study,
-            )
-            # Call with correct arguments: ctx, dataset_context, semaphore, stats
-            await process_single_dataset(ctx, dataset_context, semaphore, stats)
+        # Patch configuration
+        self.mock_config = MagicMock()
+        self.mock_config.rdi = "test-rdi"
+        self.mock_config.rdi_url = "http://test.com"
+        self.mock_config.max_concurrent_arc_builds = 1
+        self.mock_config.log_level = "INFO"
+        self.mock_config.otel = OtelConfig(endpoint=None, log_console_spans=False, log_level="INFO")
+        mock_conn = MagicMock()
+        mock_conn.get_secret_value.return_value = "sqlite+aiosqlite:///:memory:"
+        self.mock_config.connection_string = mock_conn
 
-    assert mock_api_client.create_or_update_arc.called
-    assert mock_api_client.create_or_update_arc.call_count == 2  # noqa: PLR2004
-    for call in mock_api_client.create_or_update_arc.call_args_list:
-        assert call.kwargs["rdi"] == "edaphobase"
-        # Each call sends one ARC as dict or ARC object
-        assert "arc" in call.kwargs
+        mocker.patch("middleware.sql_to_arc.main.ConfigWrapper.from_yaml_file")
+        mocker.patch("middleware.sql_to_arc.main.Config.from_config_wrapper", return_value=self.mock_config)
+        mocker.patch("middleware.sql_to_arc.main.configure_logging")
+
+        # Capture ARCs on API call
+        async def capture_arc(rdi: str, arc: ARC) -> CreateOrUpdateArcsResponse:
+            self.captured_arcs.append(arc)
+            return CreateOrUpdateArcsResponse(client_id="test", message="success", rdi=rdi, arcs=[])
+
+        self.api_client.create_or_update_arc.side_effect = capture_arc
+
+    def _as_gen(self, data: list[dict[str, Any]]) -> AsyncGenerator[dict[str, Any], None]:
+        async def gen() -> AsyncGenerator[dict[str, Any], None]:
+            for item in data:
+                yield item
+
+        return gen()
+
+    def set_db_content(  # noqa: PLR0913
+        self,
+        investigations: list[dict[str, Any]] | None = None,
+        studies: list[dict[str, Any]] | None = None,
+        assays: list[dict[str, Any]] | None = None,
+        contacts: list[dict[str, Any]] | None = None,
+        publications: list[dict[str, Any]] | None = None,
+        annotations: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Mock the database streaming methods with provided data."""
+        self.db.stream_investigations.side_effect = lambda limit=None: self._as_gen(investigations or [])  # noqa: ARG005
+        self.db.stream_studies.side_effect = lambda investigation_ids: self._as_gen(studies or [])  # noqa: ARG005
+        self.db.stream_assays.side_effect = lambda investigation_ids: self._as_gen(assays or [])  # noqa: ARG005
+        self.db.stream_contacts.side_effect = lambda investigation_ids: self._as_gen(contacts or [])  # noqa: ARG005
+        self.db.stream_publications.side_effect = lambda investigation_ids: self._as_gen(publications or [])  # noqa: ARG005
+        self.db.stream_annotation_tables.side_effect = lambda investigation_ids: self._as_gen(annotations or [])  # noqa: ARG005
+
+    async def run(self) -> list[ARC]:
+        """Execute the main workflow and return captured ARC objects."""
+        # Prevent real engine creation
+        self.mocker.patch("sqlalchemy.ext.asyncio.create_async_engine", return_value=MagicMock())
+        self.mocker.patch(
+            "sqlalchemy.ext.asyncio.AsyncSession",
+            return_value=AsyncMock(__aenter__=AsyncMock(return_value=AsyncMock())),
+        )
+        self.mocker.patch("middleware.sql_to_arc.processor.concurrent.futures.ProcessPoolExecutor", MockExecutor)
+
+        await main()
+        return self.captured_arcs
 
 
 @pytest.fixture
-def mock_main_config(mocker: MagicMock) -> MagicMock:
-    """Mock configuration for main workflow."""
-    config = MagicMock()
-    config.db_name = "test_db"
-    config.db_user = "test_user"
-    config.db_password.get_secret_value.return_value = "test_password"
-    config.db_host = "localhost"
-    config.db_port = 5432
-    config.rdi = "edaphobase"
-    config.max_concurrent_arc_builds = 5
-    config.max_concurrent_tasks = 10
-    config.db_batch_size = 100
-    config.api_client = MagicMock()
-    config.log_level = "INFO"
-    config.otel = OtelConfig(endpoint=None, log_console_spans=False, log_level="INFO")
-    config.max_studies = 5000
-    config.max_assays = 10000
-    config.arc_generation_timeout_minutes = 60
-    config.rdi_url = "https://example.com"  # Real string for JSON serialization
-
-    mocker.patch("middleware.sql_to_arc.main.ConfigWrapper.from_yaml_file")
-    mocker.patch("middleware.sql_to_arc.main.Config.from_config_wrapper", return_value=config)
-    mocker.patch("middleware.sql_to_arc.main.configure_logging")
-    mocker.patch("middleware.sql_to_arc.main.initialize_tracing", return_value=(MagicMock(), MagicMock()))
-    return config
-
-
-def _setup_cursor_side_effects(
-    mock_db_cursor: AsyncMock, investigations: list[dict], studies: list[dict], assays: list[dict]
-) -> AsyncMock:
-    """Set up cursor behavior for bulk fetch strategy."""
-    mock_detail_cursor = AsyncMock()
-    mock_detail_cursor.fetchall.return_value = []
-    mock_db_cursor.connection = MagicMock()
-    mock_db_cursor.connection.cursor.return_value.__aenter__.return_value = mock_detail_cursor
-
-    async def detail_fetchall_side_effect() -> list[dict[str, Any]]:
-        if not mock_detail_cursor.execute.call_args:
-            return []
-        last_query = mock_detail_cursor.execute.call_args[0][0]
-        if 'FROM "ARC_Study"' in last_query:
-            return studies
-        if 'FROM "ARC_Assay"' in last_query:
-            return assays
-        return []
-
-    mock_detail_cursor.fetchall.side_effect = detail_fetchall_side_effect
-    fetchmany_done: list[bool] = []
-
-    async def fetchmany_side_effect(_size: int = 100) -> list[dict[str, Any]]:
-        _ = _size
-        last_query = mock_db_cursor.execute.call_args[0][0]
-        if 'FROM "ARC_Investigation"' in last_query and not fetchmany_done:
-            fetchmany_done.append(True)
-            return investigations
-        return []
-
-    mock_db_cursor.fetchall.side_effect = AsyncMock(return_value=[])
-    mock_db_cursor.fetchmany.side_effect = fetchmany_side_effect
-    return mock_detail_cursor
+def workflow_tester(mocker: MagicMock, mock_api_client: AsyncMock) -> WorkflowTester:
+    """Fixture providing a WorkflowTester instance."""
+    return WorkflowTester(mocker, mock_api_client)
 
 
 @pytest.mark.asyncio
-async def test_main_workflow(
-    mocker: MagicMock,
-    mock_db_connection: AsyncMock,
-    mock_db_cursor: AsyncMock,
-    mock_api_client: AsyncMock,
-    mock_main_config: MagicMock,
-) -> None:
-    """Test the main workflow with mocked DB and API."""
-    _ = mock_main_config
-    mocker.patch(
-        "psycopg.AsyncConnection.connect",
-        return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_db_connection)),
-    )
-    mocker.patch(
-        "middleware.sql_to_arc.main.ApiClient",
-        return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_api_client)),
-    )
-
-    # Setup DB data
-    invs = [
-        {"id": 1, "title": "I1", "description": "D1", "submission_time": None, "release_time": None},
-        {"id": 2, "title": "I2", "description": "D2", "submission_time": None, "release_time": None},
+async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None:
+    """Test worker investigations processing."""
+    investigation_rows: list[dict[str, Any]] = [
+        {"identifier": 1, "title": "Test 1", "description": "Desc 1", "submission_time": None, "release_time": None},
+        {"identifier": 2, "title": "Test 2", "description": "Desc 2", "submission_time": None, "release_time": None},
     ]
-    sts = [
-        {
-            "id": 10,
-            "investigation_id": 1,
-            "title": "S1",
-            "description": "D1",
-            "submission_time": None,
-            "release_time": None,
-        },
-        {
-            "id": 11,
-            "investigation_id": 2,
-            "title": "S2",
-            "description": "D2",
-            "submission_time": None,
-            "release_time": None,
-        },
-    ]
-    ass = [{"id": 100, "study_id": 10}, {"id": 101, "study_id": 11}]
-
-    # Configure cursor behavior using helper
-    mock_detail_cursor = _setup_cursor_side_effects(mock_db_cursor, invs, sts, ass)
-
-    await main()
-
-    # Verify interactions
-    assert mock_db_connection.cursor.called
-    assert mock_db_cursor.execute.call_count == 1
-    assert mock_detail_cursor.execute.call_count == 2  # noqa: PLR2004
-    assert mock_api_client.create_or_update_arc.called
-
-    all_arcs = [call.kwargs["arc"] for call in mock_api_client.create_or_update_arc.call_args_list]
-    assert len(all_arcs) == 2  # noqa: PLR2004
-
-    # Verify content of uploaded ARCs (Identifiers from invs list)
-    identifiers = set()
-    for arc in all_arcs:
-        # Find the investigation node in @graph
-        investigation_node = next(
-            (node for node in arc.get("@graph", []) if "Investigation" in node.get("additionalType", "")), None
+    studies_by_investigation: dict[str, list[dict[str, Any]]] = {"1": [], "2": []}
+    assays_by_study: dict[str, list[dict[str, Any]]] = {}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        ctx = WorkerContext(
+            client=mock_api_client,
+            rdi="edaphobase",
+            studies_by_inv=studies_by_investigation,
+            assays_by_inv=assays_by_study,
+            contacts_by_inv={},
+            pubs_by_inv={},
+            anns_by_inv={},
+            worker_id=1,
+            total_workers=1,
+            executor=executor,
         )
-        if investigation_node:
-            identifiers.add(investigation_node.get("identifier"))
+        await process_worker_investigations(ctx, investigation_rows)
 
+    assert mock_api_client.create_or_update_arc.called
+    # There should be two calls, each with one ARC (since batch size is always 1)
+    assert mock_api_client.create_or_update_arc.call_count == 2  # noqa: PLR2004
+    for call in mock_api_client.create_or_update_arc.call_args_list:
+        assert call.kwargs["rdi"] == "edaphobase"
+        assert isinstance(call.kwargs["arc"], ARC)
+
+
+@pytest.mark.asyncio
+async def test_main_workflow(workflow_tester: WorkflowTester) -> None:
+    """Test the main workflow with mocked DB and API using WorkflowTester."""
+    # Setup DB data
+    investigations = [
+        {"identifier": "1", "title": "Inv 1", "description_text": "Desc 1"},
+        {"identifier": "2", "title": "Inv 2", "description_text": "Desc 2"},
+    ]
+    studies = [
+        {"identifier": "10", "investigation_ref": "1", "title": "Study 1", "description_text": "Desc S1"},
+        {"identifier": "11", "investigation_ref": "2", "title": "Study 2", "description_text": "Desc S2"},
+    ]
+    assays = [
+        {"identifier": "100", "study_ref": '["10"]', "investigation_ref": "1"},
+        {"identifier": "101", "study_ref": '["11"]', "investigation_ref": "2"},
+    ]
+
+    workflow_tester.set_db_content(investigations=investigations, studies=studies, assays=assays)
+
+    # Run main
+    arcs = await workflow_tester.run()
+
+    # Verify results
+    assert len(arcs) == 2  # noqa: PLR2004
+    identifiers = {arc.Identifier for arc in arcs}
     assert identifiers == {"1", "2"}
+
+    # Spot check deep property
+    arc1 = next(a for a in arcs if a.Identifier == "1")
+    assert arc1.Studies[0].Identifier == "10"
+    # In this version of arctrl, studies have RegisteredAssays
+    assert arc1.Studies[0].RegisteredAssays[0].Identifier == "100"
+
+
+@pytest.mark.asyncio
+async def test_investigation_with_publications_and_contacts(workflow_tester: WorkflowTester) -> None:
+    """Test investigation with multiple publications and contacts at the investigation level."""
+    inv_id = "INV_PUBLICATION_TEST"
+    investigations = [{"identifier": inv_id, "title": "Publication and Contact Test"}]
+
+    publications = [
+        {
+            "investigation_ref": inv_id,
+            "target_type": "investigation",
+            "title": "First Paper",
+            "doi": "10.1234/1",
+            "pubmed_id": "123456",
+            "authors": "Author A, Author B",
+            "status_term": "published",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "investigation",
+            "title": "Second Paper",
+            "doi": "10.1234/2",
+            "pubmed_id": "654321",
+            "authors": "Author C",
+            "status_term": "in review",
+        },
+    ]
+
+    contacts = [
+        {
+            "investigation_ref": inv_id,
+            "target_type": "investigation",
+            "last_name": "Doe",
+            "first_name": "John",
+            "email": "john.doe@example.com",
+            "affiliation": "Institute A",
+            "roles": json.dumps([{"term": "Principal Investigator"}]),
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "investigation",
+            "last_name": "Smith",
+            "first_name": "Jane",
+            "email": "jane.smith@example.com",
+            "affiliation": "Institute B",
+            "roles": json.dumps([{"term": "Data Curator"}]),
+        },
+    ]
+
+    workflow_tester.set_db_content(
+        investigations=investigations,
+        publications=publications,
+        contacts=contacts,
+    )
+
+    arcs = await workflow_tester.run()
+
+    assert len(arcs) == 1
+    arc = arcs[0]
+    assert arc.Identifier == inv_id
+
+    # Verify Publications
+    assert len(arc.Publications) == 2  # noqa: PLR2004
+    titles = {p.Title for p in arc.Publications}
+    assert titles == {"First Paper", "Second Paper"}
+    assert any(p.DOI == "10.1234/1" for p in arc.Publications)
+
+    # Verify Contacts
+    assert len(arc.Contacts) == 2  # noqa: PLR2004
+    emails = {c.EMail for c in arc.Contacts}
+    assert emails == {"john.doe@example.com", "jane.smith@example.com"}
+    assert any(c.LastName == "Doe" for c in arc.Contacts)
+    assert any(oa.Name == "Data Curator" for c in arc.Contacts for oa in c.Roles)
+
+
+@pytest.mark.asyncio
+async def test_study_with_publications_and_contacts(workflow_tester: WorkflowTester) -> None:
+    """Test study with multiple publications and contacts at the study level."""
+    inv_id = "INV_S"
+    study_id = "STUDY_1"
+
+    investigations = [{"identifier": inv_id, "title": "Study Level Metadata Test"}]
+    studies = [{"identifier": study_id, "investigation_ref": inv_id, "title": "Target Study"}]
+
+    publications = [
+        {
+            "investigation_ref": inv_id,
+            "target_type": "study",
+            "target_ref": study_id,
+            "title": "Study Specific Paper 1",
+            "doi": "10.1234/study.1",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "study",
+            "target_ref": study_id,
+            "title": "Study Specific Paper 2",
+            "doi": "10.1234/study.2",
+        },
+    ]
+
+    contacts = [
+        {
+            "investigation_ref": inv_id,
+            "target_type": "study",
+            "target_ref": study_id,
+            "last_name": "Scientist",
+            "first_name": "Alice",
+            "email": "alice@example.com",
+            "roles": json.dumps([{"term": "Collaborator"}]),
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "study",
+            "target_ref": study_id,
+            "last_name": "Researcher",
+            "first_name": "Bob",
+            "email": "bob@example.com",
+            "roles": json.dumps([{"term": "Lead Scientist"}]),
+        },
+    ]
+
+    workflow_tester.set_db_content(
+        investigations=investigations,
+        studies=studies,
+        publications=publications,
+        contacts=contacts,
+    )
+
+    arcs = await workflow_tester.run()
+
+    assert len(arcs) == 1
+    arc = arcs[0]
+    assert len(arc.Studies) == 1
+    study = arc.Studies[0]
+    assert study.Identifier == study_id
+
+    # Verify Study Publications
+    assert len(study.Publications) == 2  # noqa: PLR2004
+    titles = {p.Title for p in study.Publications}
+    assert titles == {"Study Specific Paper 1", "Study Specific Paper 2"}
+
+    # Verify Study Contacts
+    assert len(study.Contacts) == 2  # noqa: PLR2004
+    emails = {c.EMail for c in study.Contacts}
+    assert emails == {"alice@example.com", "bob@example.com"}
+
+
+@pytest.mark.asyncio
+async def test_assay_with_contacts(workflow_tester: WorkflowTester) -> None:
+    """Test assay with multiple contacts (performers) at the assay level."""
+    inv_id = "INV_A"
+    assay_id = "ASSAY_1"
+
+    investigations = [{"identifier": inv_id, "title": "Assay Metadata Test"}]
+    # Assays need to be linked to studies in the DB row via study_ref if we want them registered in studies,
+    # but the mapper/main logic also adds them to the ARC level.
+    assays = [{"identifier": assay_id, "investigation_ref": inv_id}]
+
+    contacts = [
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "last_name": "Technician",
+            "first_name": "Tom",
+            "email": "tom@example.com",
+            "roles": json.dumps([{"term": "Operator"}]),
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "last_name": "Analyst",
+            "first_name": "Anna",
+            "email": "anna@example.com",
+            "roles": json.dumps([{"term": "Data Analyst"}]),
+        },
+    ]
+
+    workflow_tester.set_db_content(
+        investigations=investigations,
+        assays=assays,
+        contacts=contacts,
+    )
+
+    arcs = await workflow_tester.run()
+
+    assert len(arcs) == 1
+    arc = arcs[0]
+    assert len(arc.Assays) == 1
+    assay = arc.Assays[0]
+    assert assay.Identifier == assay_id
+
+    # Verify Assay Performers (contacts mapped to performers in assays)
+    assert len(assay.Performers) == 2  # noqa: PLR2004
+    emails = {p.EMail for p in assay.Performers}
+    assert emails == {"tom@example.com", "anna@example.com"}
+    assert any(p.LastName == "Technician" for p in assay.Performers)
+
+
+@pytest.mark.asyncio
+async def test_complex_hierarchy(workflow_tester: WorkflowTester) -> None:
+    """Test investigation with multiple studies and assays linked to them."""
+    inv_id = "INV_COMPLEX"
+    s1_id = "S1"
+    s2_id = "S2"
+    a1_id = "A1"
+    a2_id = "A2"
+    a3_id = "A3"
+
+    investigations = [{"identifier": inv_id, "title": "Complex Hierarchy Test"}]
+    studies = [
+        {"identifier": s1_id, "investigation_ref": inv_id, "title": "Study 1"},
+        {"identifier": s2_id, "investigation_ref": inv_id, "title": "Study 2"},
+    ]
+    # Assays link to studies via 'study_ref' which is a JSON list of identifiers
+    assays = [
+        {"identifier": a1_id, "investigation_ref": inv_id, "study_ref": json.dumps([s1_id])},
+        {"identifier": a2_id, "investigation_ref": inv_id, "study_ref": json.dumps([s1_id])},
+        {"identifier": a3_id, "investigation_ref": inv_id, "study_ref": json.dumps([s2_id])},
+    ]
+
+    workflow_tester.set_db_content(
+        investigations=investigations,
+        studies=studies,
+        assays=assays,
+    )
+
+    arcs = await workflow_tester.run()
+
+    assert len(arcs) == 1
+    arc = arcs[0]
+    assert arc.Identifier == inv_id
+
+    # Verify studies
+    assert len(arc.Studies) == 2  # noqa: PLR2004
+    s1 = next(s for s in arc.Studies if s.Identifier == s1_id)
+    s2 = next(s for s in arc.Studies if s.Identifier == s2_id)
+
+    # Verify assays in studies
+    assert len(s1.RegisteredAssays) == 2  # noqa: PLR2004
+    assert {a.Identifier for a in s1.RegisteredAssays} == {a1_id, a2_id}
+
+    assert len(s2.RegisteredAssays) == 1
+    assert s2.RegisteredAssays[0].Identifier == a3_id
+
+
+@pytest.mark.asyncio
+async def test_assay_with_complete_ontology_fields(workflow_tester: WorkflowTester) -> None:
+    """Test assay with all ontology-related fields filled (measurement, technology, platform)."""
+    inv_id = "INV_ONTOLOGY"
+    assay_id = "ASSAY_ONT"
+
+    investigations = [{"identifier": inv_id, "title": "Ontology Test"}]
+    assays = [
+        {
+            "identifier": assay_id,
+            "investigation_ref": inv_id,
+            "measurement_type_term": "gene expression profiling",
+            "measurement_type_uri": "http://purl.obolibrary.org/obo/OBI_0001271",
+            "measurement_type_version": "v1",
+            "technology_type_term": "nucleotide sequencing",
+            "technology_type_uri": "http://purl.obolibrary.org/obo/OBI_0000626",
+            "technology_type_version": "v1",
+            "technology_platform": "Illumina HiSeq 2500",
+        }
+    ]
+
+    workflow_tester.set_db_content(
+        investigations=investigations,
+        assays=assays,
+    )
+
+    arcs = await workflow_tester.run()
+
+    assert len(arcs) == 1
+    arc = arcs[0]
+    assert len(arc.Assays) == 1
+    assay = arc.Assays[0]
+
+    # Verify Measurement Type
+    assert assay.MeasurementType.Name == "gene expression profiling"
+    assert assay.MeasurementType.TermAccessionNumber == "http://purl.obolibrary.org/obo/OBI_0001271"
+
+    # Verify Technology Type
+    assert assay.TechnologyType.Name == "nucleotide sequencing"
+    assert assay.TechnologyType.TermAccessionNumber == "http://purl.obolibrary.org/obo/OBI_0000626"
+
+    # Verify Technology Platform
+    assert assay.TechnologyPlatform.Name == "Illumina HiSeq 2500"
+
+
+@pytest.mark.asyncio
+async def test_assay_with_annotations(workflow_tester: WorkflowTester) -> None:
+    """
+    Test investigation with an assay and annotation table data.
+
+    Note: This is 'Neuland' because the reconstruction of tables from the flat
+    database view is still a TODO in main.py. This test ensures the workflow
+    runs and demonstrates how the data structure looks.
+    """
+    inv_id = "INV_ANN"
+    assay_id = "ASSAY_ANN"
+
+    investigations = [{"identifier": inv_id, "title": "Annotation Test"}]
+    assays = [{"identifier": assay_id, "investigation_ref": inv_id}]
+
+    # Example annotation rows representing a table
+    # These rows logically form a table 'Sample Metadata' with 2 rows and 2 columns
+    annotations = [
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Sample Metadata",
+            "row_index": 0,
+            "column_name": "Source Name",
+            "value": "Sample 1",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Sample Metadata",
+            "row_index": 0,
+            "column_name": "Characteristics [Species]",
+            "value": "Homo sapiens",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Sample Metadata",
+            "row_index": 1,
+            "column_name": "Source Name",
+            "value": "Sample 2",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Sample Metadata",
+            "row_index": 1,
+            "column_name": "Characteristics [Species]",
+            "value": "Mus musculus",
+        },
+    ]
+
+    workflow_tester.set_db_content(
+        investigations=investigations,
+        assays=assays,
+        annotations=annotations,
+    )
+
+    # Currently, _process_annotation_tables in main.py is a placeholder.
+    # The test verifies that the pipeline handles the data gracefully.
+    arcs = await workflow_tester.run()
+
+    assert len(arcs) == 1
+    arc = arcs[0]
+    assert arc.Identifier == inv_id
+    assert arc.Assays[0].Identifier == assay_id
+
+    # For now, we expect no tables to be created because of the placeholder.
+    # When implemented, TableCount should be 1.
+    assert arc.Assays[0].TableCount == 1
+    assert arc.Assays[0].Tables[0].Name == "Sample Metadata"
+    assert arc.Assays[0].Tables[0].RowCount == 2  # noqa: PLR2004
+    assert arc.Assays[0].Tables[0].ColumnCount == 2  # noqa: PLR2004
+
+
+@pytest.mark.asyncio
+async def test_comprehensive_annotation_flow(workflow_tester: WorkflowTester) -> None:
+    """
+    Test a complete flow with multiple linked annotation tables.
+
+    Study: Sources -> Samples (with Characteristics and Factors)
+    Assay Table 1: Samples -> Extracts (with Parameters)
+    Assay Table 2: Extracts -> Data (with Parameters and Unitized Cells).
+    """
+    inv_id = "INV_FLOW"
+    study_id = "STUDY_FLOW"
+    assay_id = "ASSAY_FLOW"
+
+    investigations = [{"identifier": inv_id, "title": "Comprehensive Flow Test"}]
+    studies = [{"identifier": study_id, "investigation_ref": inv_id, "title": "Study Flow"}]
+    assays = [{"identifier": assay_id, "investigation_ref": inv_id, "study_ref": json.dumps([study_id])}]
+
+    annotations = [
+        # --- Study Table: "Samples" ---
+        {
+            "investigation_ref": inv_id,
+            "target_type": "study",
+            "target_ref": study_id,
+            "table_name": "Samples",
+            "row_index": 0,
+            "column_type": "input",
+            "column_io_type": "source_name",
+            "cell_value": "Source_A",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "study",
+            "target_ref": study_id,
+            "table_name": "Samples",
+            "row_index": 0,
+            "column_type": "characteristic",
+            "column_annotation_term": "Species",
+            "cell_annotation_term": "Arabidopsis thaliana",
+            "cell_annotation_uri": "http://purl.obolibrary.org/obo/NCBITaxon_3702",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "study",
+            "target_ref": study_id,
+            "table_name": "Samples",
+            "row_index": 0,
+            "column_type": "factor",
+            "column_annotation_term": "Treatment",
+            "cell_annotation_term": "Drought",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "study",
+            "target_ref": study_id,
+            "table_name": "Samples",
+            "row_index": 0,
+            "column_type": "output",
+            "column_io_type": "sample_name",
+            "cell_value": "Sample_1",
+        },
+        # --- Assay Table 1: "Extraction" ---
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Extraction",
+            "row_index": 0,
+            "column_type": "input",
+            "column_io_type": "sample_name",
+            "cell_value": "Sample_1",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Extraction",
+            "row_index": 0,
+            "column_type": "parameter",
+            "column_annotation_term": "Method",
+            "cell_value": "Phenol-Chloroform",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Extraction",
+            "row_index": 0,
+            "column_type": "output",
+            "column_io_type": "sample_name",  # ISA uses sample_name for extracts often
+            "cell_value": "Extract_1",
+        },
+        # --- Assay Table 2: "Sequencing" ---
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Sequencing",
+            "row_index": 0,
+            "column_type": "input",
+            "column_io_type": "sample_name",
+            "cell_value": "Extract_1",
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Sequencing",
+            "row_index": 0,
+            "column_type": "parameter",
+            "column_annotation_term": "Concentration",
+            "cell_value": "50.5",
+            "cell_annotation_term": "ng/ul",  # Unitized cell
+        },
+        {
+            "investigation_ref": inv_id,
+            "target_type": "assay",
+            "target_ref": assay_id,
+            "table_name": "Sequencing",
+            "row_index": 0,
+            "column_type": "output",
+            "column_io_type": "data",
+            "cell_value": "raw_data.fastq.gz",
+        },
+    ]
+
+    workflow_tester.set_db_content(
+        investigations=investigations,
+        studies=studies,
+        assays=assays,
+        annotations=annotations,
+    )
+
+    arcs = await workflow_tester.run()
+    arc = arcs[0]
+
+    # Verify Study Table "Samples"
+    study = arc.Studies[0]
+    assert study.TableCount == 1
+    sample_table = study.Tables[0]
+    assert sample_table.Name == "Samples"
+    assert sample_table.ColumnCount == 4  # noqa: PLR2004
+    # Check Header types (order preserved by implementation)
+    assert sample_table.Headers[0].is_input
+    assert sample_table.Headers[1].is_characteristic
+    assert sample_table.Headers[2].is_factor
+    assert sample_table.Headers[3].is_output
+
+    # Verify Assay Tables
+    assay = arc.Assays[0]
+    assert assay.TableCount == 2  # noqa: PLR2004
+
+    extraction_table = next(t for t in assay.Tables if t.Name == "Extraction")
+    assert extraction_table.ColumnCount == 3  # noqa: PLR2004
+    assert extraction_table.Headers[1].is_parameter
+
+    sequencing_table = next(t for t in assay.Tables if t.Name == "Sequencing")
+    assert sequencing_table.ColumnCount == 3  # noqa: PLR2004
+    # Check unitized cell
+    conc_col_idx = 1
+    cell = sequencing_table.GetCellAt(conc_col_idx, 0)
+    assert cell.is_unitized
+    assert cell.GetContent()[0] == "50.5"
+    assert cell.GetContent()[1] == "ng/ul"
