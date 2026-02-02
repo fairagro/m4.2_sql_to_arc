@@ -3,7 +3,13 @@
 import datetime
 from typing import Any
 
-from arctrl import ArcAssay, ArcInvestigation, ArcStudy, Person, Publication  # type: ignore[import-untyped]
+from arctrl import (  # type: ignore[import-untyped, import-not-found]
+    ArcAssay,
+    ArcInvestigation,
+    ArcStudy,
+    Person,
+    Publication,
+)
 
 from middleware.sql_to_arc.mapper import (
     map_annotation,

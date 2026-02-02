@@ -8,7 +8,7 @@ from collections import defaultdict
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
-from arctrl import ARC  # type: ignore[import-untyped]
+from arctrl import ARC  # type: ignore[import-untyped, import-not-found]
 from opentelemetry import trace
 
 from middleware.api_client import ApiClient, ApiClientError
