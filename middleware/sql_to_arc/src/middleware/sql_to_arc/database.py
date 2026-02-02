@@ -15,6 +15,14 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from sqlalchemy.sql import select
 
+from middleware.sql_to_arc.models import (
+    AssayRow,
+    ContactRow,
+    InvestigationRow,
+    PublicationRow,
+    StudyRow,
+)
+
 # Define metadata
 metadata = MetaData()
 
@@ -126,7 +134,7 @@ class Database:
         """Initialize database with connection string."""
         self.engine: AsyncEngine = create_async_engine(connection_string, echo=False)
 
-    async def stream_investigations(self, limit: int | None = None) -> AsyncGenerator[dict[str, Any], None]:
+    async def stream_investigations(self, limit: int | None = None) -> AsyncGenerator[InvestigationRow, None]:
         """Stream investigations using a server-side cursor."""
         async with self.engine.connect() as conn:
             stmt = select(v_investigation)
@@ -134,9 +142,9 @@ class Database:
                 stmt = stmt.limit(limit)
             result = await conn.stream(stmt.execution_options(stream_results=True))
             async for row in result.mappings():
-                yield dict(row)
+                yield InvestigationRow.model_validate(row)
 
-    async def stream_studies(self, investigation_ids: list[str]) -> AsyncGenerator[dict[str, Any], None]:
+    async def stream_studies(self, investigation_ids: list[str]) -> AsyncGenerator[StudyRow, None]:
         """Stream studies for given investigations."""
         if not investigation_ids:
             return
@@ -144,9 +152,9 @@ class Database:
             stmt = select(v_study).where(v_study.c.investigation_ref.in_(investigation_ids))
             result = await conn.stream(stmt.execution_options(stream_results=True))
             async for row in result.mappings():
-                yield dict(row)
+                yield StudyRow.model_validate(row)
 
-    async def stream_assays(self, investigation_ids: list[str]) -> AsyncGenerator[dict[str, Any], None]:
+    async def stream_assays(self, investigation_ids: list[str]) -> AsyncGenerator[AssayRow, None]:
         """Stream assays for given investigations."""
         if not investigation_ids:
             return
@@ -154,9 +162,9 @@ class Database:
             stmt = select(v_assay).where(v_assay.c.investigation_ref.in_(investigation_ids))
             result = await conn.stream(stmt.execution_options(stream_results=True))
             async for row in result.mappings():
-                yield dict(row)
+                yield AssayRow.model_validate(row)
 
-    async def stream_contacts(self, investigation_ids: list[str]) -> AsyncGenerator[dict[str, Any], None]:
+    async def stream_contacts(self, investigation_ids: list[str]) -> AsyncGenerator[ContactRow, None]:
         """Stream contacts for given investigations."""
         if not investigation_ids:
             return
@@ -164,9 +172,9 @@ class Database:
             stmt = select(v_contact).where(v_contact.c.investigation_ref.in_(investigation_ids))
             result = await conn.stream(stmt.execution_options(stream_results=True))
             async for row in result.mappings():
-                yield dict(row)
+                yield ContactRow.model_validate(row)
 
-    async def stream_publications(self, investigation_ids: list[str]) -> AsyncGenerator[dict[str, Any], None]:
+    async def stream_publications(self, investigation_ids: list[str]) -> AsyncGenerator[PublicationRow, None]:
         """Stream publications for given investigations."""
         if not investigation_ids:
             return
@@ -174,7 +182,7 @@ class Database:
             stmt = select(v_publication).where(v_publication.c.investigation_ref.in_(investigation_ids))
             result = await conn.stream(stmt.execution_options(stream_results=True))
             async for row in result.mappings():
-                yield dict(row)
+                yield PublicationRow.model_validate(row)
 
     async def stream_annotation_tables(self, investigation_ids: list[str]) -> AsyncGenerator[dict[str, Any], None]:
         """Stream annotation tables for given investigations."""

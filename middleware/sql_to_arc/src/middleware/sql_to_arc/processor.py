@@ -7,7 +7,7 @@ import logging
 import multiprocessing
 from collections import defaultdict
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, TypeVar
 
 from opentelemetry import trace
 from pydantic import BaseModel, ConfigDict
@@ -18,12 +18,15 @@ from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.database import Database
 from middleware.sql_to_arc.models import (
     ArcBuildData,
+    InvestigationRow,
     RelatedDataBatch,
     WorkerContext,
 )
 from middleware.sql_to_arc.stats import ProcessingStats
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T", bound=BaseModel)
 
 
 async def _upload_and_update_stats(
@@ -58,14 +61,14 @@ async def _upload_and_update_stats(
 
 async def _build_and_upload_single_arc(
     ctx: WorkerContext,
-    investigation: dict[str, Any],
+    investigation: InvestigationRow,
     *,
     stats: ProcessingStats,
     inv_info: str,
     semaphore: asyncio.Semaphore,
 ) -> None:
     """Build a single ARC and upload it."""
-    inv_id = str(investigation["identifier"])
+    inv_id = str(investigation.identifier)
     # Acquire semaphore to limit concurrency
     async with semaphore:
         # Prepare data bundle for this investigation
@@ -112,14 +115,14 @@ async def _build_and_upload_single_arc(
 
 async def process_investigation(
     ctx: WorkerContext,
-    investigation: dict[str, Any],
+    investigation: InvestigationRow,
     stats: ProcessingStats,
     inv_info: str,
     semaphore: asyncio.Semaphore,
 ) -> None:
     """Process a single investigation."""
     tracer = trace.get_tracer(__name__)
-    inv_id = str(investigation["identifier"])
+    inv_id = str(investigation.identifier)
 
     with tracer.start_as_current_span(
         "build_investigation",
@@ -139,11 +142,15 @@ async def _fetch_and_group_related_data(db: Database, investigation_ids: list[st
     """Fetch related data in bulk and group by investigation ID."""
     logger.info("Fetching related data (studies, assays, contacts, etc.)...")
 
-    async def group_stream(gen: AsyncGenerator[dict[str, Any], None]) -> tuple[dict[str, list[dict[str, Any]]], int]:
+    async def group_stream(
+        gen: AsyncGenerator[Any, None],
+    ) -> tuple[dict[str, list[Any]], int]:
         m = defaultdict(list)
         count = 0
         async for r in gen:
-            m[str(r["investigation_ref"])].append(r)
+            # All models and the annotation dict have investigation_ref
+            inv_ref = r["investigation_ref"] if isinstance(r, dict) else r.investigation_ref
+            m[str(inv_ref)].append(r)
             count += 1
         return dict(m), count
 
@@ -177,7 +184,7 @@ class WorkerResources(BaseModel):
 
 
 def _spawn_investigation_task(
-    investigation: dict[str, Any],
+    investigation: InvestigationRow,
     idx: int,
     batch_data: RelatedDataBatch,
     res: WorkerResources,
@@ -193,7 +200,7 @@ def _spawn_investigation_task(
         contacts_by_inv=batch_data.contacts_by_inv,
         pubs_by_inv=batch_data.pubs_by_inv,
         anns_by_inv=batch_data.anns_by_inv,
-        worker_id=1,
+        worker_id=idx % res.config.max_concurrent_arc_builds,
         total_workers=res.config.max_concurrent_arc_builds,
         executor=res.executor,
         arc_generation_timeout_minutes=res.config.arc_generation_timeout_minutes,
@@ -251,7 +258,7 @@ async def process_investigations(
                 await asyncio.wait(running_tasks, return_when=asyncio.FIRST_COMPLETED)
 
             # 3. Relational Batching: Fetch all related data for this batch at once
-            batch_data = await _fetch_and_group_related_data(db, [str(inv["identifier"]) for inv in batch])
+            batch_data = await _fetch_and_group_related_data(db, [str(inv.identifier) for inv in batch])
             stats.total_studies += batch_data.study_count
             stats.total_assays += batch_data.assay_count
 

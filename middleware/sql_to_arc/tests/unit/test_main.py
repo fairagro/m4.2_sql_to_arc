@@ -16,7 +16,7 @@ import pytest
 from middleware.api_client import ApiClient
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.main import parse_args
-from middleware.sql_to_arc.models import RelatedDataBatch, WorkerContext
+from middleware.sql_to_arc.models import InvestigationRow, RelatedDataBatch, WorkerContext
 from middleware.sql_to_arc.processor import (
     process_investigation,
     process_investigations,
@@ -46,7 +46,7 @@ async def test_process_investigation_builds_and_uploads(monkeypatch: pytest.Monk
     mock_client = AsyncMock(spec=ApiClient)
     mock_client.create_or_update_arc.return_value = MagicMock(arcs=[MagicMock(id="1")])
 
-    investigation = {"identifier": "1", "title": "Inv", "description_text": "Desc"}
+    investigation = InvestigationRow(identifier="1", title="Inv", description_text="Desc")
     stats = ProcessingStats()
     semaphore = asyncio.Semaphore(1)
 
@@ -86,11 +86,13 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     mock_db = MagicMock()
 
     # Mock DB stream methods
-    async def mock_gen(data: list[dict[str, Any]]) -> AsyncGenerator[dict[str, Any], None]:
+    async def mock_gen(data: list[Any]) -> AsyncGenerator[Any, None]:
         for item in data:
             yield item
 
-    mock_db.stream_investigations.side_effect = lambda **_: mock_gen([{"identifier": "1"}, {"identifier": "2"}])
+    mock_db.stream_investigations.side_effect = lambda **_: mock_gen(
+        [InvestigationRow(identifier="1"), InvestigationRow(identifier="2")]
+    )
 
     # Mock related data fetch
     async def mock_fetch_related(*_args: Any, **_kwargs: Any) -> RelatedDataBatch:

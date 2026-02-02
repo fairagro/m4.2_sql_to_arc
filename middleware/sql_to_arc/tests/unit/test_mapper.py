@@ -1,7 +1,6 @@
 """Unit tests for the mapper module."""
 
 import datetime
-from typing import Any
 
 from arctrl import (  # type: ignore[import-untyped, import-not-found]
     ArcAssay,
@@ -19,18 +18,25 @@ from middleware.sql_to_arc.mapper import (
     map_publication,
     map_study,
 )
+from middleware.sql_to_arc.models import (
+    AssayRow,
+    ContactRow,
+    InvestigationRow,
+    PublicationRow,
+    StudyRow,
+)
 
 
 def test_map_investigation() -> None:
     """Test mapping of investigation data."""
     now = datetime.datetime.now()
-    row: dict[str, Any] = {
-        "identifier": "123",
-        "title": "Test Investigation",
-        "description_text": "Test Description",
-        "submission_date": now,
-        "public_release_date": now,
-    }
+    row = InvestigationRow(
+        identifier="123",
+        title="Test Investigation",
+        description_text="Test Description",
+        submission_date=now,
+        public_release_date=now,
+    )
 
     arc = map_investigation(row)
 
@@ -44,9 +50,9 @@ def test_map_investigation() -> None:
 
 def test_map_investigation_defaults() -> None:
     """Test mapping of investigation data with missing optional fields."""
-    row: dict[str, Any] = {
-        "identifier": "456",
-    }
+    row = InvestigationRow(
+        identifier="456",
+    )
 
     arc = map_investigation(row)
 
@@ -60,13 +66,14 @@ def test_map_investigation_defaults() -> None:
 def test_map_study() -> None:
     """Test mapping of study data."""
     now = datetime.datetime.now()
-    row: dict[str, Any] = {
-        "identifier": "1",
-        "title": "Test Study",
-        "description_text": "Study Description",
-        "submission_date": now,
-        "public_release_date": now,
-    }
+    row = StudyRow(
+        identifier="1",
+        investigation_ref="inv1",
+        title="Test Study",
+        description_text="Study Description",
+        submission_date=now,
+        public_release_date=now,
+    )
 
     study = map_study(row)
 
@@ -80,25 +87,27 @@ def test_map_study() -> None:
 
 def test_map_investigation_string_dates() -> None:
     """Test mapping of investigation data with string dates."""
-    row: dict[str, Any] = {
-        "identifier": "789",
-        "submission_date": "2023-01-01",
-        "public_release_date": "2023-12-31",
-    }
+    row = InvestigationRow(
+        identifier="789",
+        submission_date=datetime.datetime.strptime("2023-01-01", "%Y-%m-%d"),
+        public_release_date=datetime.datetime.strptime("2023-12-31", "%Y-%m-%d"),
+    )
     arc = map_investigation(row)
-    assert arc.SubmissionDate == "2023-01-01"
-    assert arc.PublicReleaseDate == "2023-12-31"
+    assert arc.SubmissionDate == "2023-01-01T00:00:00"
+    assert arc.PublicReleaseDate == "2023-12-31T00:00:00"
 
 
 def test_map_assay() -> None:
     """Test mapping of assay data."""
-    row: dict[str, Any] = {
-        "identifier": "1",
-        "measurement_type_term": "Proteomics",
-        "measurement_type_uri": "http://example.org/prot",
-        "technology_type_term": "Mass Spectrometry",
-        "technology_type_uri": "http://example.org/ms",
-    }
+    row = AssayRow(
+        identifier="1",
+        study_ref="sty1",
+        investigation_ref="inv1",
+        measurement_type_term="Proteomics",
+        measurement_type_uri="http://example.org/prot",
+        technology_type_term="Mass Spectrometry",
+        technology_type_uri="http://example.org/ms",
+    )
 
     assay = map_assay(row)
 
@@ -115,10 +124,12 @@ def test_map_assay() -> None:
 
 def test_map_assay_with_platform() -> None:
     """Test mapping of assay data including technology platform."""
-    row: dict[str, Any] = {
-        "identifier": "2",
-        "technology_platform": "Orbitrap",
-    }
+    row = AssayRow(
+        identifier="2",
+        study_ref="sty1",
+        investigation_ref="inv1",
+        technology_platform="Orbitrap",
+    )
     assay = map_assay(row)
     assert assay.Identifier == "2"
     assert assay.TechnologyPlatform is not None
@@ -127,13 +138,13 @@ def test_map_assay_with_platform() -> None:
 
 def test_map_publication() -> None:
     """Test mapping of publication data."""
-    row: dict[str, Any] = {
-        "pubmed_id": "12345",
-        "doi": "10.1234/5678",
-        "authors": "Doe J, Smith A",
-        "title": "A Great Paper",
-        "status_term": "Published",
-    }
+    row = PublicationRow(
+        pubmed_id="12345",
+        doi="10.1234/5678",
+        authors="Doe J, Smith A",
+        title="A Great Paper",
+        status_term="Published",
+    )
 
     pub = map_publication(row)
 
@@ -148,12 +159,12 @@ def test_map_publication() -> None:
 
 def test_map_contact() -> None:
     """Test mapping of contact data."""
-    row: dict[str, Any] = {
-        "last_name": "Doe",
-        "first_name": "John",
-        "email": "john@example.com",
-        "roles": '[{"term": "Principal Investigator", "uri": "http://roles", "version": "1.0"}]',
-    }
+    row = ContactRow(
+        last_name="Doe",
+        first_name="John",
+        email="john@example.com",
+        roles='[{"term": "Principal Investigator", "uri": "http://roles", "version": "1.0"}]',
+    )
 
     person = map_contact(row)
 
@@ -169,10 +180,10 @@ def test_map_contact() -> None:
 
 def test_map_contact_invalid_roles() -> None:
     """Test mapping of contact data with invalid roles JSON."""
-    row: dict[str, Any] = {
-        "last_name": "Smith",
-        "roles": "invalid json string",
-    }
+    row = ContactRow(
+        last_name="Smith",
+        roles="invalid json string",
+    )
     person = map_contact(row)
     assert person.LastName == "Smith"
     assert person.Roles == []

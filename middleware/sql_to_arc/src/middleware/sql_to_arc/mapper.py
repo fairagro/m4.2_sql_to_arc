@@ -13,6 +13,14 @@ from arctrl import (  # type: ignore
     Publication,
 )
 
+from middleware.sql_to_arc.models import (
+    AssayRow,
+    ContactRow,
+    InvestigationRow,
+    PublicationRow,
+    StudyRow,
+)
+
 # name=term, tan=uri (TermAccessionNumber), tsr="" (TermSourceREF - we don't have it, maybe version?)
 # Spec says version is used. If we don't have TSR, we can leave it empty.
 
@@ -35,87 +43,81 @@ def _format_date(d: Any) -> str | None:
     return None
 
 
-def map_investigation(row: dict[str, Any]) -> ArcInvestigation:
+def map_investigation(row: InvestigationRow) -> ArcInvestigation:
     """Map a database row to an ArcInvestigation object."""
     # Handle potential None values for dates
-    submission_date = row.get("submission_date")
-    public_release_date = row.get("public_release_date")
+    submission_date = row.submission_date
+    public_release_date = row.public_release_date
 
-    identifier = str(row["identifier"]) if row.get("identifier") is not None else ""
+    identifier = row.identifier
     if not identifier.strip():
         # It's a required field
         # But we might start empty
         pass
 
-    # TODO: the database view spec requires title and description_text to be NOT NULL.
-    # But how would we validate that in general -- not necessarily here?
     inv = ArcInvestigation.create(
         identifier=identifier,
-        title=row.get("title", ""),
-        description=row.get("description_text", ""),
+        title=row.title,
+        description=row.description_text,
         submission_date=_format_date(submission_date),
         public_release_date=_format_date(public_release_date),
     )
     return inv
 
 
-def map_study(row: dict[str, Any]) -> ArcStudy:
+def map_study(row: StudyRow) -> ArcStudy:
     """Map a database row to an ArcStudy object."""
-    submission_date = row.get("submission_date")
-    public_release_date = row.get("public_release_date")
+    submission_date = row.submission_date
+    public_release_date = row.public_release_date
 
     return ArcStudy.create(
-        identifier=str(row["identifier"]),
-        title=row.get("title", ""),
-        description=row.get("description_text", ""),
+        identifier=row.identifier,
+        title=row.title,
+        description=row.description_text,
         submission_date=_format_date(submission_date),
         public_release_date=_format_date(public_release_date),
     )
 
 
-def map_assay(row: dict[str, Any]) -> ArcAssay:
+def map_assay(row: AssayRow) -> ArcAssay:
     """Map a database row to an ArcAssay object."""
     assay = ArcAssay.create(
-        identifier=str(row["identifier"]),
-        measurement_type=_make_oa(
-            row.get("measurement_type_term"), row.get("measurement_type_uri"), row.get("measurement_type_version")
-        ),
-        technology_type=_make_oa(
-            row.get("technology_type_term"), row.get("technology_type_uri"), row.get("technology_type_version")
-        ),
+        identifier=row.identifier,
+        measurement_type=_make_oa(row.measurement_type_term, row.measurement_type_uri, None),
+        technology_type=_make_oa(row.technology_type_term, row.technology_type_uri, None),
         technology_platform=_make_oa(
-            row.get("technology_platform"),  # Spec says platform is text but mapping to OA is allowed
+            row.technology_platform,  # Spec says platform is text but mapping to OA is allowed
             None,
             None,
         )
-        if row.get("technology_platform")
+        if row.technology_platform
         else None,
     )
 
     return assay
 
 
-def map_publication(row: dict[str, Any]) -> Publication:
+def map_publication(row: PublicationRow) -> Publication:
     """Map a database row to a Publication object."""
     # Publication(doi, pubMedID, authors, title, status)
 
-    status = _make_oa(row.get("status_term"), row.get("status_uri"), row.get("status_version"))
+    status = _make_oa(row.status_term, row.status_uri, None)
 
     return Publication(
-        doi=row.get("doi", ""),
-        pub_med_id=row.get("pubmed_id", ""),
-        authors=row.get("authors", ""),
-        title=row.get("title", ""),
+        doi=row.doi,
+        pub_med_id=row.pubmed_id,
+        authors=row.authors,
+        title=row.title,
         status=status,
     )
 
 
-def map_contact(row: dict[str, Any]) -> Person:
+def map_contact(row: ContactRow) -> Person:
     """Map a database row to a Person object."""
     # Person(lastName, firstName, midInitials, email, phone, fax, address, affiliation, roles)
 
     # Parse roles JSON
-    roles_json = row.get("roles")
+    roles_json = row.roles
     roles = []
     if roles_json:
         try:
@@ -127,14 +129,14 @@ def map_contact(row: dict[str, Any]) -> Person:
             pass  # Logger?
 
     return Person(
-        last_name=row.get("last_name", ""),
-        first_name=row.get("first_name", ""),
-        mid_initials=row.get("mid_initials", ""),
-        email=row.get("email", ""),
-        phone=row.get("phone", ""),
-        fax=row.get("fax", ""),
-        address=row.get("postal_address", ""),
-        affiliation=row.get("affiliation", ""),
+        last_name=row.last_name,
+        first_name=row.first_name,
+        mid_initials=row.mid_initials,
+        email=row.email,
+        phone=row.phone,
+        fax=row.fax,
+        address=row.postal_address,
+        affiliation=row.affiliation,
         roles=roles,
     )
 

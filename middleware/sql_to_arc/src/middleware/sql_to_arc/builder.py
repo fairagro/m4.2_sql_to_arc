@@ -8,6 +8,8 @@ from typing import Any, cast
 
 from arctrl import (  # type: ignore[import-untyped]
     ARC,
+    ArcAssay,
+    ArcStudy,
     ArcTable,
     CompositeCell,
     CompositeHeader,
@@ -22,57 +24,74 @@ from middleware.sql_to_arc.mapper import (
     map_publication,
     map_study,
 )
-from middleware.sql_to_arc.models import ArcBuildData
+from middleware.sql_to_arc.models import (
+    ArcBuildData,
+    AssayRow,
+    ContactRow,
+    PublicationRow,
+    StudyRow,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _add_studies_to_arc(arc: ARC, study_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _add_studies_to_arc(arc: ARC, study_rows: list[StudyRow]) -> dict[str, ArcStudy]:
     """Add studies to ARC and return study map."""
-    study_map = {}
+    study_map: dict[str, ArcStudy] = {}
     for s_row in study_rows:
         study = map_study(s_row)
         arc.AddRegisteredStudy(study)
-        study_map[str(s_row["identifier"])] = study
+        study_map[str(s_row.identifier)] = study
     return study_map
 
 
-def _add_assays_to_arc(arc: ARC, assay_rows: list[dict[str, Any]], study_map: dict[str, Any]) -> dict[str, Any]:
+def _add_assays_to_arc(arc: ARC, assay_rows: list[AssayRow], study_map: dict[str, ArcStudy]) -> dict[str, ArcAssay]:
     """Add assays to ARC, link to studies, and return assay map."""
-    assay_map = {}
+    assay_map: dict[str, ArcAssay] = {}
     for a_row in assay_rows:
         assay = map_assay(a_row)
         arc.AddAssay(assay)
-        assay_map[str(a_row["identifier"])] = assay
+        assay_map[str(a_row.identifier)] = assay
 
         # Link Assay to Studies
-        study_ref_json = a_row.get("study_ref")
-        if not study_ref_json:
-            continue
-
-        try:
-            study_refs = json.loads(study_ref_json)
-            if isinstance(study_refs, list):
-                for s_ref in study_refs:
-                    if s_ref in study_map:
-                        study_map[s_ref].RegisterAssay(assay.Identifier)
-        except json.JSONDecodeError:
-            pass
+        _link_assay_to_studies(assay, a_row.study_ref, study_map)
 
     return assay_map
+
+
+def _link_assay_to_studies(assay: ArcAssay, study_ref_val: Any, study_map: dict[str, ArcStudy]) -> None:
+    """Link an assay to one or more studies based on the study_ref value."""
+    if not study_ref_val:
+        return
+
+    if isinstance(study_ref_val, str):
+        try:
+            study_refs = json.loads(study_ref_val)
+            if isinstance(study_refs, list):
+                for s_ref in study_refs:
+                    if str(s_ref) in study_map:
+                        study_map[str(s_ref)].RegisterAssay(assay.Identifier)
+                return
+        except json.JSONDecodeError:
+            # Handle single ID if it's not JSON (fall through)
+            pass
+
+    # Handle single ID (string or int)
+    if str(study_ref_val) in study_map:
+        study_map[str(study_ref_val)].RegisterAssay(assay.Identifier)
 
 
 def _add_contacts_to_arc(
     arc: ARC,
     inv_id: str,
-    contacts: list[dict[str, Any]],
-    study_map: dict[str, Any],
-    assay_map: dict[str, Any],
+    contacts: list[ContactRow],
+    study_map: dict[str, ArcStudy],
+    assay_map: dict[str, ArcAssay],
 ) -> None:
     """Add contacts to investigation, studies, and assays."""
     # Investigation contacts
     inv_contacts = [
-        c for c in contacts if c.get("investigation_ref") == inv_id and c.get("target_type") == "investigation"
+        c for c in contacts if str(c.investigation_ref) == inv_id and getattr(c, "target_type", None) == "investigation"
     ]
     for c_row in inv_contacts:
         arc.Contacts.append(map_contact(c_row))
@@ -82,7 +101,9 @@ def _add_contacts_to_arc(
         stu_contacts = [
             c
             for c in contacts
-            if c.get("investigation_ref") == inv_id and c.get("target_type") == "study" and c.get("target_ref") == s_id
+            if str(c.investigation_ref) == inv_id
+            and getattr(c, "target_type", None) == "study"
+            and str(getattr(c, "target_ref", None)) == s_id
         ]
         for c_row in stu_contacts:
             study.Contacts.append(map_contact(c_row))
@@ -92,19 +113,26 @@ def _add_contacts_to_arc(
         ass_contacts = [
             c
             for c in contacts
-            if c.get("investigation_ref") == inv_id and c.get("target_type") == "assay" and c.get("target_ref") == a_id
+            if str(c.investigation_ref) == inv_id
+            and getattr(c, "target_type", None) == "assay"
+            and str(getattr(c, "target_ref", None)) == a_id
         ]
         for c_row in ass_contacts:
             assay.Performers.append(map_contact(c_row))
 
 
 def _add_publications_to_arc(
-    arc: ARC, inv_id: str, publications: list[dict[str, Any]], study_map: dict[str, Any]
+    arc: ARC,
+    inv_id: str,
+    publications: list[PublicationRow],
+    study_map: dict[str, ArcStudy],
 ) -> None:
     """Add publications to investigation and studies."""
     # Investigation publications
     inv_pubs = [
-        p for p in publications if p.get("investigation_ref") == inv_id and p.get("target_type") == "investigation"
+        p
+        for p in publications
+        if str(p.investigation_ref) == inv_id and getattr(p, "target_type", None) == "investigation"
     ]
     for p_row in inv_pubs:
         arc.Publications.append(map_publication(p_row))
@@ -114,7 +142,9 @@ def _add_publications_to_arc(
         stu_pubs = [
             p
             for p in publications
-            if p.get("investigation_ref") == inv_id and p.get("target_type") == "study" and p.get("target_ref") == s_id
+            if str(p.investigation_ref) == inv_id
+            and getattr(p, "target_type", None) == "study"
+            and str(getattr(p, "target_ref", None)) == s_id
         ]
         for p_row in stu_pubs:
             study.Publications.append(map_publication(p_row))
@@ -271,7 +301,7 @@ def build_single_arc_task(data: ArcBuildData) -> str:
     This function is designed to run in a separate process.
     It returns the JSON representation to minimize memory footprint in the main process.
     """
-    inv_id = str(data.investigation_row["identifier"])
+    inv_id = str(data.investigation_row.identifier)
 
     try:
         # Map Investigation and create ARC
@@ -279,8 +309,8 @@ def build_single_arc_task(data: ArcBuildData) -> str:
         arc = ARC.from_arc_investigation(arc_inv)
 
         # Identify relevant studies and assays
-        relevant_studies = [s for s in data.studies if s.get("investigation_ref") == inv_id]
-        relevant_assays = [a for a in data.assays if a.get("investigation_ref") == inv_id]
+        relevant_studies = [s for s in data.studies if str(s.investigation_ref) == inv_id]
+        relevant_assays = [a for a in data.assays if str(a.investigation_ref) == inv_id]
 
         # Add studies and assays
         study_map = _add_studies_to_arc(arc, relevant_studies)

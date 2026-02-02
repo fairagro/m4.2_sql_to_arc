@@ -15,7 +15,14 @@ from middleware.shared.api_models.models import CreateOrUpdateArcsResponse
 from middleware.shared.config.config_base import OtelConfig
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.main import main
-from middleware.sql_to_arc.models import WorkerContext
+from middleware.sql_to_arc.models import (
+    AssayRow,
+    ContactRow,
+    InvestigationRow,
+    PublicationRow,
+    StudyRow,
+    WorkerContext,
+)
 from middleware.sql_to_arc.processor import process_investigation
 from middleware.sql_to_arc.stats import ProcessingStats
 
@@ -125,10 +132,10 @@ class WorkflowTester:
 
         self.api_client.create_or_update_arc.side_effect = capture_arc
 
-    def _as_gen(self, data: list[dict[str, Any]]) -> AsyncGenerator[dict[str, Any], None]:
-        async def gen() -> AsyncGenerator[dict[str, Any], None]:
+    def _as_gen(self, data: list[dict[str, Any]], model_cls: type[Any] | None = None) -> AsyncGenerator[Any, None]:
+        async def gen() -> AsyncGenerator[Any, None]:
             for item in data:
-                yield item
+                yield model_cls.model_validate(item) if model_cls else item
 
         return gen()
 
@@ -142,12 +149,24 @@ class WorkflowTester:
         annotations: list[dict[str, Any]] | None = None,
     ) -> None:
         """Mock the database streaming methods with provided data."""
-        self.db.stream_investigations.side_effect = lambda limit=None: self._as_gen(investigations or [])  # noqa: ARG005
-        self.db.stream_studies.side_effect = lambda investigation_ids: self._as_gen(studies or [])  # noqa: ARG005
-        self.db.stream_assays.side_effect = lambda investigation_ids: self._as_gen(assays or [])  # noqa: ARG005
-        self.db.stream_contacts.side_effect = lambda investigation_ids: self._as_gen(contacts or [])  # noqa: ARG005
-        self.db.stream_publications.side_effect = lambda investigation_ids: self._as_gen(publications or [])  # noqa: ARG005
-        self.db.stream_annotation_tables.side_effect = lambda investigation_ids: self._as_gen(annotations or [])  # noqa: ARG005
+        self.db.stream_investigations.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+            investigations or [], InvestigationRow
+        )
+        self.db.stream_studies.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+            studies or [], StudyRow
+        )
+        self.db.stream_assays.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+            assays or [], AssayRow
+        )
+        self.db.stream_contacts.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+            contacts or [], ContactRow
+        )
+        self.db.stream_publications.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+            publications or [], PublicationRow
+        )
+        self.db.stream_annotation_tables.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+            annotations or []
+        )
 
     async def run(self) -> list[ARC]:
         """Execute the main workflow and return captured ARC objects."""
@@ -176,14 +195,22 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
         {"identifier": 1, "title": "Test 1", "description": "Desc 1", "submission_time": None, "release_time": None},
         {"identifier": 2, "title": "Test 2", "description": "Desc 2", "submission_time": None, "release_time": None},
     ]
-    studies_by_investigation: dict[str, list[dict[str, Any]]] = {"1": [], "2": []}
+    studies_by_investigation: dict[str, list[StudyRow]] = {
+        "1": [StudyRow.model_validate(study) for study in list[dict[str, Any]]()],
+        "2": [StudyRow.model_validate(study) for study in list[dict[str, Any]]()],
+    }
     assays_by_study: dict[str, list[dict[str, Any]]] = {}
     with ThreadPoolExecutor(max_workers=5) as executor:
         ctx = WorkerContext(
             client=mock_api_client,
             rdi="edaphobase",
-            studies_by_inv=studies_by_investigation,
-            assays_by_inv=assays_by_study,
+            studies_by_inv={
+                key: [StudyRow.model_validate(study) for study in value]
+                for key, value in studies_by_investigation.items()
+            },
+            assays_by_inv={
+                key: [AssayRow.model_validate(assay) for assay in value] for key, value in assays_by_study.items()
+            },
             contacts_by_inv={},
             pubs_by_inv={},
             anns_by_inv={},
@@ -195,7 +222,7 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
         stats = ProcessingStats()
         for i, inv in enumerate(investigation_rows):
             inv_info = f"Investigation {i + 1}"
-            await process_investigation(ctx, inv, stats, inv_info, semaphore)
+            await process_investigation(ctx, InvestigationRow.model_validate(inv), stats, inv_info, semaphore)
 
     assert mock_api_client.create_or_update_arc.called
     # There should be two calls, each with one ARC (since batch size is always 1)
