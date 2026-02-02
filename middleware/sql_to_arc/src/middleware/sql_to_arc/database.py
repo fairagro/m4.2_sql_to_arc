@@ -5,15 +5,10 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import (
-    TIMESTAMP,
-    Column,
-    Integer,
-    MetaData,
-    Table,
-    Text,
+    bindparam,
+    text,
 )
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
-from sqlalchemy.sql import select
 
 from middleware.sql_to_arc.models import (
     AssayRow,
@@ -21,109 +16,6 @@ from middleware.sql_to_arc.models import (
     InvestigationRow,
     PublicationRow,
     StudyRow,
-)
-
-# Define metadata
-metadata = MetaData()
-
-# Define Tables (Views)
-# Note: We use the Table construct to reflect the view structure.
-# SQLAlchemy will treat them as tables for querying purposes.
-
-# vInvestigation
-v_investigation = Table(
-    "vInvestigation",
-    metadata,
-    Column("identifier", Text, primary_key=True),
-    Column("title", Text),
-    Column("description_text", Text),
-    Column("submission_date", TIMESTAMP),
-    Column("public_release_date", TIMESTAMP),
-)
-
-# vStudy
-v_study = Table(
-    "vStudy",
-    metadata,
-    Column("identifier", Text, primary_key=True),
-    Column("title", Text),
-    Column("description_text", Text),
-    Column("submission_date", TIMESTAMP),
-    Column("public_release_date", TIMESTAMP),
-    Column("investigation_ref", Text),  # FK to Investigation
-)
-
-# vAssay
-v_assay = Table(
-    "vAssay",
-    metadata,
-    Column("identifier", Text, primary_key=True),
-    Column("title", Text),
-    Column("description_text", Text),
-    Column("measurement_type_term", Text),
-    Column("measurement_type_uri", Text),
-    Column("measurement_type_version", Text),
-    Column("technology_type_term", Text),
-    Column("technology_type_uri", Text),
-    Column("technology_type_version", Text),
-    Column("technology_platform", Text),
-    Column("investigation_ref", Text),  # FK to Investigation
-    Column("study_ref", Text),  # JSON string
-)
-
-# vPublication
-v_publication = Table(
-    "vPublication",
-    metadata,
-    Column("pubmed_id", Text),
-    Column("doi", Text),
-    Column("authors", Text),
-    Column("title", Text),
-    Column("status_term", Text),
-    Column("status_uri", Text),
-    Column("status_version", Text),
-    Column("target_type", Text),  # investigation, study
-    Column("target_ref", Text),
-    Column("investigation_ref", Text),
-)
-
-# vContact
-v_contact = Table(
-    "vContact",
-    metadata,
-    Column("last_name", Text),
-    Column("first_name", Text),
-    Column("mid_initials", Text),
-    Column("email", Text),
-    Column("phone", Text),
-    Column("fax", Text),
-    Column("postal_address", Text),
-    Column("affiliation", Text),
-    Column("roles", Text),  # JSON string
-    Column("target_type", Text),  # investigation, study, assay
-    Column("target_ref", Text),
-    Column("investigation_ref", Text),
-)
-
-# vAnnotationTable
-v_annotation_table = Table(
-    "vAnnotationTable",
-    metadata,
-    Column("table_name", Text),
-    Column("target_type", Text),  # study, assay
-    Column("target_ref", Text),
-    Column("investigation_ref", Text),
-    Column("column_type", Text),
-    Column("column_io_type", Text),
-    Column("column_value", Text),
-    Column("column_annotation_term", Text),
-    Column("column_annotation_uri", Text),
-    Column("column_annotation_version", Text),
-    Column("row_index", Integer),
-    Column("cell_value", Text),
-    Column("cell_annotation_term", Text),
-    Column("cell_annotation_uri", Text),
-    Column("cell_annotation_version", Text),
 )
 
 
@@ -137,10 +29,12 @@ class Database:
     async def stream_investigations(self, limit: int | None = None) -> AsyncGenerator[InvestigationRow, None]:
         """Stream investigations using a server-side cursor."""
         async with self.engine.connect() as conn:
-            stmt = select(v_investigation)
+            sql = "SELECT * FROM vInvestigation"
             if limit:
-                stmt = stmt.limit(limit)
-            result = await conn.stream(stmt.execution_options(stream_results=True))
+                sql += f" LIMIT {limit}"
+
+            stmt = text(sql).execution_options(stream_results=True)
+            result = await conn.stream(stmt)
             async for row in result.mappings():
                 yield InvestigationRow.model_validate(row)
 
@@ -149,8 +43,10 @@ class Database:
         if not investigation_ids:
             return
         async with self.engine.connect() as conn:
-            stmt = select(v_study).where(v_study.c.investigation_ref.in_(investigation_ids))
-            result = await conn.stream(stmt.execution_options(stream_results=True))
+            stmt = text("SELECT * FROM vStudy WHERE investigation_ref IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            )
+            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
             async for row in result.mappings():
                 yield StudyRow.model_validate(row)
 
@@ -159,8 +55,10 @@ class Database:
         if not investigation_ids:
             return
         async with self.engine.connect() as conn:
-            stmt = select(v_assay).where(v_assay.c.investigation_ref.in_(investigation_ids))
-            result = await conn.stream(stmt.execution_options(stream_results=True))
+            stmt = text("SELECT * FROM vAssay WHERE investigation_ref IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            )
+            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
             async for row in result.mappings():
                 yield AssayRow.model_validate(row)
 
@@ -169,8 +67,10 @@ class Database:
         if not investigation_ids:
             return
         async with self.engine.connect() as conn:
-            stmt = select(v_contact).where(v_contact.c.investigation_ref.in_(investigation_ids))
-            result = await conn.stream(stmt.execution_options(stream_results=True))
+            stmt = text("SELECT * FROM vContact WHERE investigation_ref IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            )
+            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
             async for row in result.mappings():
                 yield ContactRow.model_validate(row)
 
@@ -179,8 +79,10 @@ class Database:
         if not investigation_ids:
             return
         async with self.engine.connect() as conn:
-            stmt = select(v_publication).where(v_publication.c.investigation_ref.in_(investigation_ids))
-            result = await conn.stream(stmt.execution_options(stream_results=True))
+            stmt = text("SELECT * FROM vPublication WHERE investigation_ref IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            )
+            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
             async for row in result.mappings():
                 yield PublicationRow.model_validate(row)
 
@@ -189,8 +91,10 @@ class Database:
         if not investigation_ids:
             return
         async with self.engine.connect() as conn:
-            stmt = select(v_annotation_table).where(v_annotation_table.c.investigation_ref.in_(investigation_ids))
-            result = await conn.stream(stmt.execution_options(stream_results=True))
+            stmt = text("SELECT * FROM vAnnotationTable WHERE investigation_ref IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            )
+            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
             async for row in result.mappings():
                 yield dict(row)
 
