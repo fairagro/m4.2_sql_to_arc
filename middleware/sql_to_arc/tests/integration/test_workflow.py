@@ -502,14 +502,17 @@ async def test_assay_with_complete_ontology_fields(workflow_tester: WorkflowTest
     assay = arc.Assays[0]
 
     # Verify Measurement Type
+    assert assay.MeasurementType is not None, "MeasurementType is None"
     assert assay.MeasurementType.Name == "gene expression profiling"
     assert assay.MeasurementType.TermAccessionNumber == "http://purl.obolibrary.org/obo/OBI_0001271"
 
     # Verify Technology Type
+    assert assay.TechnologyType is not None, "TechnologyType is None"
     assert assay.TechnologyType.Name == "nucleotide sequencing"
     assert assay.TechnologyType.TermAccessionNumber == "http://purl.obolibrary.org/obo/OBI_0000626"
 
     # Verify Technology Platform
+    assert assay.TechnologyPlatform is not None, "TechnologyPlatform is None"
     assert assay.TechnologyPlatform.Name == "Illumina HiSeq 2500"
 
 
