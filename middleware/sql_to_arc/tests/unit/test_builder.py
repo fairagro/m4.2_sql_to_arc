@@ -6,7 +6,14 @@ from typing import Any
 import pytest
 
 from middleware.sql_to_arc.builder import build_single_arc_task
-from middleware.sql_to_arc.models import ArcBuildData
+from middleware.sql_to_arc.models import (
+    ArcBuildData,
+    AssayRow,
+    ContactRow,
+    InvestigationRow,
+    PublicationRow,
+    StudyRow,
+)
 
 
 @pytest.fixture
@@ -97,7 +104,12 @@ def sample_publications() -> list[dict[str, Any]]:
 def test_build_simple_arc(sample_investigation: dict[str, Any]) -> None:
     """Test building a basic ARC structure from investigation data."""
     arc_data = ArcBuildData(
-        investigation_row=sample_investigation, studies=[], assays=[], contacts=[], publications=[], annotations=[]
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[],
+        assays=[],
+        contacts=[],
+        publications=[],
+        annotations=[],
     )
     arc_json = build_single_arc_task(arc_data)
     assert isinstance(arc_json, str)
@@ -115,9 +127,9 @@ def test_build_arc_with_study_and_assay(
 ) -> None:
     """Test building an ARC with nested study and assay structures."""
     arc_data = ArcBuildData(
-        investigation_row=sample_investigation,
-        studies=sample_studies,
-        assays=sample_assays,
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[StudyRow.model_validate(s) for s in sample_studies],
+        assays=[AssayRow.model_validate(a) for a in sample_assays],
         contacts=[],
         publications=[],
         annotations=[],
@@ -142,11 +154,11 @@ def test_build_arc_with_contacts_and_pubs(
 ) -> None:
     """Test building an ARC with contacts and publications at both investigation and study levels."""
     arc_data = ArcBuildData(
-        investigation_row=sample_investigation,
-        studies=sample_studies,
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[StudyRow.model_validate(s) for s in sample_studies],
         assays=[],
-        contacts=sample_contacts,
-        publications=sample_publications,
+        contacts=[ContactRow.model_validate(c) for c in sample_contacts],
+        publications=[PublicationRow.model_validate(p) for p in sample_publications],
         annotations=[],
     )
     arc_json = build_single_arc_task(arc_data)
@@ -167,8 +179,8 @@ def test_build_ignores_irrelevant_data(sample_investigation: dict[str, Any]) -> 
     other_study = {"identifier": "styX", "investigation_ref": "inv2"}
 
     arc_data = ArcBuildData(
-        investigation_row=sample_investigation,
-        studies=[other_study],
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[StudyRow.model_validate(other_study)],
         assays=[],
         contacts=[],
         publications=[],

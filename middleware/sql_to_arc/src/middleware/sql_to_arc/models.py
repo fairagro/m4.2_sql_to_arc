@@ -2,7 +2,7 @@
 
 import concurrent.futures
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from pydantic import BaseModel, ConfigDict
 
@@ -83,7 +83,7 @@ class ContactRow(BaseModel):
     model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True, from_attributes=True)
 
 
-class ArcBuildData(BaseModel):
+class ArcBuildData(NamedTuple):
     """Data bundle for building a single ARC."""
 
     investigation_row: InvestigationRow
@@ -92,8 +92,6 @@ class ArcBuildData(BaseModel):
     contacts: list[ContactRow]
     publications: list[PublicationRow]
     annotations: list[dict[str, Any]]
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class WorkerContext(BaseModel):
@@ -114,7 +112,7 @@ class WorkerContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class RelatedDataBatch(BaseModel):
+class RelatedDataBatch(NamedTuple):
     """Batch of related data grouped by investigation ID."""
 
     studies_by_inv: dict[str, list[StudyRow]]
@@ -124,5 +122,3 @@ class RelatedDataBatch(BaseModel):
     anns_by_inv: dict[str, list[dict[str, Any]]]
     study_count: int
     assay_count: int
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)

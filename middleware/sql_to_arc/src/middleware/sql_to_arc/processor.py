@@ -7,10 +7,11 @@ import logging
 import multiprocessing
 from collections import defaultdict
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from opentelemetry import trace
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from middleware.api_client import ApiClient, ApiClientError
 from middleware.sql_to_arc.builder import build_single_arc_task
@@ -171,7 +172,8 @@ async def _fetch_and_group_related_data(db: Database, investigation_ids: list[st
     )
 
 
-class WorkerResources(BaseModel):
+@dataclass(slots=True)
+class WorkerResources:
     """Orchestration resources shared across investigation tasks."""
 
     client: ApiClient
@@ -179,8 +181,6 @@ class WorkerResources(BaseModel):
     stats: ProcessingStats
     executor: concurrent.futures.Executor
     semaphore: asyncio.Semaphore
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 def _spawn_investigation_task(
