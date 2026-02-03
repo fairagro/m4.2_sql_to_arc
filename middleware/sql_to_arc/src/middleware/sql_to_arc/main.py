@@ -4,7 +4,9 @@ import argparse
 import asyncio
 import logging
 import multiprocessing
+import sys
 import time
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -33,6 +35,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("config.yaml"),
         help="Path to configuration file (default: config.yaml)",
     )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="store_true",
+        help="Show version and exit",
+    )
     args, _ = parser.parse_known_args()
     return args
 
@@ -47,6 +55,14 @@ async def run_conversion(config: Config) -> ProcessingStats:
 async def main() -> None:
     """Execute the main entry point."""
     args = parse_args()
+
+    if args.version:
+        try:
+            print(f"sql_to_arc version: {version('sql_to_arc')}")
+        except PackageNotFoundError:
+            print("sql_to_arc version: unknown (package not installed)")
+        sys.exit(0)
+
     try:
         wrapper = ConfigWrapper.from_yaml_file(args.config, prefix="SQL_TO_ARC")
         config = Config.from_config_wrapper(wrapper)
