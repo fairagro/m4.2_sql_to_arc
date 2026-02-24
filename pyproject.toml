@@ -111,6 +111,13 @@ exclude = [
   ".ruff_cache",
 ]
 
+[[tool.mypy.overrides]]
+module = [
+    "middleware.api_client.*",
+    "middleware.shared.*",
+]
+ignore_missing_imports = true
+
 # Docstring-Regeln aktivieren, damit es wie pylint C0114/15/16 meckert
 [tool.ruff.lint.pydocstyle]
 convention = "pep257" # oder "numpy", oder "google"
