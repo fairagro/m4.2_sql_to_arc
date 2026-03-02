@@ -10,6 +10,7 @@ from sqlalchemy import (
     bindparam,
     text,
 )
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from middleware.sql_to_arc.models import (
@@ -44,79 +45,115 @@ class Database:
 
     async def stream_investigations(self, limit: int | None = None) -> AsyncGenerator[InvestigationRow, None]:
         """Stream investigations using a server-side cursor."""
-        async with self.engine.connect() as conn:
-            sql = 'SELECT * FROM "vInvestigation"'
-            if limit:
-                sql += f" LIMIT {limit}"
+        try:
+            async with self.engine.connect() as conn:
+                sql = 'SELECT * FROM "vInvestigation"'
+                if limit:
+                    sql += f" LIMIT {limit}"
 
-            stmt = text(sql).execution_options(stream_results=True)
-            result = await conn.stream(stmt)
-            async for row in result.mappings():
-                try:
-                    yield InvestigationRow.model_validate(row)
-                except ValidationError as e:
-                    logger.warning("Skipping investigation due to validation error: %s", e)
-                    continue
+                stmt = text(sql).execution_options(stream_results=True)
+                result = await conn.stream(stmt)
+                async for row in result.mappings():
+                    try:
+                        yield InvestigationRow.model_validate(row)
+                    except ValidationError as e:
+                        logger.warning("Skipping investigation due to validation error: %s", e)
+                        continue
+        except ProgrammingError as e:
+            if 'relation "vinvestigation" does not exist' in str(e).lower():
+                logger.warning('Table or view "vInvestigation" does not exist. Treating as empty.')
+            else:
+                raise
 
     async def stream_studies(self, investigation_ids: list[str]) -> AsyncGenerator[StudyRow, None]:
         """Stream studies for given investigations."""
         if not investigation_ids:
             return
-        async with self.engine.connect() as conn:
-            stmt = text('SELECT * FROM "vStudy" WHERE investigation_ref IN :ids').bindparams(
-                bindparam("ids", expanding=True)
-            )
-            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
-            async for row in result.mappings():
-                yield StudyRow.model_validate(row)
+        try:
+            async with self.engine.connect() as conn:
+                stmt = text('SELECT * FROM "vStudy" WHERE investigation_ref IN :ids').bindparams(
+                    bindparam("ids", expanding=True)
+                )
+                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
+                async for row in result.mappings():
+                    yield StudyRow.model_validate(row)
+        except ProgrammingError as e:
+            if 'relation "vstudy" does not exist' in str(e).lower():
+                logger.warning('Table or view "vStudy" does not exist. Treating as empty.')
+            else:
+                raise
 
     async def stream_assays(self, investigation_ids: list[str]) -> AsyncGenerator[AssayRow, None]:
         """Stream assets for given investigations."""
         if not investigation_ids:
             return
-        async with self.engine.connect() as conn:
-            stmt = text('SELECT * FROM "vAssay" WHERE investigation_ref IN :ids').bindparams(
-                bindparam("ids", expanding=True)
-            )
-            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
-            async for row in result.mappings():
-                yield AssayRow.model_validate(row)
+        try:
+            async with self.engine.connect() as conn:
+                stmt = text('SELECT * FROM "vAssay" WHERE investigation_ref IN :ids').bindparams(
+                    bindparam("ids", expanding=True)
+                )
+                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
+                async for row in result.mappings():
+                    yield AssayRow.model_validate(row)
+        except ProgrammingError as e:
+            if 'relation "vassay" does not exist' in str(e).lower():
+                logger.warning('Table or view "vAssay" does not exist. Treating as empty.')
+            else:
+                raise
 
     async def stream_contacts(self, investigation_ids: list[str]) -> AsyncGenerator[ContactRow, None]:
         """Stream contacts for given investigations."""
         if not investigation_ids:
             return
-        async with self.engine.connect() as conn:
-            stmt = text('SELECT * FROM "vContact" WHERE investigation_ref IN :ids').bindparams(
-                bindparam("ids", expanding=True)
-            )
-            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
-            async for row in result.mappings():
-                yield ContactRow.model_validate(row)
+        try:
+            async with self.engine.connect() as conn:
+                stmt = text('SELECT * FROM "vContact" WHERE investigation_ref IN :ids').bindparams(
+                    bindparam("ids", expanding=True)
+                )
+                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
+                async for row in result.mappings():
+                    yield ContactRow.model_validate(row)
+        except ProgrammingError as e:
+            if 'relation "vcontact" does not exist' in str(e).lower():
+                logger.warning('Table or view "vContact" does not exist. Treating as empty.')
+            else:
+                raise
 
     async def stream_publications(self, investigation_ids: list[str]) -> AsyncGenerator[PublicationRow, None]:
         """Stream publications for given investigations."""
         if not investigation_ids:
             return
-        async with self.engine.connect() as conn:
-            stmt = text('SELECT * FROM "vPublication" WHERE investigation_ref IN :ids').bindparams(
-                bindparam("ids", expanding=True)
-            )
-            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
-            async for row in result.mappings():
-                yield PublicationRow.model_validate(row)
+        try:
+            async with self.engine.connect() as conn:
+                stmt = text('SELECT * FROM "vPublication" WHERE investigation_ref IN :ids').bindparams(
+                    bindparam("ids", expanding=True)
+                )
+                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
+                async for row in result.mappings():
+                    yield PublicationRow.model_validate(row)
+        except ProgrammingError as e:
+            if 'relation "vpublication" does not exist' in str(e).lower():
+                logger.warning('Table or view "vPublication" does not exist. Treating as empty.')
+            else:
+                raise
 
     async def stream_annotation_tables(self, investigation_ids: list[str]) -> AsyncGenerator[dict[str, Any], None]:
         """Stream annotation tables for given investigations."""
         if not investigation_ids:
             return
-        async with self.engine.connect() as conn:
-            stmt = text("SELECT * FROM vAnnotationTable WHERE investigation_ref IN :ids").bindparams(
-                bindparam("ids", expanding=True)
-            )
-            result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
-            async for row in result.mappings():
-                yield dict(row)
+        try:
+            async with self.engine.connect() as conn:
+                stmt = text("SELECT * FROM vAnnotationTable WHERE investigation_ref IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                )
+                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
+                async for row in result.mappings():
+                    yield dict(row)
+        except ProgrammingError as e:
+            if 'relation "vannotationtable" does not exist' in str(e).lower():
+                logger.warning('Table or view "vAnnotationTable" does not exist. Treating as empty.')
+            else:
+                raise
 
     @asynccontextmanager
     async def connect(self) -> AsyncGenerator[AsyncConnection, None]:
