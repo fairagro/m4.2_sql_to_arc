@@ -15,8 +15,9 @@ import pytest
 
 from middleware.api_client import ApiClient
 from middleware.sql_to_arc.config import Config
+from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
 from middleware.sql_to_arc.main import parse_args
-from middleware.sql_to_arc.models import InvestigationRow, RelatedDataBatch, WorkerContext
+from middleware.sql_to_arc.models import InvestigationRow
 from middleware.sql_to_arc.processor import (
     process_investigation,
     process_investigations,

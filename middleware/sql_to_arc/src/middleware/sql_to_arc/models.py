@@ -1,12 +1,9 @@
 """Data models for the SQL-to-ARC conversion process."""
 
-import concurrent.futures
 from datetime import datetime
 from typing import Any, NamedTuple
 
-from pydantic import BaseModel, ConfigDict
-
-from middleware.api_client import ApiClient
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class InvestigationRow(BaseModel):
@@ -20,6 +17,12 @@ class InvestigationRow(BaseModel):
 
     model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True, from_attributes=True)
 
+    @field_validator("title", "description_text", mode="before")
+    @classmethod
+    def empty_string_on_none(cls, v: Any) -> str:
+        """Replace None with empty string for required text fields."""
+        return v if v is not None else ""
+
 
 class StudyRow(BaseModel):
     """Pydantic model for study database rows."""
@@ -27,7 +30,7 @@ class StudyRow(BaseModel):
     identifier: str
     investigation_ref: str
     title: str = ""
-    description_text: str = ""
+    description_text: str | None = None
     submission_date: datetime | None = None
     public_release_date: datetime | None = None
 
@@ -92,33 +95,3 @@ class ArcBuildData(NamedTuple):
     contacts: list[ContactRow]
     publications: list[PublicationRow]
     annotations: list[dict[str, Any]]
-
-
-class WorkerContext(BaseModel):
-    """Context data for a worker process."""
-
-    client: ApiClient
-    rdi: str
-    studies_by_inv: dict[str, list[StudyRow]]
-    assays_by_inv: dict[str, list[AssayRow]]
-    contacts_by_inv: dict[str, list[ContactRow]]
-    pubs_by_inv: dict[str, list[PublicationRow]]
-    anns_by_inv: dict[str, list[dict[str, Any]]]
-    worker_id: int
-    total_workers: int
-    executor: concurrent.futures.Executor
-    arc_generation_timeout_minutes: int = 30
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
-class RelatedDataBatch(NamedTuple):
-    """Batch of related data grouped by investigation ID."""
-
-    studies_by_inv: dict[str, list[StudyRow]]
-    assays_by_inv: dict[str, list[AssayRow]]
-    contacts_by_inv: dict[str, list[ContactRow]]
-    pubs_by_inv: dict[str, list[PublicationRow]]
-    anns_by_inv: dict[str, list[dict[str, Any]]]
-    study_count: int
-    assay_count: int

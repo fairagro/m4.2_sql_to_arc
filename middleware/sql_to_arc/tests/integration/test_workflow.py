@@ -14,6 +14,7 @@ from middleware.api_client import ApiClient
 from middleware.shared.api_models.models import CreateOrUpdateArcsResponse
 from middleware.shared.config.config_base import OtelConfig
 from middleware.sql_to_arc.config import Config
+from middleware.sql_to_arc.context import WorkerContext
 from middleware.sql_to_arc.main import main
 from middleware.sql_to_arc.models import (
     AssayRow,
@@ -21,7 +22,6 @@ from middleware.sql_to_arc.models import (
     InvestigationRow,
     PublicationRow,
     StudyRow,
-    WorkerContext,
 )
 from middleware.sql_to_arc.processor import process_investigation
 from middleware.sql_to_arc.stats import ProcessingStats

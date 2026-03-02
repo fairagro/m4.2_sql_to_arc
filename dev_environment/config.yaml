@@ -1,11 +1,5 @@
 log_level: INFO
 
-db_name: edaphobase
-db_user: postgres
-db_password: ~
-db_host: postgres  # Docker service name
-db_port: 5432
-
 rdi: edaphobase
 rdi_url: https://edaphobase.org
 max_concurrent_arc_builds: 12

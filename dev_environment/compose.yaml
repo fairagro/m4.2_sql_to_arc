@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
     ports:
       - "5432:5432"
@@ -25,7 +25,7 @@ services:
     environment:
       PGHOST: postgres
       PGUSER: ${POSTGRES_USER:-postgres}
-      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: postgres
     entrypoint: /bin/bash
     command:
@@ -54,15 +54,15 @@ services:
       db-init:
         condition: service_completed_successfully
     environment:
-      SQL_TO_ARC_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      CLIENT_KEY_DATA: ${data}
+      SQL_TO_ARC_CONNECTION_STRING: ${CONNECTION_STRING}
+      SQL_TO_ARC_CLIENT_KEY_DATA: ${CLIENT_KEY}
     tmpfs:
       - /run/secrets:mode=1777
     volumes:
       - ./config.yaml:/etc/sql_to_arc/config.yaml:ro
       - ./client.crt:/etc/sql_to_arc/client.crt:ro
     command: >
-      sh -c "printf '%s' \"$$CLIENT_KEY_DATA\" > /run/secrets/client.key &&
+      sh -c "printf '%s' \"$SQL_TO_ARC_CLIENT_KEY_DATA\" > /run/secrets/client.key &&
             /middleware/sql_to_arc/sql_to_arc -c /etc/sql_to_arc/config.yaml"
     restart: no
 

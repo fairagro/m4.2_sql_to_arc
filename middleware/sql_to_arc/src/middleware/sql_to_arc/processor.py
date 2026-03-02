@@ -16,12 +16,11 @@ from pydantic import BaseModel
 from middleware.api_client import ApiClient, ApiClientError
 from middleware.sql_to_arc.builder import build_single_arc_task
 from middleware.sql_to_arc.config import Config
+from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
 from middleware.sql_to_arc.database import Database
 from middleware.sql_to_arc.models import (
     ArcBuildData,
     InvestigationRow,
-    RelatedDataBatch,
-    WorkerContext,
 )
 from middleware.sql_to_arc.stats import ProcessingStats
 
