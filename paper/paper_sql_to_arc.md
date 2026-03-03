@@ -1,4 +1,4 @@
-# From Roadmap to Reality: Implementing the FAIRagro Extended Middleware for Automated ARC Generation from Legacy Research Databases
+# From Roadmap to Reality: Implementing the FAIRagro Extended Middleware for Automated ARC Generation from Heterogeneous Research Data Infrastructures
 
 **Authors:** Carsten Külheim¹
 
@@ -6,7 +6,7 @@
 
 **Correspondence:** [email]
 
-**Keywords:** FAIR data, Annotated Research Context, ARC, ISA model, research data management, middleware, agrosystems, NFDI, RO-Crate, federated infrastructure
+**Keywords:** FAIR data, Annotated Research Context, ARC, ISA model, research data management, middleware, agrosystems, NFDI, RO-Crate, federated infrastructure, INSPIRE, CSW
 
 ---
 
@@ -14,9 +14,9 @@
 
 **Background:** In a previous publication, García Brizuela et al. [1] presented the FAIRagro middleware roadmap — a federated architecture concept for connecting heterogeneous research data infrastructures (RDIs) in the German agrosystems science community. That roadmap outlined a two-phase approach: a basic middleware for metadata harvesting and an extended middleware capable of transforming legacy research data into FAIR Digital Objects (FDOs) using the Annotated Research Context (ARC) specification. While the basic middleware was operational at the time of publication, the extended middleware remained a conceptual design.
 
-**Findings:** We report the realisation of the extended middleware concept. We have developed and deployed two open-source components that together form a complete pipeline from relational research databases to FAIR data publication: (1) `sql-to-arc`, a conversion tool that extracts metadata from arbitrary relational databases and transforms it into ARCs using a view-based adapter pattern, and (2) the FAIRagro Advanced Middleware API, a gateway service that validates and publishes ARCs to the DataPLANT DataHub. The system has been applied to the Edaphobase soil fauna database, demonstrating the feasibility of the approach for large-scale, automated FAIRification of legacy research data.
+**Findings:** We report the realisation of the extended middleware concept. We have developed and deployed three open-source components: (1) `sql-to-arc`, a conversion tool that extracts metadata from relational databases and transforms it into ARCs using a view-based adapter pattern; (2) `inspire-to-arc`, a harvesting tool that converts geospatial metadata from INSPIRE-compliant CSW (Catalogue Service for the Web) endpoints into ARCs; and (3) the FAIRagro Advanced Middleware API, a gateway service that validates and publishes ARCs to the DataPLANT DataHub. The system has been applied to two RDIs: the Edaphobase soil fauna database (via `sql-to-arc`) and the BonaRes soil and agricultural research data repository (via `inspire-to-arc`).
 
-**Conclusions:** The work presented here advances the FAIRagro middleware from its initial roadmap phase into an operational system. The view-based adapter pattern provides a low-friction mechanism for connecting diverse databases, while the middleware API decouples data providers from the specifics of the target FAIR data repository. Together, these components address a key gap identified in the roadmap: the automated, scalable conversion of legacy relational database metadata into standardised FAIR Digital Objects.
+**Conclusions:** The work presented here advances the FAIRagro middleware from its initial roadmap phase into an operational system. The two conversion clients demonstrate that the middleware architecture supports heterogeneous data sources — from relational databases to standardised geospatial catalogue services — while the common middleware API decouples data providers from the specifics of the target FAIR data repository. Together, these components address a key gap identified in the roadmap: the automated, scalable conversion of legacy research data metadata into standardised FAIR Digital Objects.
 
 ---
 
@@ -36,7 +36,7 @@ García Brizuela et al. [1] described the design process and resulting architect
 
 2. **Extended middleware:** A more comprehensive system designed to go beyond metadata harvesting and enable the transformation of actual research data and rich metadata into FAIR Digital Objects (FDOs). The roadmap proposed adopting the Annotated Research Context (ARC) specification and the associated tooling ecosystem developed by the NFDI consortium DataPLANT (NFDI4Plants) [6]. The extended middleware was envisioned to support both a "push" strategy — where RDIs actively construct and submit ARCs — and a "pull" strategy — where the middleware retrieves datasets and transforms them into ARCs in a semi-automated process.
 
-The present paper reports on the realisation of the extended middleware concept, specifically the "push" strategy in which an RDI-side tool actively constructs ARCs from legacy relational databases and submits them to the middleware for publication.
+The present paper reports on the realisation of the extended middleware concept. We describe two conversion clients that implement both strategies: `sql-to-arc` follows the "push" approach, where the RDI actively constructs ARCs from its relational database and submits them to the middleware; `inspire-to-arc` follows the "pull" approach, where the middleware harvests metadata from INSPIRE-compliant geospatial catalogue services and transforms it into ARCs.
 
 #### The Annotated Research Context (ARC)
 
@@ -54,13 +54,13 @@ The choice of ARC as the FDO format for the extended middleware was motivated by
 
 ### Approach
 
-The core challenge addressed in this work is the automated transformation of metadata from legacy relational databases into ARCs. This corresponds to the "push" strategy described in the middleware roadmap [1], where RDIs actively integrate the construction of ARCs into their data provision process and submit them to the middleware for validation and publication.
+The core challenge addressed in this work is the automated transformation of metadata from heterogeneous research data infrastructures into ARCs. The middleware roadmap [1] envisioned two complementary strategies: a "push" strategy, where RDIs actively construct ARCs and submit them to the middleware, and a "pull" strategy, where the middleware retrieves and converts data from external sources. We have implemented both: `sql-to-arc` realises the push strategy for relational databases, while `inspire-to-arc` realises the pull strategy for INSPIRE-compliant catalogue services.
 
-Our approach rests on two design decisions:
+Our approach rests on two principles:
 
-1. **View-based database adapter:** Rather than developing custom extraction code for each database, we define a standardised set of SQL views that map the source database's schema to the ISA data model. This separates the database-specific mapping logic from the conversion engine: a database administrator creates the views, while the conversion tool remains database-agnostic.
+1. **Source-specific conversion clients:** Each type of data source is served by a dedicated conversion client that handles the extraction and mapping of metadata to the ISA model. We have developed two such clients: `sql-to-arc` for relational databases (using a view-based adapter pattern) and `inspire-to-arc` for INSPIRE-compliant geospatial catalogue services (using the CSW protocol). This separation allows each client to be optimised for its specific data source while sharing the common ARC construction and publication logic.
 
-2. **Decoupled middleware API:** The conversion tool does not interact directly with the target ARC repository (the DataPLANT DataHub). Instead, it submits completed ARCs to a dedicated middleware API that handles validation, authentication, and publication. This decoupling provides a stable interface for data conversion clients and shields them from changes in the target repository's API.
+2. **Decoupled middleware API:** The conversion clients do not interact directly with the target ARC repository (the DataPLANT DataHub). Instead, they submit completed ARCs to a dedicated middleware API that handles validation, authentication, and publication. This decoupling provides a stable interface for all conversion clients and shields them from changes in the target repository's API.
 
 #### The View-Based Database Adapter
 
@@ -85,48 +85,73 @@ The FAIRagro Advanced Middleware API is the gateway between data conversion clie
 
 This component realises the "ARC-based GitLab infrastructure" described in the middleware roadmap [1] as the central component of the extended middleware. By providing a dedicated API layer, the middleware ensures that data providers do not need to interact directly with the DataHub's GitLab API, which simplifies client development and allows the middleware to enforce validation and quality checks before publication.
 
-#### Conversion Pipeline
+#### The INSPIRE-to-ARC Converter
 
-The `sql-to-arc` tool implements the conversion from relational database to ARC. Given a configured database connection and the set of SQL views described above, the tool:
+While `sql-to-arc` addresses RDIs backed by relational databases, many research data infrastructures in the agrosystems domain — particularly those dealing with geospatial and environmental data — expose their metadata through INSPIRE-compliant catalogue services [11]. INSPIRE (Infrastructure for Spatial Information in the European Community) is the EU directive that establishes a standardised spatial data infrastructure across Europe, and many German RDIs in the agricultural and environmental domain provide CSW (Catalogue Service for the Web) endpoints that serve ISO 19139-encoded metadata.
 
-1. Streams investigation metadata from the database.
-2. For each investigation, fetches the associated studies, assays, contacts, publications, and annotation tables.
-3. Constructs a complete ARC object using the `arctrl` library — the Python binding of the DataPLANT ARC tooling ecosystem.
-4. Serialises the ARC as RO-Crate JSON-LD.
-5. Submits the result to the Advanced Middleware API for validation and publication.
+The `inspire-to-arc` tool harvests metadata from such CSW endpoints and converts it into ARCs. This presents a different mapping challenge than the SQL-based approach: INSPIRE metadata describes *datasets and their provenance* (spatial extent, temporal coverage, data quality, lineage), while the ISA model describes *research processes* (investigations, studies, assays). The converter addresses this conceptual gap by mapping INSPIRE metadata to a protocol-based ARC structure:
 
-The pipeline is designed for production use with large databases. It employs asynchronous I/O for database and network operations, parallel processing for the CPU-intensive ARC construction step, and flow control mechanisms to maintain a constant memory footprint regardless of database size. Per-investigation error handling ensures that a failure for one dataset does not abort the processing of the remaining datasets. A structured processing report is generated at the end of each run.
+- The dataset's overall context (title, abstract, contacts, identifiers) maps to an **Investigation**.
+- The data creation workflow — reconstructed from lineage statements, spatial sampling, data acquisition, and processing steps — maps to a **Study** with ordered protocols.
+- The measurement outputs and technology descriptions map to an **Assay**.
 
-### Application: Edaphobase
+Like `sql-to-arc`, the converter submits completed ARCs to the Advanced Middleware API. Both tools share common infrastructure components (the `api_client` library for middleware communication, and `shared` models for configuration).
 
-To validate the approach, the pipeline has been applied to Edaphobase — a curated research database of soil fauna maintained by the Senckenberg Museum of Natural History Görlitz [9]. Edaphobase contains ecological and taxonomic data on soil organisms, with records spanning decades of research. This data is highly valuable for soil ecology and biodiversity research but was previously accessible only through the Edaphobase web interface.
+#### Conversion Pipelines
 
-By creating the required SQL views on the Edaphobase PostgreSQL database, the existing metadata was mapped to the ISA model without modifying the source application. The `sql-to-arc` pipeline then automatically converts and publishes this metadata as ARCs to the DataPLANT DataHub via the Advanced Middleware API. This demonstrates the feasibility of the "push" strategy for automated FAIRification of legacy databases as envisioned in the middleware roadmap.
+Both conversion clients follow the same high-level pipeline pattern:
+
+1. **Extract** metadata from the source (SQL views for `sql-to-arc`; CSW queries for `inspire-to-arc`).
+2. **Map** the extracted metadata to the ISA model.
+3. **Construct** a complete ARC object using the `arctrl` library — the Python binding of the DataPLANT ARC tooling ecosystem.
+4. **Serialise** the ARC as RO-Crate JSON-LD.
+5. **Submit** the result to the Advanced Middleware API for validation and publication.
+
+Both pipelines are designed for production use with large numbers of datasets. They employ asynchronous I/O for network operations, parallel processing for the CPU-intensive ARC construction step, and flow control mechanisms to maintain a constant memory footprint. Per-dataset error handling ensures that a failure for one investigation does not abort the processing of the remaining datasets. A structured processing report is generated at the end of each run.
+
+### Applications
+
+To validate the approach, the conversion clients have been applied to two FAIRagro research data infrastructures with fundamentally different characteristics.
+
+#### Edaphobase (via sql-to-arc)
+
+Edaphobase is a curated research database of soil fauna maintained by the Senckenberg Museum of Natural History Görlitz [9]. It contains ecological and taxonomic data on soil organisms, with records spanning decades of research. This data is highly valuable for soil ecology and biodiversity research but was previously accessible only through the Edaphobase web interface and its underlying PostgreSQL database.
+
+By creating the required SQL views on the Edaphobase database, the existing metadata was mapped to the ISA model without modifying the source application. The `sql-to-arc` pipeline then automatically converts and publishes this metadata as ARCs to the DataPLANT DataHub via the Advanced Middleware API.
+
+#### BonaRes (via inspire-to-arc)
+
+The BonaRes repository [10] is a research data infrastructure for soil and agricultural science, providing access to a large collection of datasets with rich geospatial metadata. BonaRes exposes its metadata through an INSPIRE-compliant CSW endpoint, making it accessible via standardised geospatial catalogue protocols.
+
+The `inspire-to-arc` tool harvests metadata from the BonaRes CSW endpoint and converts it into ARCs. This demonstrates that the middleware architecture is not limited to relational database sources but can accommodate any RDI that exposes metadata through standardised interfaces.
+
+Taken together, these two applications validate the extensibility of the extended middleware concept: heterogeneous data sources can be connected through dedicated conversion clients that share the common middleware API as their publication gateway.
 
 ### Related Work
 
 The challenge of making legacy research data FAIR has prompted the development of various tools and approaches, each addressing different stages of the FAIRification process.
 
-**ISA API** [10] is a comprehensive Python library for creating, editing, parsing, and validating ISA-Tab and ISA-JSON documents. It is the standard tool for programmatic manipulation of ISA metadata and is used by platforms such as MetaboLights and the Galaxy workflow system. However, the ISA API operates on data that is already in ISA format; it does not address the upstream problem of extracting metadata from relational databases.
+**ISA API** [12] is a comprehensive Python library for creating, editing, parsing, and validating ISA-Tab and ISA-JSON documents. It is the standard tool for programmatic manipulation of ISA metadata and is used by platforms such as MetaboLights and the Galaxy workflow system. However, the ISA API operates on data that is already in ISA format; it does not address the upstream problem of extracting metadata from relational databases.
 
 **arc-to-roc** (`nfdi4plants/arc-to-rocrate`) generates RO-Crate packages from existing ARCs. Like the ISA API, it operates on data that is already in ARC format and thus addresses a different stage of the FAIR data lifecycle.
 
 **ro-crate-py** [7] is a Python library for creating and manipulating RO-Crate objects. It provides a general-purpose API but does not implement the ISA model or the ARC profile, meaning that constructing ARCs from relational data would require substantial custom development for each data source.
 
-**OMERO** [11] and **iRODS** [12] are data management platforms capable of storing and annotating research data, but they do not target the specific task of converting relational database metadata into the ISA/ARC format.
+**OMERO** [13] and **iRODS** [14] are data management platforms capable of storing and annotating research data, but they do not target the specific task of converting relational database metadata into the ISA/ARC format.
 
-The approach presented here is complementary to these tools. It addresses the gap between legacy relational databases and the ISA/ARC ecosystem — a gap that, to our knowledge, is not covered by existing tools. The view-based adapter pattern ensures that connecting a new database requires domain expertise (creating SQL views) rather than software development, which aligns with the FAIRagro principle of respecting the operational autonomy of RDI operators [1].
+The approach presented here is complementary to these tools. It addresses the gap between heterogeneous legacy data sources and the ISA/ARC ecosystem — a gap that, to our knowledge, is not covered by existing tools. The view-based adapter pattern of `sql-to-arc` ensures that connecting a new database requires domain expertise (creating SQL views) rather than software development, while `inspire-to-arc` leverages existing standardised interfaces (CSW). Both approaches align with the FAIRagro principle of respecting the operational autonomy of RDI operators [1].
 
-| Feature                      | sql-to-arc | ISA API | arc-to-roc | ro-crate-py |
-| ---------------------------- | ---------- | ------- | ---------- | ----------- |
-| Input: relational database   | ✓          | ✗       | ✗          | ✗           |
-| Input: ISA-Tab/JSON          | ✗          | ✓       | ✗          | ✗           |
-| Input: ARC                   | ✗          | ✗       | ✓          | ✗           |
-| Output: ARC (via middleware) | ✓          | ✗       | ✗          | ✗           |
-| Output: RO-Crate             | ✗          | ✗       | ✓          | ✓           |
-| Output: ISA-Tab/JSON         | ✗          | ✓       | ✗          | ✗           |
-| No-code database adapter     | ✓          | ✗       | ✗          | ✗           |
-| Ontology annotation support  | ✓          | ✓       | ✓          | partial     |
+| Feature                        | sql-to-arc | inspire-to-arc | ISA API | arc-to-roc | ro-crate-py |
+| ------------------------------ | ---------- | -------------- | ------- | ---------- | ----------- |
+| Input: relational database     | ✓          | ✗              | ✗       | ✗          | ✗           |
+| Input: INSPIRE/CSW endpoint    | ✗          | ✓              | ✗       | ✗          | ✗           |
+| Input: ISA-Tab/JSON            | ✗          | ✗              | ✓       | ✗          | ✗           |
+| Input: ARC                     | ✗          | ✗              | ✗       | ✓          | ✗           |
+| Output: ARC (via middleware)   | ✓          | ✓              | ✗       | ✗          | ✗           |
+| Output: RO-Crate               | ✗          | ✗              | ✗       | ✓          | ✓           |
+| Output: ISA-Tab/JSON           | ✗          | ✗              | ✓       | ✗          | ✗           |
+| No-code database adapter       | ✓          | n/a            | ✗       | ✗          | ✗           |
+| Ontology annotation support    | ✓          | ✓              | ✓       | ✓          | partial     |
 
 ### Availability and Requirements
 
@@ -134,13 +159,19 @@ The approach presented here is complementary to these tools. It addresses the ga
 
 **Project home page:** https://github.com/fairagro/m4.2_sql_to_arc
 
+**Project name:** inspire-to-arc (m4.2_inspire_to_arc)
+
+**Project home page:** https://github.com/fairagro/m4.2_inspire_to_arc
+
 **Middleware home page:** https://github.com/fairagro/m4.2_advanced_middleware_api
 
 **Operating system(s):** Platform independent (Linux recommended for production)
 
 **Programming language:** Python 3.12+
 
-**Other requirements:** A target relational database (PostgreSQL, MySQL/MariaDB, MSSQL, or OracleDB) with the required SQL views; a running instance of the FAIRagro Advanced Middleware API
+**Other requirements for sql-to-arc:** A target relational database (PostgreSQL, MySQL/MariaDB, MSSQL, or OracleDB) with the required SQL views; a running instance of the FAIRagro Advanced Middleware API
+
+**Other requirements for inspire-to-arc:** An INSPIRE-compliant CSW endpoint; a running instance of the FAIRagro Advanced Middleware API
 
 **License:** MIT
 
@@ -150,11 +181,11 @@ The approach presented here is complementary to these tools. It addresses the ga
 
 In a previous publication, García Brizuela et al. [1] presented the roadmap for the FAIRagro middleware — a federated architecture for connecting heterogeneous research data infrastructures in the agrosystems science community. That roadmap identified two phases: a basic middleware for metadata harvesting and an extended middleware for transforming legacy data into FAIR Digital Objects.
 
-The work presented here advances the FAIRagro middleware from roadmap to operational system. With `sql-to-arc` and the Advanced Middleware API, we have realised the core of the extended middleware concept: an automated pipeline that converts metadata from legacy relational databases into Annotated Research Contexts and publishes them to the DataPLANT DataHub. The system has been validated with the Edaphobase soil fauna database, demonstrating the feasibility of the approach for production-scale FAIRification.
+The work presented here advances the FAIRagro middleware from roadmap to operational system. With `sql-to-arc`, `inspire-to-arc`, and the Advanced Middleware API, we have realised the core of the extended middleware concept: automated pipelines that convert metadata from heterogeneous data sources into Annotated Research Contexts and publish them to the DataPLANT DataHub. The system has been validated with two FAIRagro RDIs — Edaphobase (relational database) and BonaRes (INSPIRE/CSW catalogue) — demonstrating the feasibility and extensibility of the approach.
 
-Two design decisions are central to the approach. First, the view-based database adapter separates database-specific mapping logic from the conversion engine, ensuring that new databases can be connected through standard SQL operations rather than custom code. This respects the operational autonomy of RDI operators — a key principle of the FAIRagro federation concept. Second, the middleware API provides a stable, validated gateway to the target repository, decoupling data providers from the specifics of the DataPLANT DataHub.
+The architecture follows a client–gateway pattern: source-specific conversion clients handle the extraction and mapping of metadata from different types of data sources, while the common Advanced Middleware API provides a stable, validated gateway to the target repository. This design allows the middleware to accommodate new types of data sources by developing additional conversion clients, without changes to the gateway or the target repository. The view-based adapter pattern of `sql-to-arc` further lowers the barrier for relational databases by requiring only SQL view creation rather than custom code — respecting the operational autonomy of RDI operators, a key principle of the FAIRagro federation concept.
 
-Future work will focus on three directions: (1) supporting incremental updates so that only new or modified investigations are re-converted, (2) enriching partial ontology annotations using ontology lookup services as part of the semi-automated curation process described in the roadmap, and (3) extending the view schema to support additional ARC features such as workflow descriptions. Additionally, we plan to connect further FAIRagro RDIs using the same view-based adapter pattern, contributing to the step-wise expansion of the federated middleware infrastructure envisioned in the original roadmap.
+Future work will focus on three directions: (1) supporting incremental updates so that only new or modified investigations are re-converted, (2) enriching partial ontology annotations using ontology lookup services as part of the semi-automated curation process described in the roadmap, and (3) developing additional conversion clients for further RDI types. Additionally, we plan to connect further FAIRagro RDIs — both via existing clients and new ones — contributing to the step-wise expansion of the federated middleware infrastructure envisioned in the original roadmap.
 
 ---
 
@@ -166,9 +197,11 @@ Future work will focus on three directions: (1) supporting incremental updates s
 | ------------ | ----------------------------------------------------------------------------- |
 | AAI          | Authentication and Authorization Infrastructure                               |
 | ARC          | Annotated Research Context                                                    |
+| CSW          | Catalogue Service for the Web                                                 |
 | ETL          | Extract, Transform, Load                                                      |
 | FAIR         | Findable, Accessible, Interoperable, Reusable                                 |
 | FDO          | FAIR Digital Object                                                           |
+| INSPIRE      | Infrastructure for Spatial Information in the European Community               |
 | ISA          | Investigation, Study, Assay                                                   |
 | mTLS         | mutual Transport Layer Security                                               |
 | NFDI         | Nationale Forschungsdateninfrastruktur (National Research Data Infrastructure) |
@@ -215,10 +248,14 @@ CK designed and implemented the software, wrote the documentation, and drafted t
 
 [8] Rocca-Serra, P., Brandizi, M., Maguire, E., Sklyar, N., Taylor, C., Begley, K., ... & Sansone, S. A. (2010). ISA software suite: supporting standards-compliant experimental annotation and enabling curation at the community level. *Bioinformatics*, 26(18), 2354–2356. https://doi.org/10.1093/bioinformatics/btq415
 
-[9] ;Most probably use: For Edaphobase — add appropriate reference, e.g. When Edaphobase is published; or the Senckenberg institution reference. [to be added]
+[9] [Edaphobase reference — to be added]
 
-[10] Rocca-Serra, P., Sansone, S. A., et al. (2023). ISA API. GitHub. https://github.com/ISA-tools/isa-api
+[10] BonaRes Centre for Soil and Agricultural Research (2024). BonaRes Repository. https://www.bonares.de/
 
-[11] Allan, C., Bhattacharya, S., Bhattacharya, D., Bhattacharya, S., Bhattacharya, S., Bhattacharya, S., ... & Moore, J. (2012). OMERO: flexible, model-driven data management for experimental biology. *Nature Methods*, 9(3), 245–253. https://doi.org/10.1038/nmeth.1896
+[11] European Parliament and Council (2007). Directive 2007/2/EC establishing an Infrastructure for Spatial Information in the European Community (INSPIRE). *Official Journal of the European Union*, L 108, 1–14.
 
-[12] Rajasekar, A., Moore, R., Hou, C. Y., Lee, C. A., Marciano, R., de Torcy, A., ... & Wan, M. (2010). iRODS primer: integrated rule-oriented data system. *Synthesis Lectures on Information Concepts, Retrieval, and Services*, 2(1), 1–143. https://doi.org/10.2200/S00233ED1V01Y200912ICR012
+[12] Rocca-Serra, P., Sansone, S. A., et al. (2023). ISA API. GitHub. https://github.com/ISA-tools/isa-api
+
+[13] Allan, C., Bhattacharya, S., Bhattacharya, D., Bhattacharya, S., Bhattacharya, S., Bhattacharya, S., ... & Moore, J. (2012). OMERO: flexible, model-driven data management for experimental biology. *Nature Methods*, 9(3), 245–253. https://doi.org/10.1038/nmeth.1896
+
+[14] Rajasekar, A., Moore, R., Hou, C. Y., Lee, C. A., Marciano, R., de Torcy, A., ... & Wan, M. (2010). iRODS primer: integrated rule-oriented data system. *Synthesis Lectures on Information Concepts, Retrieval, and Services*, 2(1), 1–143. https://doi.org/10.2200/S00233ED1V01Y200912ICR012
