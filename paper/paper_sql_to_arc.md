@@ -36,7 +36,7 @@ García Brizuela et al. [1] described the design process and resulting architect
 
 2. **Extended middleware:** A more comprehensive system designed to go beyond metadata harvesting and enable the transformation of actual research data and rich metadata into FAIR Digital Objects (FDOs). The roadmap proposed adopting the Annotated Research Context (ARC) specification and the associated tooling ecosystem developed by the NFDI consortium DataPLANT (NFDI4Plants) [6]. The extended middleware was envisioned to support both a "push" strategy — where RDIs actively construct and submit ARCs — and a "pull" strategy — where the middleware retrieves datasets and transforms them into ARCs in a semi-automated process.
 
-The present paper reports on the realisation of the extended middleware concept, specifically the "pull" strategy for automated ARC generation from legacy relational databases.
+The present paper reports on the realisation of the extended middleware concept, specifically the "push" strategy in which an RDI-side tool actively constructs ARCs from legacy relational databases and submits them to the middleware for publication.
 
 #### The Annotated Research Context (ARC)
 
@@ -54,7 +54,7 @@ The choice of ARC as the FDO format for the extended middleware was motivated by
 
 ### Approach
 
-The core challenge addressed in this work is the automated transformation of metadata from legacy relational databases into ARCs. This is the "pull" strategy described in the middleware roadmap [1], where the middleware actively retrieves and converts data from existing RDIs rather than relying on the data providers to construct ARCs themselves.
+The core challenge addressed in this work is the automated transformation of metadata from legacy relational databases into ARCs. This corresponds to the "push" strategy described in the middleware roadmap [1], where RDIs actively integrate the construction of ARCs into their data provision process and submit them to the middleware for validation and publication.
 
 Our approach rests on two design decisions:
 
@@ -101,7 +101,7 @@ The pipeline is designed for production use with large databases. It employs asy
 
 To validate the approach, the pipeline has been applied to Edaphobase — a curated research database of soil fauna maintained by the Senckenberg Museum of Natural History Görlitz [9]. Edaphobase contains ecological and taxonomic data on soil organisms, with records spanning decades of research. This data is highly valuable for soil ecology and biodiversity research but was previously accessible only through the Edaphobase web interface.
 
-By creating the required SQL views on the Edaphobase PostgreSQL database, the existing metadata was mapped to the ISA model without modifying the source application. The `sql-to-arc` pipeline then automatically converts and publishes this metadata as ARCs to the DataPLANT DataHub via the Advanced Middleware API. This demonstrates the feasibility of the "pull" strategy for automated FAIRification of legacy databases as envisioned in the middleware roadmap.
+By creating the required SQL views on the Edaphobase PostgreSQL database, the existing metadata was mapped to the ISA model without modifying the source application. The `sql-to-arc` pipeline then automatically converts and publishes this metadata as ARCs to the DataPLANT DataHub via the Advanced Middleware API. This demonstrates the feasibility of the "push" strategy for automated FAIRification of legacy databases as envisioned in the middleware roadmap.
 
 ### Related Work
 
