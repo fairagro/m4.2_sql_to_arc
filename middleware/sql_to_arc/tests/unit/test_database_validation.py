@@ -50,14 +50,14 @@ async def test_validate_row_missing_optional_warns(caplog: pytest.LogCaptureFixt
 @pytest.mark.asyncio
 async def test_validate_row_description_text_exception() -> None:
     """Test that missing required columns raise Exception."""
-    # description_text is required and must exist.
-    row = {"identifier": "1", "title": "Test"}
+    # title is required and must exist.
+    row = {"identifier": "1", "description_text": "Desc"}
 
     with pytest.raises(Exception) as excinfo:
         InvestigationRow.model_validate(row)
 
     assert "Missing required columns" in str(excinfo.value)
-    assert "description_text" in str(excinfo.value)
+    assert "title" in str(excinfo.value)
 
 
 @pytest.mark.asyncio

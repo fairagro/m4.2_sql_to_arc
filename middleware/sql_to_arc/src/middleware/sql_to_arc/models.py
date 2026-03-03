@@ -8,6 +8,7 @@ from types import NoneType
 from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic_core import PydanticUndefined
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ def spec_field(
     *,
     required: bool | None = None,
     allow_spec_override: bool = False,
-    default: Any = None,
+    default: Any = PydanticUndefined,
     **kwargs: Any,
 ) -> Any:
     """Define database-mapped fields with ARC spec metadata."""
@@ -66,7 +67,8 @@ class BaseRow(BaseModel):
     @staticmethod
     def _field_default(field_info: Any) -> Any:
         """Return default value for a field, including default_factory values."""
-        return field_info.get_default(call_default_factory=True)
+        val = field_info.get_default(call_default_factory=True)
+        return None if val is PydanticUndefined else val
 
     @staticmethod
     def _field_accepts_string(annotation: Any) -> bool:
@@ -252,8 +254,8 @@ class InvestigationRow(BaseRow):
     identifier: str = spec_field()
     title: str = spec_field()
     description_text: str = spec_field(default="", allow_spec_override=True)
-    submission_date: datetime | None = spec_field()
-    public_release_date: datetime | None = spec_field()
+    submission_date: datetime | None = spec_field(default=None)
+    public_release_date: datetime | None = spec_field(default=None)
 
 
 class StudyRow(BaseRow):
@@ -262,9 +264,9 @@ class StudyRow(BaseRow):
     identifier: str = spec_field()
     investigation_ref: str = spec_field()
     title: str = spec_field()
-    description_text: str | None = spec_field()
-    submission_date: datetime | None = spec_field()
-    public_release_date: datetime | None = spec_field()
+    description_text: str | None = spec_field(default=None)
+    submission_date: datetime | None = spec_field(default=None)
+    public_release_date: datetime | None = spec_field(default=None)
 
 
 class AssayRow(BaseRow):
@@ -272,16 +274,16 @@ class AssayRow(BaseRow):
 
     identifier: str = spec_field()
     investigation_ref: str = spec_field()
-    study_ref: str | None = spec_field()
-    title: str | None = spec_field()
-    description_text: str | None = spec_field()
-    measurement_type_term: str | None = spec_field()
-    measurement_type_uri: str | None = spec_field()
-    measurement_type_version: str | None = spec_field()
-    technology_type_term: str | None = spec_field()
-    technology_type_uri: str | None = spec_field()
-    technology_type_version: str | None = spec_field()
-    technology_platform: str | None = spec_field()
+    study_ref: str | None = spec_field(default=None)
+    title: str | None = spec_field(default=None)
+    description_text: str | None = spec_field(default=None)
+    measurement_type_term: str | None = spec_field(default=None)
+    measurement_type_uri: str | None = spec_field(default=None)
+    measurement_type_version: str | None = spec_field(default=None)
+    technology_type_term: str | None = spec_field(default=None)
+    technology_type_uri: str | None = spec_field(default=None)
+    technology_type_version: str | None = spec_field(default=None)
+    technology_platform: str | None = spec_field(default=None)
 
 
 class PublicationRow(BaseRow):
@@ -289,14 +291,14 @@ class PublicationRow(BaseRow):
 
     investigation_ref: str = spec_field()
     target_type: str = spec_field()
-    pubmed_id: str | None = spec_field()
-    doi: str | None = spec_field()
-    authors: str | None = spec_field()
-    title: str | None = spec_field()
-    status_term: str | None = spec_field()
-    status_uri: str | None = spec_field()
-    status_version: str | None = spec_field()
-    target_ref: str | None = spec_field()
+    pubmed_id: str | None = spec_field(default=None)
+    doi: str | None = spec_field(default=None)
+    authors: str | None = spec_field(default=None)
+    title: str | None = spec_field(default=None)
+    status_term: str | None = spec_field(default=None)
+    status_uri: str | None = spec_field(default=None)
+    status_version: str | None = spec_field(default=None)
+    target_ref: str | None = spec_field(default=None)
 
 
 class ContactRow(BaseRow):
@@ -304,13 +306,13 @@ class ContactRow(BaseRow):
 
     investigation_ref: str = spec_field()
     target_type: str = spec_field()
-    last_name: str | None = spec_field()
-    first_name: str | None = spec_field()
-    mid_initials: str | None = spec_field()
-    email: str | None = spec_field()
-    phone: str | None = spec_field()
-    fax: str | None = spec_field()
-    postal_address: str | None = spec_field()
-    affiliation: str | None = spec_field()
-    roles: str | None = spec_field()  # JSON string
-    target_ref: str | None = spec_field()
+    last_name: str | None = spec_field(default=None)
+    first_name: str | None = spec_field(default=None)
+    mid_initials: str | None = spec_field(default=None)
+    email: str | None = spec_field(default=None)
+    phone: str | None = spec_field(default=None)
+    fax: str | None = spec_field(default=None)
+    postal_address: str | None = spec_field(default=None)
+    affiliation: str | None = spec_field(default=None)
+    roles: str | None = spec_field(default=None)  # JSON string
+    target_ref: str | None = spec_field(default=None)

@@ -89,14 +89,18 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     mock_db = MagicMock()
 
     # Mock DB stream methods
-    async def mock_gen(data: list[Any]) -> AsyncGenerator[Any, None]:
+    async def mock_gen(**kwargs: Any) -> AsyncGenerator[Any, None]:
+        stats = kwargs.get("stats")
+        data = [
+            InvestigationRow(identifier="1", title="T1", description_text="D1"),
+            InvestigationRow(identifier="2", title="T2", description_text="D2"),
+        ]
+        if stats:
+            stats.found_datasets += len(data)
         for item in data:
             yield item
 
-    mock_db.stream_investigations.side_effect = lambda **_: mock_gen([
-        InvestigationRow(identifier="1", title="T1", description_text="D1"),
-        InvestigationRow(identifier="2", title="T2", description_text="D2"),
-    ])
+    mock_db.stream_investigations.side_effect = mock_gen
 
     # Mock related data fetch
     async def mock_fetch_related(*_args: Any, **_kwargs: Any) -> RelatedDataBatch:
@@ -133,4 +137,4 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert stats.found_datasets == 2  # noqa: PLR2004
     assert stats.total_studies == 1
-    mock_db.stream_investigations.assert_called_with(limit=10)
+    mock_db.stream_investigations.assert_called_with(stats=stats, limit=10)
