@@ -17,6 +17,7 @@ from arctrl import (  # type: ignore[import-untyped]
     OntologyAnnotation,
 )
 
+from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.mapper import (
     map_assay,
     map_contact,
@@ -25,7 +26,6 @@ from middleware.sql_to_arc.mapper import (
     map_study,
 )
 from middleware.sql_to_arc.models import (
-    ArcBuildData,
     AssayRow,
     ContactRow,
     PublicationRow,

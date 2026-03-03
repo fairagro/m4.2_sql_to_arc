@@ -8,9 +8,22 @@ from middleware.api_client import ApiClient
 from middleware.sql_to_arc.models import (
     AssayRow,
     ContactRow,
+    InvestigationRow,
     PublicationRow,
     StudyRow,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ArcBuildData:
+    """Data bundle for building a single ARC."""
+
+    investigation_row: InvestigationRow
+    studies: list[StudyRow]
+    assays: list[AssayRow]
+    contacts: list[ContactRow]
+    publications: list[PublicationRow]
+    annotations: list[dict[str, Any]]
 
 
 @dataclass(frozen=True, slots=True)

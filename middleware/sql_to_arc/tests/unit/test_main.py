@@ -28,13 +28,15 @@ from middleware.sql_to_arc.stats import ProcessingStats
 class TestParseArgs:
     """Test suite for parse_args function."""
 
-    def test_parse_args_default(self) -> None:
+    @staticmethod
+    def test_parse_args_default() -> None:
         """Test parse_args with default config."""
         with patch("sys.argv", ["prog"]):
             args = parse_args()
             assert args.config == Path("config.yaml")
 
-    def test_parse_args_custom_config(self) -> None:
+    @staticmethod
+    def test_parse_args_custom_config() -> None:
         """Test parse_args with custom config file."""
         with patch("sys.argv", ["prog", "-c", "/path/to/config.yaml"]):
             args = parse_args()
@@ -91,9 +93,10 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
         for item in data:
             yield item
 
-    mock_db.stream_investigations.side_effect = lambda **_: mock_gen(
-        [InvestigationRow(identifier="1"), InvestigationRow(identifier="2")]
-    )
+    mock_db.stream_investigations.side_effect = lambda **_: mock_gen([
+        InvestigationRow(identifier="1", title="T1", description_text="D1"),
+        InvestigationRow(identifier="2", title="T2", description_text="D2"),
+    ])
 
     # Mock related data fetch
     async def mock_fetch_related(*_args: Any, **_kwargs: Any) -> RelatedDataBatch:

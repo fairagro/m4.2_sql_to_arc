@@ -52,13 +52,15 @@ def test_map_investigation_defaults() -> None:
     """Test mapping of investigation data with missing optional fields."""
     row = InvestigationRow(
         identifier="456",
+        title="Default Title",
+        description_text="Default Description",
     )
 
     arc = map_investigation(row)
 
     assert arc.Identifier == "456"
-    assert arc.Title == ""
-    assert arc.Description == ""
+    assert arc.Title == "Default Title"
+    assert arc.Description == "Default Description"
     assert arc.SubmissionDate is None
     assert arc.PublicReleaseDate is None
 
@@ -89,6 +91,8 @@ def test_map_investigation_string_dates() -> None:
     """Test mapping of investigation data with string dates."""
     row = InvestigationRow(
         identifier="789",
+        title="Title",
+        description_text="Description",
         submission_date=datetime.datetime.strptime("2023-01-01", "%Y-%m-%d"),
         public_release_date=datetime.datetime.strptime("2023-12-31", "%Y-%m-%d"),
     )
@@ -139,6 +143,8 @@ def test_map_assay_with_platform() -> None:
 def test_map_publication() -> None:
     """Test mapping of publication data."""
     row = PublicationRow(
+        investigation_ref="inv1",
+        target_type="investigation",
         pubmed_id="12345",
         doi="10.1234/5678",
         authors="Doe J, Smith A",
@@ -160,6 +166,8 @@ def test_map_publication() -> None:
 def test_map_contact() -> None:
     """Test mapping of contact data."""
     row = ContactRow(
+        investigation_ref="inv1",
+        target_type="investigation",
         last_name="Doe",
         first_name="John",
         email="john@example.com",
@@ -181,6 +189,8 @@ def test_map_contact() -> None:
 def test_map_contact_invalid_roles() -> None:
     """Test mapping of contact data with invalid roles JSON."""
     row = ContactRow(
+        investigation_ref="inv1",
+        target_type="investigation",
         last_name="Smith",
         roles="invalid json string",
     )

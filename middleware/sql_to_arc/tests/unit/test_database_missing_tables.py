@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy.exc import ProgrammingError
 
 from middleware.sql_to_arc.database import Database
+from middleware.sql_to_arc.stats import ProcessingStats
 
 
 @pytest.mark.asyncio
@@ -24,7 +25,7 @@ async def test_stream_investigations_missing_table(caplog: pytest.LogCaptureFixt
         mock_conn.stream.side_effect = ProgrammingError("SELECT", {}, Exception(error_msg))
 
         db = Database("postgresql://localhost/db")
-        results = [row async for row in db.stream_investigations()]
+        results = [row async for row in db.stream_investigations(stats=ProcessingStats())]
 
         assert len(results) == 0
         assert 'Table or view "vInvestigation" does not exist' in caplog.text
