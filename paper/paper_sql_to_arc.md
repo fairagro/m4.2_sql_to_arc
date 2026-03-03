@@ -129,29 +129,53 @@ Taken together, these two applications validate the extensibility of the extende
 
 ### Related Work
 
-The challenge of making legacy research data FAIR has prompted the development of various tools and approaches, each addressing different stages of the FAIRification process.
+The challenge of federating heterogeneous research data infrastructures under a unified interface has been addressed by numerous initiatives, both within the agrosystems domain and in the broader life sciences. In the following, we distinguish between *federation and discovery platforms* that aggregate metadata from multiple sources and *data transformation tools* that convert data into specific formats. The FAIRagro extended middleware combines aspects of both: it federates data from heterogeneous RDIs and transforms it into a standardised FAIR Digital Object format (ARC).
 
-**ISA API** [12] is a comprehensive Python library for creating, editing, parsing, and validating ISA-Tab and ISA-JSON documents. It is the standard tool for programmatic manipulation of ISA metadata and is used by platforms such as MetaboLights and the Galaxy workflow system. However, the ISA API operates on data that is already in ISA format; it does not address the upstream problem of extracting metadata from relational databases.
+#### Federated Data Infrastructures and Discovery Platforms
+
+Several large-scale initiatives aim to provide unified access to distributed research data, differing in their scope, federation strategy, and the depth of data integration they achieve.
+
+**GARDIAN** [18] (Global Agricultural Research Data Innovation and Acceleration Network) is the data discovery platform of the CGIAR system. It harvests metadata from institutional repositories of CGIAR centres worldwide, harmonises it against a common metadata schema, and provides a unified search interface. GARDIAN focuses on metadata discovery and linking; it does not transform the underlying data into a common format or construct standardised data objects.
+
+**AgReFed** [19] (Agricultural Research Federation) is an Australian initiative that provides FAIR guidelines, assessment tools, and minimum metadata standards for agricultural research data. AgReFed focuses on policy, governance, and FAIR assessment rather than on building infrastructure for automated data transformation. It offers guidance on making datasets FAIR but does not operate a middleware that transforms data between formats.
+
+**GFBio** [20] (German Federation for Biological Data) is a national data infrastructure for biological and environmental research in Germany, now closely associated with the NFDI consortium NFDI4Biodiversity. GFBio provides a submission portal that mediates data archiving across a network of specialised data centres. While GFBio supports the full data lifecycle, its federation model relies on a central submission workflow rather than on automated transformation of legacy database metadata into a common FDO format.
+
+In the broader life sciences, **NCBI Entrez** [21] provides a global query system that searches across more than 20 interconnected biological databases (PubMed, GenBank, Protein, Structure, Gene, and others) through a single interface. Entrez uses precomputed cross-references and the E-utilities API for programmatic access. However, Entrez is a centralised search and retrieval system operated by a single institution (NCBI); it does not address the challenge of federating autonomous, independently operated RDIs or transforming their data into a common format.
+
+**EMBL-EBI** [22] hosts one of the world's most comprehensive collections of freely available molecular data and provides API-driven access through services such as EBI Search. Like NCBI, EMBL-EBI follows a centralised model: data is ingested into institutional databases and made available through institutional APIs and search interfaces.
+
+**ELIXIR** [23] is a distributed European infrastructure for life science data that connects national bioinformatics nodes across 22 member countries. ELIXIR's Interoperability Platform promotes FAIR data standards and curates Recommended Interoperability Resources (RIRs). ELIXIR's federation model is closest to the FAIRagro approach: it connects autonomous nodes while respecting their independence. However, ELIXIR focuses primarily on coordination, standards, and interoperability policies rather than on automated data transformation pipelines.
+
+**BASE** [24] (Bielefeld Academic Search Engine), operated by Bielefeld University Library, is one of the world's largest search engines for academic web resources. BASE harvests OAI-PMH metadata from over 10,000 content providers worldwide and indexes more than 300 million documents. Like GARDIAN, BASE is a metadata discovery platform; it aggregates and indexes existing metadata but does not transform the underlying data.
+
+**OpenAIRE** [25] provides infrastructure for the European Open Science Cloud (EOSC), aggregating metadata from repositories across Europe and offering discovery, monitoring, and reporting services. OpenAIRE defines interoperability guidelines for data providers but, like the other discovery platforms, operates at the metadata aggregation level rather than transforming data into standardised research objects.
+
+A common pattern across these platforms is that federation is typically achieved through *metadata harvesting and indexing* — the platforms discover and aggregate metadata but leave the underlying data in its original format and location. The FAIRagro extended middleware goes further: it not only extracts metadata from heterogeneous sources but transforms it into a standardised FAIR Digital Object (ARC) and publishes it to a common repository, thereby achieving a deeper level of data integration.
+
+#### Data Transformation and FAIRification Tools
+
+At the tool level, several projects address specific stages of the FAIRification process.
+
+**ISA API** [12] is a comprehensive Python library for creating, editing, parsing, and validating ISA-Tab and ISA-JSON documents. It is the standard tool for programmatic manipulation of ISA metadata and is used by platforms such as MetaboLights and the Galaxy workflow system. However, the ISA API operates on data that is already in ISA format; it does not address the upstream problem of extracting metadata from legacy data sources.
 
 **arc-to-roc** (`nfdi4plants/arc-to-rocrate`) generates RO-Crate packages from existing ARCs. Like the ISA API, it operates on data that is already in ARC format and thus addresses a different stage of the FAIR data lifecycle.
 
-**ro-crate-py** [7] is a Python library for creating and manipulating RO-Crate objects. It provides a general-purpose API but does not implement the ISA model or the ARC profile, meaning that constructing ARCs from relational data would require substantial custom development for each data source.
+**ro-crate-py** [7] is a Python library for creating and manipulating RO-Crate objects. It provides a general-purpose API but does not implement the ISA model or the ARC profile, meaning that constructing ARCs from heterogeneous legacy sources would require substantial custom development for each data source.
 
-**OMERO** [13] and **iRODS** [14] are data management platforms capable of storing and annotating research data, but they do not target the specific task of converting relational database metadata into the ISA/ARC format.
+#### Positioning of the FAIRagro Extended Middleware
 
-The approach presented here is complementary to these tools. It addresses the gap between heterogeneous legacy data sources and the ISA/ARC ecosystem — a gap that, to our knowledge, is not covered by existing tools. The view-based adapter pattern of `sql-to-arc` ensures that connecting a new database requires domain expertise (creating SQL views) rather than software development, while `inspire-to-arc` leverages existing standardised interfaces (CSW). Both approaches align with the FAIRagro principle of respecting the operational autonomy of RDI operators [1].
+The approach presented here occupies a distinct position: it combines *federation* (connecting autonomous, heterogeneous RDIs) with *automated data transformation* (converting metadata into a standardised FDO format). While discovery platforms like GARDIAN, BASE, and OpenAIRE aggregate metadata for search and reuse, the FAIRagro middleware actively transforms legacy metadata into semantically rich, self-describing ARC objects and publishes them to a common repository. This deeper integration goes beyond what metadata harvesting alone can achieve, while the client–gateway architecture — with source-specific conversion clients and a common middleware API — mirrors the federated, autonomy-preserving design principles seen in ELIXIR.
 
-| Feature                        | sql-to-arc | inspire-to-arc | ISA API | arc-to-roc | ro-crate-py |
-| ------------------------------ | ---------- | -------------- | ------- | ---------- | ----------- |
-| Input: relational database     | ✓          | ✗              | ✗       | ✗          | ✗           |
-| Input: INSPIRE/CSW endpoint    | ✗          | ✓              | ✗       | ✗          | ✗           |
-| Input: ISA-Tab/JSON            | ✗          | ✗              | ✓       | ✗          | ✗           |
-| Input: ARC                     | ✗          | ✗              | ✗       | ✓          | ✗           |
-| Output: ARC (via middleware)   | ✓          | ✓              | ✗       | ✗          | ✗           |
-| Output: RO-Crate               | ✗          | ✗              | ✗       | ✓          | ✓           |
-| Output: ISA-Tab/JSON           | ✗          | ✗              | ✓       | ✗          | ✗           |
-| No-code database adapter       | ✓          | n/a            | ✗       | ✗          | ✗           |
-| Ontology annotation support    | ✓          | ✓              | ✓       | ✓          | partial     |
+| Aspect                             | FAIRagro Middleware | GARDIAN | NCBI Entrez | ELIXIR | BASE / OpenAIRE |
+| ---------------------------------- | ------------------- | ------- | ----------- | ------ | ---------------- |
+| Domain                             | Agrosystems         | Agriculture (CGIAR) | Life sciences | Life sciences | Multidisciplinary |
+| Federation of autonomous RDIs      | ✓                   | ✓       | ✗ (centralised) | ✓  | ✓                |
+| Metadata harvesting                | ✓ (basic MW)        | ✓       | ✗           | ✓      | ✓                |
+| Data transformation to common FDO  | ✓ (extended MW)     | ✗       | ✗           | ✗      | ✗                |
+| Standardised output format (ARC)   | ✓                   | ✗       | ✗           | ✗      | ✗                |
+| Push and pull strategies           | ✓                   | pull only | n/a       | n/a    | pull only        |
+| Source-specific conversion clients | ✓                   | ✗       | ✗           | ✗      | ✗                |
 
 ### Availability and Requirements
 
@@ -267,3 +291,19 @@ CK designed and implemented the software, wrote the documentation, and drafted t
 [16] Gray, A. J. G., Goble, C., & Jiménez, R. C. (2017). Bioschemas: from potato salad to protein annotation. In *Proceedings of the ISWC 2017 Posters & Demonstrations and Industry Tracks*. https://bioschemas.org/
 
 [17] Schneider, G., Jung, J., Reinosch, N., & Martini, D. (2024). (Meta) Data Standards for agricultural research data management and approaches towards evaluation. An overview. [Poster]. *FAIRagro*. Zenodo. https://doi.org/10.5281/zenodo.12794379
+
+[18] CGIAR Platform for Big Data in Agriculture (2020). GARDIAN: Global Agricultural Research Data Innovation and Acceleration Network. https://gardian.bigdata.cgiar.org/
+
+[19] AgReFed (2023). Agricultural Research Federation — FAIR Agricultural Data for Australia. https://www.agrefed.org.au/
+
+[20] Diepenbroek, M., Glöckner, F. O., Zielinski, D., Classification, A., König-Ries, B., Frommer, B., ... & 19 partners (2014). Towards an integrated biodiversity and ecological research data management and archiving platform: the German Federation for the Curation of Biological Data (GFBio). *Informatik 2014*, 1711–1721. https://www.gfbio.org/
+
+[21] Sayers, E. W., Bolton, E. E., Brister, J. R., Canese, K., Chan, J., Comeau, D. C., ... & Sherry, S. T. (2022). Database resources of the National Center for Biotechnology Information. *Nucleic Acids Research*, 50(D1), D13–D25. https://doi.org/10.1093/nar/gkab1112
+
+[22] Burley, S. K., Cochrane, G., Denber, P., Griffin, R., Hendricks, A., Kanz, C., ... & Apweiler, R. (2023). EMBL-EBI in 2022. *Nucleic Acids Research*, 51(D1), D9–D17. https://doi.org/10.1093/nar/gkac1098
+
+[23] Lemberger, T. (2015). From bench to website: ELIXIR — a distributed infrastructure for life-science information. *Molecular Systems Biology*, 11(2), 785. https://doi.org/10.15252/msb.20156028
+
+[24] Pieper, D. & Summann, F. (2006). Bielefeld Academic Search Engine (BASE): An end-user oriented institutional repository search service. *Library Hi Tech*, 24(4), 614–619. https://doi.org/10.1108/07378830610715473
+
+[25] Manghi, P., Atzori, C., Bardi, A., Baglioni, M., Schirrwagen, J., Dimitropoulos, H., ... & La Bruzzo, S. (2022). OpenAIRE Research Graph. *Zenodo*. https://doi.org/10.5281/zenodo.6616871
