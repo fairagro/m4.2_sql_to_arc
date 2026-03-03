@@ -1,6 +1,5 @@
 """Mapper module to convert database rows to ARCTRL objects."""
 
-import json
 from datetime import datetime
 from typing import Any
 
@@ -116,17 +115,12 @@ def map_contact(row: ContactRow) -> Person:
     """Map a database row to a Person object."""
     # Person(lastName, firstName, midInitials, email, phone, fax, address, affiliation, roles)
 
-    # Parse roles JSON
-    roles_json = row.roles
+    # row.roles is now already a list (it was Json[JsonList] and validated/parsed by Pydantic)
     roles = []
-    if roles_json:
-        try:
-            roles_list = json.loads(roles_json)
-            if isinstance(roles_list, list):
-                for r in roles_list:
-                    roles.append(_make_oa(r.get("term"), r.get("uri"), r.get("version")))
-        except json.JSONDecodeError:
-            pass  # Logger?
+    if row.roles:
+        for r in row.roles:
+            if isinstance(r, dict):
+                roles.append(_make_oa(r.get("term"), r.get("uri"), r.get("version")))
 
     return Person(
         last_name=row.last_name,

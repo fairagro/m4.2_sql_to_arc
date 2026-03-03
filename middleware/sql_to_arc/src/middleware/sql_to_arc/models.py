@@ -7,10 +7,16 @@ from datetime import datetime
 from types import NoneType
 from typing import Any, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, Json, model_validator
 from pydantic_core import PydanticUndefined
 
 logger = logging.getLogger(__name__)
+
+# JSON types representing the expected structure after parsing
+type JsonList = list[Any]
+
+# Cache for schema-related warnings to avoid per-row logging
+_SCHEMA_WARNING_CACHE: set[tuple[str, str, str]] = set()
 
 
 def spec_field(
@@ -190,11 +196,14 @@ class BaseRow(BaseModel):
             )
 
         if missing_optional:
-            logger.warning(
-                'Table "%s" is missing optional columns: %s. Using default values.',
-                cls.__name__,
-                ", ".join(missing_optional),
-            )
+            cache_key = (cls.__name__, "missing_optional", ",".join(sorted(missing_optional)))
+            if cache_key not in _SCHEMA_WARNING_CACHE:
+                logger.warning(
+                    'Table "%s" is missing optional columns: %s. Using default values.',
+                    cls.__name__,
+                    ", ".join(missing_optional),
+                )
+                _SCHEMA_WARNING_CACHE.add(cache_key)
 
     @model_validator(mode="before")
     @classmethod
@@ -208,11 +217,15 @@ class BaseRow(BaseModel):
         # 1. Check for extra columns
         extra_columns = sorted(set(row_mapping.keys()) - set(cls.model_fields.keys()))
         if extra_columns:
-            logger.warning(
-                'Table "%s": Input contains extra columns not defined in model: %s. Accepting due to extra="allow".',
-                cls.__name__,
-                ", ".join(extra_columns),
-            )
+            cache_key = (cls.__name__, "extra_columns", ",".join(extra_columns))
+            if cache_key not in _SCHEMA_WARNING_CACHE:
+                logger.warning(
+                    'Table "%s": Input contains extra columns not defined in model: %s. '
+                    'Accepting due to extra="allow".',
+                    cls.__name__,
+                    ", ".join(extra_columns),
+                )
+                _SCHEMA_WARNING_CACHE.add(cache_key)
 
         # 2. Process field values (NULLs, Coercion, Overrides)
         coerced_fields: list[str] = []
@@ -274,7 +287,7 @@ class AssayRow(BaseRow):
 
     identifier: str = spec_field()
     investigation_ref: str = spec_field()
-    study_ref: str | None = spec_field(default=None)
+    study_ref: Json[JsonList] | None = spec_field(default=None)
     title: str | None = spec_field(default=None)
     description_text: str | None = spec_field(default=None)
     measurement_type_term: str | None = spec_field(default=None)
@@ -314,5 +327,5 @@ class ContactRow(BaseRow):
     fax: str | None = spec_field(default=None)
     postal_address: str | None = spec_field(default=None)
     affiliation: str | None = spec_field(default=None)
-    roles: str | None = spec_field(default=None)  # JSON string
+    roles: Json[JsonList] | None = spec_field(default=None)
     target_ref: str | None = spec_field(default=None)

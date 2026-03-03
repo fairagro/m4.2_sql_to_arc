@@ -2,6 +2,7 @@
 
 import datetime
 
+import pytest
 from arctrl import (  # type: ignore[import-untyped, import-not-found]
     ArcAssay,
     ArcInvestigation,
@@ -9,6 +10,7 @@ from arctrl import (  # type: ignore[import-untyped, import-not-found]
     Person,
     Publication,
 )
+from pydantic import ValidationError
 
 from middleware.sql_to_arc.mapper import (
     map_annotation,
@@ -105,7 +107,7 @@ def test_map_assay() -> None:
     """Test mapping of assay data."""
     row = AssayRow(
         identifier="1",
-        study_ref="sty1",
+        study_ref=["sty1"],
         investigation_ref="inv1",
         measurement_type_term="Proteomics",
         measurement_type_uri="http://example.org/prot",
@@ -130,7 +132,7 @@ def test_map_assay_with_platform() -> None:
     """Test mapping of assay data including technology platform."""
     row = AssayRow(
         identifier="2",
-        study_ref="sty1",
+        study_ref=["sty1"],
         investigation_ref="inv1",
         technology_platform="Orbitrap",
     )
@@ -171,7 +173,7 @@ def test_map_contact() -> None:
         last_name="Doe",
         first_name="John",
         email="john@example.com",
-        roles='[{"term": "Principal Investigator", "uri": "http://roles", "version": "1.0"}]',
+        roles=[{"term": "Principal Investigator", "uri": "http://roles", "version": "1.0"}],
     )
 
     person = map_contact(row)
@@ -188,15 +190,13 @@ def test_map_contact() -> None:
 
 def test_map_contact_invalid_roles() -> None:
     """Test mapping of contact data with invalid roles JSON."""
-    row = ContactRow(
-        investigation_ref="inv1",
-        target_type="investigation",
-        last_name="Smith",
-        roles="invalid json string",
-    )
-    person = map_contact(row)
-    assert person.LastName == "Smith"
-    assert person.Roles == []
+    with pytest.raises(ValidationError):
+        ContactRow(
+            investigation_ref="inv1",
+            target_type="investigation",
+            last_name="Smith",
+            roles=None,
+        )
 
 
 def test_map_annotation() -> None:

@@ -6,6 +6,7 @@ import pytest
 
 from middleware.sql_to_arc.database import Database
 from middleware.sql_to_arc.models import (
+    _SCHEMA_WARNING_CACHE,
     BaseRow,
     InvestigationRow,
     spec_field,
@@ -35,6 +36,9 @@ async def test_validate_row_missing_required_aborts(caplog: pytest.LogCaptureFix
 @pytest.mark.asyncio
 async def test_validate_row_missing_optional_warns(caplog: pytest.LogCaptureFixture) -> None:
     """Test that missing optional columns cause a warning but proceed."""
+    # Ensure cache is clear for this test
+    _SCHEMA_WARNING_CACHE.clear()
+
     # submission_date is optional
     row = {"identifier": "1", "title": "Test", "description_text": "Present"}
 
