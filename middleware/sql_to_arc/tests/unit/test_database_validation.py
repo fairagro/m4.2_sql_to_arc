@@ -1,165 +1,116 @@
 """Unit tests for database validation in the SQL-to-ARC converter."""
 
 import logging
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncConnection
 
-from middleware.sql_to_arc.database import Database
+from middleware.sql_to_arc.database import SchemaValidator
 from middleware.sql_to_arc.models import (
-    _SCHEMA_WARNING_CACHE,
     BaseRow,
-    InvestigationRow,
+    MissingRequiredColumnsError,
+    RequiredColumnsNullError,
     spec_field,
 )
 
 
-class OverrideRow(BaseRow):
-    """Test model for spec_override behavior."""
+class ValidationTestRow(BaseRow):
+    """Test model for validation."""
 
-    identifier: str | None = spec_field(required=True, allow_spec_override=True)
-    title: str = spec_field(required=True)
+    __view_name__ = "vTest"
+    id: str = spec_field(required=True)
+    optional: str | None = spec_field(default=None)
+    overridable: str = spec_field(required=True, default="default", allow_spec_override=True)
 
 
 @pytest.mark.asyncio
-async def test_validate_row_missing_required_aborts(caplog: pytest.LogCaptureFixture) -> None:
+async def test_schema_validator_missing_required_column() -> None:
     """Test that missing required columns raise MissingRequiredColumnsError."""
-    # title is required for InvestigationRow
-    row = {"identifier": "1", "description_text": "Present"}
+    engine = MagicMock()
+    conn = AsyncMock(spec=AsyncConnection)
 
-    with caplog.at_level(logging.ERROR):
-        with pytest.raises(Exception) as excinfo:
-            InvestigationRow.model_validate(row)
+    mock_inspect = MagicMock()
+    mock_inspect.get_columns.return_value = [{"name": "optional"}]
+    conn.run_sync.side_effect = lambda f: f(mock_inspect)
 
-        assert "Missing required columns" in str(excinfo.value)
+    with patch("middleware.sql_to_arc.database.inspect", return_value=mock_inspect):
+        validator = SchemaValidator(engine)
+        with pytest.raises(MissingRequiredColumnsError) as excinfo:
+            await validator._validate_model(conn, ValidationTestRow)
 
-
-@pytest.mark.asyncio
-async def test_validate_row_missing_optional_warns(caplog: pytest.LogCaptureFixture) -> None:
-    """Test that missing optional columns cause a warning but proceed."""
-    # Ensure cache is clear for this test
-    _SCHEMA_WARNING_CACHE.clear()
-
-    # submission_date is optional
-    row = {"identifier": "1", "title": "Test", "description_text": "Present"}
-
-    with caplog.at_level(logging.WARNING):
-        model = InvestigationRow.model_validate(row)
-        assert model.submission_date is None
-        assert model.public_release_date is None
-        assert 'Table "InvestigationRow" is missing optional columns' in caplog.text
-        assert "submission_date" in caplog.text
-        assert "public_release_date" in caplog.text
+    assert "id" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
-async def test_validate_row_description_text_exception() -> None:
-    """Test that missing required columns raise Exception."""
-    # title is required and must exist.
-    row = {"identifier": "1", "description_text": "Desc"}
+async def test_schema_validator_missing_optional_column(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that missing optional columns log a warning."""
+    engine = MagicMock()
+    conn = AsyncMock(spec=AsyncConnection)
 
-    with pytest.raises(Exception) as excinfo:
-        InvestigationRow.model_validate(row)
+    mock_inspect = MagicMock()
+    mock_inspect.get_columns.return_value = [{"name": "id"}, {"name": "overridable"}]
+    conn.run_sync.side_effect = lambda f: f(mock_inspect)
 
-    assert "Missing required columns" in str(excinfo.value)
-    assert "title" in str(excinfo.value)
+    # Mock NULL check query results
+    mock_result = MagicMock()
+    mock_result.scalar.return_value = 0
+    conn.execute.return_value = mock_result
 
+    with patch("middleware.sql_to_arc.database.inspect", return_value=mock_inspect):
+        validator = SchemaValidator(engine)
+        with caplog.at_level(logging.WARNING):
+            await validator._validate_model(conn, ValidationTestRow)
 
-@pytest.mark.asyncio
-async def test_validate_row_extra_columns_warn(caplog: pytest.LogCaptureFixture) -> None:
-    """Test that extra columns are accepted but logged as warning."""
-    row = {
-        "identifier": "1",
-        "title": "Test",
-        "description_text": "Present",
-        "unexpected_column": "x",
-    }
-
-    with caplog.at_level(logging.WARNING):
-        model = InvestigationRow.model_validate(row)
-        assert model.identifier == "1"
-        assert "extra columns not defined in model" in caplog.text
-        assert "unexpected_column" in caplog.text
+    assert "is missing optional columns: optional" in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_validate_row_numeric_to_string_warns(caplog: pytest.LogCaptureFixture) -> None:
-    """Test that numeric values for string fields are coerced with warning."""
-    row = {
-        "identifier": 123,
-        "title": "Test",
-        "description_text": "Present",
-    }
+async def test_schema_validator_required_null_raises() -> None:
+    """Test that NULL values in required columns raise RequiredColumnsNullError."""
+    engine = MagicMock()
+    conn = AsyncMock(spec=AsyncConnection)
 
-    with caplog.at_level(logging.WARNING):
-        model = InvestigationRow.model_validate(row)
-        assert model.identifier == "123"
-        assert "Numeric values found for string fields" in caplog.text
-        assert "identifier" in caplog.text
+    mock_inspect = MagicMock()
+    mock_inspect.get_columns.return_value = [{"name": "id"}, {"name": "overridable"}, {"name": "optional"}]
+    conn.run_sync.side_effect = lambda f: f(mock_inspect)
 
+    # Mock NULL check for 'id' to return 5 nulls
+    mock_result = MagicMock()
+    mock_result.scalar.return_value = 5
+    conn.execute.return_value = mock_result
 
-@pytest.mark.asyncio
-async def test_validate_row_required_null_raises() -> None:
-    """Test that NULL values in required columns raise Exception."""
-    row = {
-        "identifier": "1",
-        "title": None,
-        "description_text": "Present",
-    }
+    with patch("middleware.sql_to_arc.database.inspect", return_value=mock_inspect):
+        validator = SchemaValidator(engine)
+        with pytest.raises(RequiredColumnsNullError) as excinfo:
+            await validator._check_null_values(conn, ValidationTestRow, {"id", "overridable", "optional"})
 
-    with pytest.raises(Exception) as excinfo:
-        InvestigationRow.model_validate(row)
-
-    assert "Required columns contain NULL" in str(excinfo.value)
-    assert "title" in str(excinfo.value)
+    assert "id" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
-async def test_validate_row_spec_override_uses_default_for_required_null(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Test that spec_override allows default for required NULL values with warning."""
-    row = {
-        "identifier": None,
-        "title": "Test",
-    }
+async def test_schema_validator_override_null_warns(caplog: pytest.LogCaptureFixture) -> None:
+    """Test that NULL values in overridable columns log a warning."""
+    engine = MagicMock()
+    conn = AsyncMock(spec=AsyncConnection)
 
-    with caplog.at_level(logging.WARNING):
-        model = OverrideRow.model_validate(row)
-        assert model.identifier is None
-        assert "spec_override" in caplog.text
-        assert "identifier" in caplog.text
+    mock_inspect = MagicMock()
+    mock_inspect.get_columns.return_value = [{"name": "id"}, {"name": "overridable"}]
+    conn.run_sync.side_effect = lambda f: f(mock_inspect)
 
+    # Mock NULL check: 0 for id, 3 for overridable
+    mock_result_zero = MagicMock()
+    mock_result_zero.scalar.return_value = 0
 
-@pytest.mark.asyncio
-async def test_validate_row_spec_override_uses_default_for_type_mismatch(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Test that spec_override replaces coercible mismatches with default value."""
-    row = {
-        "identifier": 123,
-        "title": "Test",
-    }
+    mock_result_three = MagicMock()
+    mock_result_three.scalar.return_value = 3
 
-    with caplog.at_level(logging.WARNING):
-        model = OverrideRow.model_validate(row)
-        assert model.identifier is None
-        assert "spec_override" in caplog.text
-        assert "identifier" in caplog.text
+    conn.execute.side_effect = [mock_result_zero, mock_result_three]
 
+    with patch("middleware.sql_to_arc.database.inspect", return_value=mock_inspect):
+        validator = SchemaValidator(engine)
+        with caplog.at_level(logging.WARNING):
+            await validator._check_null_values(conn, ValidationTestRow, {"id", "overridable"})
 
-@pytest.mark.asyncio
-async def test_database_validate_and_map_skips_required_null_row(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Test that database mapping skips rows with NULL in required columns."""
-    row = {
-        "identifier": "1",
-        "title": None,
-        "description_text": "Present",
-    }
-
-    with caplog.at_level(logging.WARNING):
-        result = Database._validate_and_map(row, InvestigationRow, "investigation")
-        assert result is None
-        assert "Skipping investigation due to validation error" in caplog.text
-        assert "Required columns contain NULL" in caplog.text
+    assert 'Column "overridable" contains 3 NULL values' in caplog.text
+    assert "replaced by model defaults" in caplog.text

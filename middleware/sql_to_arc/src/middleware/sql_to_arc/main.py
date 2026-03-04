@@ -47,6 +47,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 async def run_conversion(config: Config) -> ProcessingStats:
     """Run the conversion."""
     db = Database(config.connection_string.get_secret_value())
+
+    # 1. Validate DB schema before starting
+    await db.validate_schema()
+
     async with ApiClient(config.api_client) as client:
         return await process_investigations(db, client, config)
 

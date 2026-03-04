@@ -1,14 +1,18 @@
 """Database module for SQL-to-ARC."""
 
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
+import sqlalchemy
 from pydantic import ValidationError
 from sqlalchemy import (
-    bindparam,
-    text,
+    column,
+    func,
+    inspect,
+    select,
+    table,
 )
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
@@ -29,6 +33,118 @@ logger = logging.getLogger(__name__)
 RowModel = TypeVar("RowModel", bound=BaseRow)
 
 
+class SchemaValidator:
+    """Validator for database schema and structural integrity."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        """Initialize with database engine."""
+        self.engine = engine
+
+    async def validate_models(self, models: Iterable[type[BaseRow]]) -> None:
+        """Validate all provided models against the database schema."""
+        async with self.engine.connect() as conn:
+            for model in models:
+                await self._validate_model(conn, model)
+
+    async def _validate_model(self, conn: AsyncConnection, model: type[BaseRow]) -> None:
+        """Validate a single model against its corresponding database view."""
+        view_name = getattr(model, "__view_name__", None)
+        if not view_name:
+            logger.debug("Skipping validation for model %s (no __view_name__)", model.__name__)
+            return
+
+        db_columns = await self._get_db_columns(conn, view_name)
+        if db_columns is None:
+            return
+
+        self._check_column_presence(model, db_columns)
+        await self._check_null_values(conn, model, db_columns)
+
+    @staticmethod
+    async def _get_db_columns(conn: AsyncConnection, view_name: str) -> set[str] | None:
+        """Retrieve column names for a given table or view."""
+        try:
+            columns = await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_columns(view_name))
+            return {col["name"] for col in columns}
+        except (ProgrammingError, sqlalchemy.exc.NoSuchTableError):
+            logger.warning('Table or view "%s" does not exist or is not accessible.', view_name)
+            return None
+
+    @staticmethod
+    def _check_column_presence(model: type[BaseRow], db_columns: set[str]) -> None:
+        """Check for missing required/optional columns and extra columns."""
+        model_fields = model.model_fields
+        present_fields = set(model_fields.keys())
+        missing_required: list[str] = []
+        missing_optional: list[str] = []
+
+        for field_name, field_info in model_fields.items():
+            if field_name in db_columns:
+                continue
+
+            json_extra = field_info.json_schema_extra
+            spec_required = json_extra.get("spec_required") if isinstance(json_extra, dict) else None
+            is_required = field_info.is_required() if spec_required is None else spec_required
+
+            if is_required and field_info.is_required():
+                missing_required.append(field_name)
+            else:
+                missing_optional.append(field_name)
+
+        if missing_required:
+            raise MissingRequiredColumnsError(model.__name__, sorted(missing_required))
+
+        if missing_optional:
+            logger.warning(
+                'Table "%s" is missing optional columns: %s. Using default values.',
+                model.__name__,
+                ", ".join(sorted(missing_optional)),
+            )
+
+        extra_columns = db_columns - present_fields
+        if extra_columns:
+            logger.info(
+                'Table "%s" contains extra columns not used by model: %s.',
+                model.__name__,
+                ", ".join(sorted(extra_columns)),
+            )
+
+    @staticmethod
+    async def _check_null_values(conn: AsyncConnection, model: type[BaseRow], db_columns: set[str]) -> None:
+        """Check for NULL values in required fields."""
+        view_name = model.__view_name__
+        for field_name, field_info in model.model_fields.items():
+            if field_name not in db_columns:
+                continue
+
+            json_extra = field_info.json_schema_extra
+            spec_required = json_extra.get("spec_required") if isinstance(json_extra, dict) else None
+            if spec_required is False:
+                continue
+
+            # If not explicitly marked as NOT spec_required, and has no default, it's mandatory
+            if spec_required or field_info.is_required():
+                allow_override = json_extra.get("spec_override", False) if isinstance(json_extra, dict) else False
+
+                # Use SQLAlchemy select() to count NULLs
+                t = table(view_name, column(field_name))
+                stmt = select(func.count()).select_from(t).where(column(field_name).is_(None))  # pylint: disable=not-callable
+                result = await conn.execute(stmt)
+                null_count = result.scalar() or 0
+
+                if null_count > 0:
+                    if allow_override:
+                        logger.warning(
+                            'Table "%s": Column "%s" contains %d NULL values. '
+                            "These will be replaced by model defaults due to allow_spec_override=True.",
+                            model.__name__,
+                            field_name,
+                            null_count,
+                        )
+                    else:
+                        raise RequiredColumnsNullError(model.__name__, [field_name])
+
+
 class Database:
     """Database handler using SQLAlchemy."""
 
@@ -47,6 +163,19 @@ class Database:
             connection_string = connection_string.replace("mssql://", "mssql+aioodbc://", 1)
 
         self.engine: AsyncEngine = create_async_engine(connection_string, echo=False)
+        self.validator = SchemaValidator(self.engine)
+
+    async def validate_schema(self) -> None:
+        """Validate schema for all known models."""
+        models = [
+            InvestigationRow,
+            StudyRow,
+            AssayRow,
+            ContactRow,
+            PublicationRow,
+        ]
+        # Cast to satisfying the Iterable[type[BaseRow]] requirement
+        await self.validator.validate_models(cast(Iterable[type[BaseRow]], models))
 
     @staticmethod
     def _validate_and_map(
@@ -55,23 +184,7 @@ class Database:
         entity_name: str,
     ) -> RowModel | None:
         try:
-            return model.model_validate(row)
-        except MissingRequiredColumnsError as error:
-            logger.error(
-                'CRITICAL: Table "%s" is missing required columns: %s. Re-raising for caller to handle.',
-                error.model_name,
-                ", ".join(error.columns),
-            )
-            # Re-raise instead of exiting to allow for higher-level cleanup
-            raise
-        except RequiredColumnsNullError as error:
-            logger.warning(
-                'Skipping %s: required columns contain NULL values in table "%s": %s.',
-                entity_name,
-                error.model_name,
-                ", ".join(error.columns),
-            )
-            return None
+            return model.model_validate(dict(row))
         except ValidationError as error:
             logger.warning("Skipping %s due to validation error: %s", entity_name, error)
             return None
@@ -82,13 +195,15 @@ class Database:
         limit: int | None = None,
     ) -> AsyncGenerator[InvestigationRow, None]:
         """Stream investigations using a server-side cursor."""
+        view_name = InvestigationRow.__view_name__
         try:
             async with self.engine.connect() as conn:
-                sql = 'SELECT * FROM "vInvestigation"'
+                # Use SQLAlchemy select() and limit() for dialect-agnosticism
+                t = table(view_name)
+                stmt = select(t).execution_options(stream_results=True)
                 if limit:
-                    sql += f" LIMIT {limit}"
+                    stmt = stmt.limit(limit)
 
-                stmt = text(sql).execution_options(stream_results=True)
                 result = await conn.stream(stmt)
                 async for row in result.mappings():
                     # Count everything we find in the database
@@ -103,106 +218,76 @@ class Database:
 
                     yield investigation
         except ProgrammingError as e:
-            if 'relation "vinvestigation" does not exist' in str(e).lower():
-                logger.warning('Table or view "vInvestigation" does not exist. Treating as empty.')
+            if f'relation "{view_name.lower()}" does not exist' in str(e).lower():
+                logger.warning('Table or view "%s" does not exist. Treating as empty.', view_name)
+            else:
+                raise
+
+    async def _stream_by_investigation(
+        self,
+        model: type[RowModel],
+        investigation_ids: list[str],
+        entity_name: str,
+    ) -> AsyncGenerator[RowModel, None]:
+        """Stream related data for a given set of investigation IDs."""
+        if not investigation_ids:
+            return
+        view_name = model.__view_name__
+        try:
+            async with self.engine.connect() as conn:
+                # Use SQLAlchemy select() and in_() for dialect-agnosticism
+                t = table(view_name)
+                c_inv_ref: sqlalchemy.ColumnElement[Any] = column("investigation_ref")
+                stmt = select(t).where(c_inv_ref.in_(investigation_ids)).execution_options(stream_results=True)
+
+                result = await conn.stream(stmt)
+                async for row in result.mappings():
+                    item = self._validate_and_map(row, model, entity_name)
+                    if item is not None:
+                        yield item
+        except ProgrammingError as e:
+            if f'relation "{view_name.lower()}" does not exist' in str(e).lower():
+                logger.warning('Table or view "%s" does not exist. Treating as empty.', view_name)
             else:
                 raise
 
     async def stream_studies(self, investigation_ids: list[str]) -> AsyncGenerator[StudyRow, None]:
         """Stream studies for given investigations."""
-        if not investigation_ids:
-            return
-        try:
-            async with self.engine.connect() as conn:
-                stmt = text('SELECT * FROM "vStudy" WHERE investigation_ref IN :ids').bindparams(
-                    bindparam("ids", expanding=True)
-                )
-                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
-                async for row in result.mappings():
-                    study = self._validate_and_map(row, StudyRow, "study")
-                    if study is not None:
-                        yield study
-        except ProgrammingError as e:
-            if 'relation "vstudy" does not exist' in str(e).lower():
-                logger.warning('Table or view "vStudy" does not exist. Treating as empty.')
-            else:
-                raise
+        async for r in self._stream_by_investigation(StudyRow, investigation_ids, "study"):
+            yield r
 
     async def stream_assays(self, investigation_ids: list[str]) -> AsyncGenerator[AssayRow, None]:
         """Stream assets for given investigations."""
-        if not investigation_ids:
-            return
-        try:
-            async with self.engine.connect() as conn:
-                stmt = text('SELECT * FROM "vAssay" WHERE investigation_ref IN :ids').bindparams(
-                    bindparam("ids", expanding=True)
-                )
-                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
-                async for row in result.mappings():
-                    assay = self._validate_and_map(row, AssayRow, "assay")
-                    if assay is not None:
-                        yield assay
-        except ProgrammingError as e:
-            if 'relation "vassay" does not exist' in str(e).lower():
-                logger.warning('Table or view "vAssay" does not exist. Treating as empty.')
-            else:
-                raise
+        async for r in self._stream_by_investigation(AssayRow, investigation_ids, "assay"):
+            yield r
 
     async def stream_contacts(self, investigation_ids: list[str]) -> AsyncGenerator[ContactRow, None]:
         """Stream contacts for given investigations."""
-        if not investigation_ids:
-            return
-        try:
-            async with self.engine.connect() as conn:
-                stmt = text('SELECT * FROM "vContact" WHERE investigation_ref IN :ids').bindparams(
-                    bindparam("ids", expanding=True)
-                )
-                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
-                async for row in result.mappings():
-                    contact = self._validate_and_map(row, ContactRow, "contact")
-                    if contact is not None:
-                        yield contact
-        except ProgrammingError as e:
-            if 'relation "vcontact" does not exist' in str(e).lower():
-                logger.warning('Table or view "vContact" does not exist. Treating as empty.')
-            else:
-                raise
+        async for r in self._stream_by_investigation(ContactRow, investigation_ids, "contact"):
+            yield r
 
     async def stream_publications(self, investigation_ids: list[str]) -> AsyncGenerator[PublicationRow, None]:
         """Stream publications for given investigations."""
-        if not investigation_ids:
-            return
-        try:
-            async with self.engine.connect() as conn:
-                stmt = text('SELECT * FROM "vPublication" WHERE investigation_ref IN :ids').bindparams(
-                    bindparam("ids", expanding=True)
-                )
-                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
-                async for row in result.mappings():
-                    publication = self._validate_and_map(row, PublicationRow, "publication")
-                    if publication is not None:
-                        yield publication
-        except ProgrammingError as e:
-            if 'relation "vpublication" does not exist' in str(e).lower():
-                logger.warning('Table or view "vPublication" does not exist. Treating as empty.')
-            else:
-                raise
+        async for r in self._stream_by_investigation(PublicationRow, investigation_ids, "publication"):
+            yield r
 
     async def stream_annotation_tables(self, investigation_ids: list[str]) -> AsyncGenerator[dict[str, Any], None]:
         """Stream annotation tables for given investigations."""
         if not investigation_ids:
             return
+        view_name = "vAnnotationTable"
         try:
             async with self.engine.connect() as conn:
-                stmt = text("SELECT * FROM vAnnotationTable WHERE investigation_ref IN :ids").bindparams(
-                    bindparam("ids", expanding=True)
-                )
-                result = await conn.stream(stmt.execution_options(stream_results=True), {"ids": investigation_ids})
+                t = table(view_name)
+                c_inv_ref: sqlalchemy.ColumnElement[Any] = column("investigation_ref")
+                stmt = select(t).where(c_inv_ref.in_(investigation_ids)).execution_options(stream_results=True)
+
+                result = await conn.stream(stmt)
                 async for row in result.mappings():
                     yield dict(row)
         except ProgrammingError as e:
-            if 'relation "vannotationtable" does not exist' in str(e).lower():
-                logger.warning('Table or view "vAnnotationTable" does not exist. Treating as empty.')
+            if f'relation "{view_name.lower()}" does not exist' in str(e).lower():
+                logger.warning('Table or view "%s" does not exist. Treating as empty.', view_name)
             else:
                 raise
 

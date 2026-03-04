@@ -83,7 +83,8 @@ class WorkflowTester:
         """
         self.mocker = mocker
         self.api_client = mock_api_client
-        self.db = MagicMock()
+        self.db = AsyncMock()
+        self.db.validate_schema = AsyncMock(return_value=None)
         self.db.to_jsonld.return_value = "{}"
         self.captured_arcs: list[ARC] = []
 
@@ -170,23 +171,39 @@ class WorkflowTester:
                 prepared.append(new_item)
             return prepared
 
-        self.db.stream_investigations.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            _prepare_data(investigations, InvestigationRow), InvestigationRow
+        # The stream_* methods are async generator methods (not coroutines), so they must
+        # be set as regular MagicMock, not AsyncMock. AsyncMock would wrap the return
+        # value in a coroutine, but async generators are called directly (no await) and
+        # return an AsyncGenerator object immediately.
+        self.db.stream_investigations = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(investigations, InvestigationRow), InvestigationRow
+            )
         )
-        self.db.stream_studies.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            _prepare_data(studies, StudyRow), StudyRow
+        self.db.stream_studies = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(studies, StudyRow), StudyRow
+            )
         )
-        self.db.stream_assays.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            _prepare_data(assays, AssayRow), AssayRow
+        self.db.stream_assays = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(assays, AssayRow), AssayRow
+            )
         )
-        self.db.stream_contacts.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            _prepare_data(contacts, ContactRow), ContactRow
+        self.db.stream_contacts = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(contacts, ContactRow), ContactRow
+            )
         )
-        self.db.stream_publications.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            _prepare_data(publications, PublicationRow), PublicationRow
+        self.db.stream_publications = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(publications, PublicationRow), PublicationRow
+            )
         )
-        self.db.stream_annotation_tables.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            annotations or []
+        self.db.stream_annotation_tables = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                annotations or []
+            )
         )
 
     async def run(self) -> list[ARC]:
