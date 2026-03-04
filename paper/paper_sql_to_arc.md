@@ -1,4 +1,4 @@
-# From Roadmap to Reality: Implementing the FAIRagro Extended Middleware for Automated ARC Generation from Heterogeneous Research Data Infrastructures
+# From Roadmap to Reality: Implementing the FAIRagro Federated RDI Network for Automated ARC Generation from Heterogeneous Research Data Infrastructures
 
 **Authors:** Carsten Külheim¹
 
@@ -6,17 +6,17 @@
 
 **Correspondence:** [email]
 
-**Keywords:** FAIR data, Annotated Research Context, ARC, ISA model, research data management, middleware, agrosystems, NFDI, RO-Crate, federated infrastructure, INSPIRE, CSW
+**Keywords:** FAIR data, Annotated Research Context, ARC, ISA model, research data management, federated RDI network, middleware, agrosystems, NFDI, RO-Crate, federated infrastructure, INSPIRE, CSW
 
 ---
 
 ## Abstract
 
-**Background:** In a previous publication, García Brizuela et al. [1] presented the FAIRagro middleware roadmap — a federated architecture concept for connecting heterogeneous research data infrastructures (RDIs) in the German agrosystems science community. That roadmap outlined a two-phase approach: a basic middleware for metadata harvesting and an extended middleware capable of transforming legacy research data into FAIR Digital Objects (FDOs) using the Annotated Research Context (ARC) specification. While the basic middleware was operational at the time of publication, the extended middleware remained a conceptual design.
+**Background:** In a previous publication, García Brizuela et al. [1] presented the roadmap for the FAIRagro Federated RDI Network (formerly referred to as the FAIRagro middleware) — a federated architecture concept for connecting heterogeneous research data infrastructures (RDIs) in the German agrosystems science community. That roadmap outlined a two-phase approach: a basic component for metadata harvesting and an extended component capable of transforming legacy research data into FAIR Digital Objects (FDOs) using the Annotated Research Context (ARC) specification. While the basic component was operational at the time of publication, the extended component remained a conceptual design.
 
-**Findings:** We report the realisation of the extended middleware concept. We have developed and deployed three open-source components: (1) `sql-to-arc`, a conversion tool that extracts metadata from relational databases and transforms it into ARCs using a view-based adapter pattern; (2) `inspire-to-arc`, a harvesting tool that converts geospatial metadata from INSPIRE-compliant CSW (Catalogue Service for the Web) endpoints into ARCs; and (3) the FAIRagro Advanced Middleware API, a gateway service that validates and publishes ARCs to the DataPLANT DataHub. The system has been applied to two RDIs: the Edaphobase soil fauna database (via `sql-to-arc`) and the BonaRes soil and agricultural research data repository (via `inspire-to-arc`).
+**Findings:** We report the realisation of the FAIRagro Federated RDI Network. We have developed and deployed three open-source components: (1) `sql-to-arc`, a conversion tool that extracts metadata from relational databases and transforms it into ARCs using a view-based adapter pattern; (2) `inspire-to-arc`, a harvesting tool that converts geospatial metadata from INSPIRE-compliant CSW (Catalogue Service for the Web) endpoints into ARCs; and (3) the FAIRagro Advanced Middleware API, a gateway service that validates and publishes ARCs to the DataPLANT DataHub. The system has been applied to two RDIs: the Edaphobase soil fauna database (via `sql-to-arc`) and the BonaRes soil and agricultural research data repository (via `inspire-to-arc`).
 
-**Conclusions:** The work presented here advances the FAIRagro middleware from its initial roadmap phase into an operational system. The two conversion clients demonstrate that the middleware architecture supports heterogeneous data sources — from relational databases to standardised geospatial catalogue services — while the common middleware API decouples data providers from the specifics of the target FAIR data repository. Together, these components address a key gap identified in the roadmap: the automated, scalable conversion of legacy research data metadata into standardised FAIR Digital Objects.
+**Conclusions:** The work presented here advances the FAIRagro Federated RDI Network from its initial roadmap phase into an operational system. The two conversion clients demonstrate that the network architecture supports heterogeneous data sources — from relational databases to standardised geospatial catalogue services — while the common gateway API decouples data providers from the specifics of the target FAIR data repository. Together, these components address a key gap identified in the roadmap: the automated, scalable conversion of legacy research data metadata into standardised FAIR Digital Objects.
 
 ---
 
@@ -24,19 +24,19 @@
 
 ### Background and Motivation
 
-#### The FAIRagro Middleware Roadmap
+#### The FAIRagro Federated RDI Network Roadmap
 
 Agriculture faces pressing challenges including climate change, biodiversity loss and stagnating productivity [2]. The massive increase in recorded measurement data, combined with advances in digital technologies, offers the potential to address these challenges — but only if the underlying data is carefully integrated and made accessible according to the FAIR principles (Findable, Accessible, Interoperable, Reusable) [3]. The German National Research Data Infrastructure (NFDI) consortium FAIRagro was established to develop FAIR-compliant infrastructure services for the agrosystems science community [4, 5].
 
-A central challenge for FAIRagro is the federation of more than a dozen research data infrastructures (RDIs) that span different disciplines (soil science, plant science, forestry, ecology, agronomy), are maintained by different institutions, and are built on diverse technology stacks [1]. To connect these autonomous RDIs without interfering with their operational and organisational independence, FAIRagro adopted a federated middleware architecture.
+A central challenge for FAIRagro is the federation of more than a dozen research data infrastructures (RDIs) that span different disciplines (soil science, plant science, forestry, ecology, agronomy), are maintained by different institutions, and are built on diverse technology stacks [1]. To connect these autonomous RDIs without interfering with their operational and organisational independence, FAIRagro adopted a federated network architecture.
 
-García Brizuela et al. [1] described the design process and resulting architecture concept for this middleware. The approach was structured into two phases:
+García Brizuela et al. [1] described the design process and resulting architecture concept for this network. The approach was structured into two phases:
 
-1. **Basic middleware:** A lightweight metadata harvesting service that crawls JSON-LD metadata from RDI landing pages and aggregates it for downstream services. The primary consumers of the basic middleware are the FAIRagro Search Hub, a Dataverse-based discovery portal that provides unified search and faceted browsing across all federated RDIs, and the Scientific Workflow Infrastructure SciWIn [26], a platform for creating, executing, and publishing reproducible computational workflows based on FAIR Digital Objects. In addition, the FAIRagro Use Cases — interdisciplinary research scenarios addressing concrete agrosystems science questions — were defined as consumers of the middleware during the requirements analysis process [1]. This phase was already operational at the time of the roadmap publication.
+1. **Basic component:** A lightweight metadata harvesting service that crawls JSON-LD metadata from RDI landing pages and aggregates it for downstream services. The primary consumers of this component are the FAIRagro Search Hub, a Dataverse-based discovery portal that provides unified search and faceted browsing across all federated RDIs, and the Scientific Workflow Infrastructure SciWIn [26], a platform for creating, executing, and publishing reproducible computational workflows based on FAIR Digital Objects. In addition, the FAIRagro Use Cases — interdisciplinary research scenarios addressing concrete agrosystems science questions — were defined as consumers of the network during the requirements analysis process [1]. This phase was already operational at the time of the roadmap publication.
 
-2. **Extended middleware:** A more comprehensive system designed to go beyond metadata harvesting and enable the transformation of actual research data and rich metadata into FAIR Digital Objects (FDOs). The roadmap proposed adopting the Annotated Research Context (ARC) specification and the associated tooling ecosystem developed by the NFDI consortium DataPLANT (NFDI4Plants) [6]. The extended middleware was envisioned to support both a "push" strategy — where RDIs actively construct and submit ARCs — and a "pull" strategy — where the middleware retrieves datasets and transforms them into ARCs in a semi-automated process.
+2. **Extended component (FAIRagro Federated RDI Network):** A more comprehensive system designed to go beyond metadata harvesting and enable the transformation of actual research data and rich metadata into FAIR Digital Objects (FDOs). The roadmap proposed adopting the Annotated Research Context (ARC) specification and the associated tooling ecosystem developed by the NFDI consortium DataPLANT (NFDI4Plants) [6]. This component was envisioned to support both a "push" strategy — where RDIs actively construct and submit ARCs — and a "pull" strategy — where the network retrieves datasets and transforms them into ARCs in a semi-automated process.
 
-The present paper reports on the realisation of the extended middleware concept. We describe two conversion clients that implement both strategies: `sql-to-arc` follows the "push" approach, where the RDI actively constructs ARCs from its relational database and submits them to the middleware; `inspire-to-arc` follows the "pull" approach, where the middleware harvests metadata from INSPIRE-compliant geospatial catalogue services and transforms it into ARCs.
+The present paper reports on the realisation of the FAIRagro Federated RDI Network. We describe two conversion clients that implement both strategies: `sql-to-arc` follows the "push" approach, where the RDI actively constructs ARCs from its relational database and submits them to the network gateway; `inspire-to-arc` follows the "pull" approach, where the network harvests metadata from INSPIRE-compliant geospatial catalogue services and transforms it into ARCs.
 
 #### The Annotated Research Context (ARC)
 
@@ -50,21 +50,21 @@ The ISA model at the heart of the ARC provides a three-level hierarchy for descr
 
 A distinctive feature of the ARC is its use of **annotation tables** — structured, spreadsheet-like tables in which every column is typed and, where applicable, linked to an ontology term. This mechanism allows experimental and measurement processes to be represented as a **provenance graph**, enabling machine-readable and semantically interoperable descriptions of complex experimental workflows.
 
-The choice of ARC as the FDO format for the extended middleware was motivated by several factors identified in the roadmap [1]: the flexibility of the ISA model for representing heterogeneous agrosystems data, the scalable storage backend provided by GitLab, the availability of mature tooling from the DataPLANT ecosystem, and the compatibility of ARCs with the RO-Crate standard required by the downstream SciWIn infrastructure.
+The choice of ARC as the FDO format for the FAIRagro Federated RDI Network was motivated by several factors identified in the roadmap [1]: the flexibility of the ISA model for representing heterogeneous agrosystems data, the scalable storage backend provided by GitLab, the availability of mature tooling from the DataPLANT ecosystem, and the compatibility of ARCs with the RO-Crate standard required by the downstream SciWIn infrastructure.
 
 ### Approach
 
-The core challenge addressed in this work is the automated transformation of metadata from heterogeneous research data infrastructures into ARCs. The middleware roadmap [1] envisioned two complementary strategies: a "push" strategy, where RDIs actively construct ARCs and submit them to the middleware, and a "pull" strategy, where the middleware retrieves and converts data from external sources. We have implemented both: `sql-to-arc` realises the push strategy for relational databases, while `inspire-to-arc` realises the pull strategy for INSPIRE-compliant catalogue services.
+The core challenge addressed in this work is the automated transformation of metadata from heterogeneous research data infrastructures into ARCs. The roadmap [1] envisioned two complementary strategies: a "push" strategy, where RDIs actively construct ARCs and submit them to the network gateway, and a "pull" strategy, where the network retrieves and converts data from external sources. We have implemented both: `sql-to-arc` realises the push strategy for relational databases, while `inspire-to-arc` realises the pull strategy for INSPIRE-compliant catalogue services.
 
 Our approach rests on two principles:
 
 1. **Source-specific conversion clients:** Each type of data source is served by a dedicated conversion client that handles the extraction and mapping of metadata to the ISA model. We have developed two such clients: `sql-to-arc` for relational databases (using a view-based adapter pattern) and `inspire-to-arc` for INSPIRE-compliant geospatial catalogue services (using the CSW protocol). This separation allows each client to be optimised for its specific data source while sharing the common ARC construction and publication logic.
 
-2. **Decoupled middleware API:** The conversion clients do not interact directly with the target ARC repository (the DataPLANT DataHub). Instead, they submit completed ARCs to a dedicated middleware API that handles validation, authentication, and publication. This decoupling provides a stable interface for all conversion clients and shields them from changes in the target repository's API.
+2. **Decoupled gateway API:** The conversion clients do not interact directly with the target ARC repository (the DataPLANT DataHub). Instead, they submit completed ARCs to a dedicated gateway API that handles validation, authentication, and publication. This decoupling provides a stable interface for all conversion clients and shields them from changes in the target repository's API.
 
 #### The View-Based Database Adapter
 
-The view-based adapter is the central abstraction for connecting a relational database to the FAIRagro middleware pipeline. To integrate a new data source, a database administrator creates a small set of SQL views that expose the database's metadata in a standardised column layout. No changes to the source application or its data model are required — the views are read-only projections of existing data.
+The view-based adapter is the central abstraction for connecting a relational database to the FAIRagro Federated RDI Network pipeline. To integrate a new data source, a database administrator creates a small set of SQL views that expose the database's metadata in a standardised column layout. No changes to the source application or its data model are required — the views are read-only projections of existing data.
 
 The required views follow the ISA hierarchy:
 
@@ -75,7 +75,7 @@ The required views follow the ISA hierarchy:
 - `vPublication`: one row per publication associated with an investigation or study, including DOI, PubMed ID, and ontology-annotated publication status.
 - `vAnnotationTable`: one row per annotation table cell, encoding the column type, ontology annotation, and cell value in a flat representation.
 
-Ontology annotations are represented through three fields: a human-readable term name, a term accession URI, and an optional ontology version. This design allows database owners to provide partial ontology information that can be enriched in subsequent curation steps — consistent with the semi-automated curation process foreseen in the middleware roadmap [1].
+Ontology annotations are represented through three fields: a human-readable term name, a term accession URI, and an optional ontology version. This design allows database owners to provide partial ontology information that can be enriched in subsequent curation steps — consistent with the semi-automated curation process foreseen in the roadmap [1].
 
 The view schema is compatible with all major relational database systems (PostgreSQL, MySQL/MariaDB, MSSQL, OracleDB). Views may be empty if the corresponding data is not available; the pipeline handles missing data gracefully. This low-friction integration mechanism is central to the scalability of the approach: connecting a new RDI requires only standard database operations, not software development.
 
@@ -83,7 +83,7 @@ The view schema is compatible with all major relational database systems (Postgr
 
 The FAIRagro Advanced Middleware API is the gateway between data conversion clients and the DataPLANT DataHub. It accepts ARC objects serialised as RO-Crate JSON-LD via a REST API, validates them against the ARC specification, and publishes them to the DataHub. The API handles authentication using mutual TLS (mTLS), provides structured error reporting, and offers a stable, versioned interface.
 
-This component realises the "ARC-based GitLab infrastructure" described in the middleware roadmap [1] as the central component of the extended middleware. By providing a dedicated API layer, the middleware ensures that data providers do not need to interact directly with the DataHub's GitLab API, which simplifies client development and allows the middleware to enforce validation and quality checks before publication.
+This component realises the "ARC-based GitLab infrastructure" described in the roadmap [1] as the central gateway of the FAIRagro Federated RDI Network. By providing a dedicated API layer, the network ensures that data providers do not need to interact directly with the DataHub's GitLab API, which simplifies client development and allows the network to enforce validation and quality checks before publication.
 
 #### The INSPIRE-to-ARC Converter
 
@@ -95,7 +95,7 @@ The `inspire-to-arc` tool harvests metadata from such CSW endpoints and converts
 - The data creation workflow — reconstructed from lineage statements, spatial sampling, data acquisition, and processing steps — maps to a **Study** with ordered protocols.
 - The measurement outputs and technology descriptions map to an **Assay**.
 
-Like `sql-to-arc`, the converter submits completed ARCs to the Advanced Middleware API. Both tools share common infrastructure components (the `api_client` library for middleware communication, and `shared` models for configuration).
+Like `sql-to-arc`, the converter submits completed ARCs to the Advanced Middleware API. Both tools share common infrastructure components (the `api_client` library for network communication, and `shared` models for configuration).
 
 #### Conversion Pipelines
 
@@ -123,23 +123,23 @@ By creating the required SQL views on the Edaphobase database, the existing meta
 
 The BonaRes repository [10] is a research data infrastructure for soil and agricultural science, providing access to a large collection of datasets with rich geospatial metadata. BonaRes exposes its metadata through an INSPIRE-compliant CSW endpoint, making it accessible via standardised geospatial catalogue protocols.
 
-The `inspire-to-arc` tool harvests metadata from the BonaRes CSW endpoint and converts it into ARCs. This demonstrates that the middleware architecture is not limited to relational database sources but can accommodate any RDI that exposes metadata through standardised interfaces.
+The `inspire-to-arc` tool harvests metadata from the BonaRes CSW endpoint and converts it into ARCs. This demonstrates that the FAIRagro Federated RDI Network is not limited to relational database sources but can accommodate any RDI that exposes metadata through standardised interfaces.
 
-Taken together, these two applications validate the extensibility of the extended middleware concept: heterogeneous data sources can be connected through dedicated conversion clients that share the common middleware API as their publication gateway.
+Taken together, these two applications validate the extensibility of the FAIRagro Federated RDI Network: heterogeneous data sources can be connected through dedicated conversion clients that share the common Advanced Middleware API as their publication gateway.
 
-#### Downstream Consumers of the Middleware
+#### Downstream Consumers of the FAIRagro Federated RDI Network
 
-The middleware does not operate in isolation but serves as a data integration layer for several downstream FAIRagro services.
+The FAIRagro Federated RDI Network does not operate in isolation but serves as a data integration layer for several downstream FAIRagro services.
 
-The **FAIRagro Search Hub** (formerly Search and Inventory Portal) is a Dataverse-based discovery service that presents the harvested and transformed metadata to researchers through unified search and faceted browsing. The basic middleware feeds JSON-LD metadata into the Search Hub, while the extended middleware — through the ARC objects published to the DataPLANT DataHub — enriches the available metadata with semantically structured ISA descriptions. The Search Hub thus acts as the primary user-facing entry point for discovering datasets across all federated RDIs.
+The **FAIRagro Search Hub** (formerly Search and Inventory Portal) is a Dataverse-based discovery service that presents the harvested and transformed metadata to researchers through unified search and faceted browsing. The basic component feeds JSON-LD metadata into the Search Hub, while the FAIRagro Federated RDI Network — through the ARC objects published to the DataPLANT DataHub — enriches the available metadata with semantically structured ISA descriptions. The Search Hub thus acts as the primary user-facing entry point for discovering datasets across all federated RDIs.
 
-**SciWIn** [26] (Scientific Workflow Infrastructure) is a platform developed within FAIRagro for managing reproducible computational workflows. SciWIn operates on FAIR Digital Objects — specifically RO-Crates — to represent data and code artefacts along with their provenance information. The ARCs generated by the extended middleware are directly compatible with SciWIn's FDO-based processing model, since ARCs are themselves RO-Crates enriched with ISA metadata. This compatibility was a key consideration in the choice of the ARC specification as the target format for the extended middleware [1].
+**SciWIn** [26] (Scientific Workflow Infrastructure) is a platform developed within FAIRagro for managing reproducible computational workflows. SciWIn operates on FAIR Digital Objects — specifically RO-Crates — to represent data and code artefacts along with their provenance information. The ARCs generated by the FAIRagro Federated RDI Network are directly compatible with SciWIn's FDO-based processing model, since ARCs are themselves RO-Crates enriched with ISA metadata. This compatibility was a key consideration in the choice of the ARC specification as the target format [1].
 
-Finally, the **FAIRagro Use Cases** were defined as part of the consortium's requirements analysis process [1]. These use cases represent interdisciplinary research scenarios — spanning soil science, plant phenotyping, landscape ecology, and agricultural systems analysis — that require integrated access to data from multiple FAIRagro RDIs. The use cases served as the primary driver for the middleware's requirements, particularly the need for cross-RDI metadata exchange and access to semantically enriched datasets. While the use cases are not yet actively consuming data from the extended middleware at the time of writing, the infrastructure has been designed to serve their needs as the FAIRagro federation matures.
+Finally, the **FAIRagro Use Cases** were defined as part of the consortium's requirements analysis process [1]. These use cases represent interdisciplinary research scenarios — spanning soil science, plant phenotyping, landscape ecology, and agricultural systems analysis — that require integrated access to data from multiple FAIRagro RDIs. The use cases served as the primary driver for the network's requirements, particularly the need for cross-RDI metadata exchange and access to semantically enriched datasets. While the use cases are not yet actively consuming data from the FAIRagro Federated RDI Network at the time of writing, the infrastructure has been designed to serve their needs as the FAIRagro federation matures.
 
 ### Related Work
 
-The challenge of federating heterogeneous research data infrastructures under a unified interface has been addressed by numerous initiatives, both within the agrosystems domain and in the broader life sciences. In the following, we distinguish between *federation and discovery platforms* that aggregate metadata from multiple sources and *data transformation tools* that convert data into specific formats. The FAIRagro extended middleware combines aspects of both: it federates data from heterogeneous RDIs and transforms it into a standardised FAIR Digital Object format (ARC).
+The challenge of federating heterogeneous research data infrastructures under a unified interface has been addressed by numerous initiatives, both within the agrosystems domain and in the broader life sciences. In the following, we distinguish between *federation and discovery platforms* that aggregate metadata from multiple sources and *data transformation tools* that convert data into specific formats. The FAIRagro Federated RDI Network combines aspects of both: it federates data from heterogeneous RDIs and transforms it into a standardised FAIR Digital Object format (ARC).
 
 #### Federated Data Infrastructures and Discovery Platforms
 
@@ -161,7 +161,7 @@ In the broader life sciences, **NCBI Entrez** [21] provides a global query syste
 
 **OpenAIRE** [25] provides infrastructure for the European Open Science Cloud (EOSC), aggregating metadata from repositories across Europe and offering discovery, monitoring, and reporting services. OpenAIRE defines interoperability guidelines for data providers but, like the other discovery platforms, operates at the metadata aggregation level rather than transforming data into standardised research objects.
 
-A common pattern across these platforms is that federation is typically achieved through *metadata harvesting and indexing* — the platforms discover and aggregate metadata but leave the underlying data in its original format and location. The FAIRagro extended middleware goes further: it not only extracts metadata from heterogeneous sources but transforms it into a standardised FAIR Digital Object (ARC) and publishes it to a common repository, thereby achieving a deeper level of data integration.
+A common pattern across these platforms is that federation is typically achieved through *metadata harvesting and indexing* — the platforms discover and aggregate metadata but leave the underlying data in its original format and location. The FAIRagro Federated RDI Network goes further: it not only extracts metadata from heterogeneous sources but transforms it into a standardised FAIR Digital Object (ARC) and publishes it to a common repository, thereby achieving a deeper level of data integration.
 
 #### Data Transformation and FAIRification Tools
 
@@ -173,19 +173,19 @@ At the tool level, several projects address specific stages of the FAIRification
 
 **ro-crate-py** [7] is a Python library for creating and manipulating RO-Crate objects. It provides a general-purpose API but does not implement the ISA model or the ARC profile, meaning that constructing ARCs from heterogeneous legacy sources would require substantial custom development for each data source.
 
-#### Positioning of the FAIRagro Extended Middleware
+#### Positioning of the FAIRagro Federated RDI Network
 
-The approach presented here occupies a distinct position: it combines *federation* (connecting autonomous, heterogeneous RDIs) with *automated data transformation* (converting metadata into a standardised FDO format). While discovery platforms like GARDIAN, BASE, and OpenAIRE aggregate metadata for search and reuse, the FAIRagro middleware actively transforms legacy metadata into semantically rich, self-describing ARC objects and publishes them to a common repository. This deeper integration goes beyond what metadata harvesting alone can achieve, while the client–gateway architecture — with source-specific conversion clients and a common middleware API — mirrors the federated, autonomy-preserving design principles seen in ELIXIR.
+The approach presented here occupies a distinct position: it combines *federation* (connecting autonomous, heterogeneous RDIs) with *automated data transformation* (converting metadata into a standardised FDO format). While discovery platforms like GARDIAN, BASE, and OpenAIRE aggregate metadata for search and reuse, the FAIRagro Federated RDI Network actively transforms legacy metadata into semantically rich, self-describing ARC objects and publishes them to a common repository. This deeper integration goes beyond what metadata harvesting alone can achieve, while the client–gateway architecture — with source-specific conversion clients and a common gateway API — mirrors the federated, autonomy-preserving design principles seen in ELIXIR.
 
-| Aspect                             | FAIRagro Middleware | GARDIAN             | NCBI Entrez     | ELIXIR        | BASE / OpenAIRE   |
-| ---------------------------------- | ------------------- | ------------------- | --------------- | ------------- | ----------------- |
-| Domain                             | Agrosystems         | Agriculture (CGIAR) | Life sciences   | Life sciences | Multidisciplinary |
-| Federation of autonomous RDIs      | ✓                   | ✓                   | ✗ (centralised) | ✓             | ✓                 |
-| Metadata harvesting                | ✓ (basic MW)        | ✓                   | ✗               | ✓             | ✓                 |
-| Data transformation to common FDO  | ✓ (extended MW)     | ✗                   | ✗               | ✗             | ✗                 |
-| Standardised output format (ARC)   | ✓                   | ✗                   | ✗               | ✗             | ✗                 |
-| Push and pull strategies           | ✓                   | pull only           | n/a             | n/a           | pull only         |
-| Source-specific conversion clients | ✓                   | ✗                   | ✗               | ✗             | ✗                 |
+| Aspect                             | FAIRagro Fed. RDI Network | GARDIAN             | NCBI Entrez     | ELIXIR        | BASE / OpenAIRE   |
+| ---------------------------------- | ------------------------- | ------------------- | --------------- | ------------- | ----------------- |
+| Domain                             | Agrosystems               | Agriculture (CGIAR) | Life sciences   | Life sciences | Multidisciplinary |
+| Federation of autonomous RDIs      | ✓                         | ✓                   | ✗ (centralised) | ✓             | ✓                 |
+| Metadata harvesting                | ✓ (basic component)       | ✓                   | ✗               | ✓             | ✓                 |
+| Data transformation to common FDO  | ✓ (extended component)    | ✗                   | ✗               | ✗             | ✗                 |
+| Standardised output format (ARC)   | ✓                         | ✗                   | ✗               | ✗             | ✗                 |
+| Push and pull strategies           | ✓                         | pull only           | n/a             | n/a           | pull only         |
+| Source-specific conversion clients | ✓                         | ✗                   | ✗               | ✗             | ✗                 |
 
 ### Availability and Requirements
 
@@ -213,15 +213,15 @@ The approach presented here occupies a distinct position: it combines *federatio
 
 ### Conclusions
 
-In a previous publication, García Brizuela et al. [1] presented the roadmap for the FAIRagro middleware — a federated architecture for connecting heterogeneous research data infrastructures in the agrosystems science community. That roadmap identified two phases: a basic middleware for metadata harvesting and an extended middleware for transforming legacy data into FAIR Digital Objects.
+In a previous publication, García Brizuela et al. [1] presented the roadmap for the FAIRagro Federated RDI Network (then referred to as the FAIRagro middleware) — a federated architecture for connecting heterogeneous research data infrastructures in the agrosystems science community. That roadmap identified two phases: a basic component for metadata harvesting and an extended component for transforming legacy data into FAIR Digital Objects.
 
-The work presented here advances the FAIRagro middleware from roadmap to operational system. With `sql-to-arc`, `inspire-to-arc`, and the Advanced Middleware API, we have realised the core of the extended middleware concept: automated pipelines that convert metadata from heterogeneous data sources into Annotated Research Contexts and publish them to the DataPLANT DataHub. The system has been validated with two FAIRagro RDIs — Edaphobase (relational database) and BonaRes (INSPIRE/CSW catalogue) — demonstrating the feasibility and extensibility of the approach. The generated ARCs serve downstream FAIRagro services: the Search Hub provides unified discovery across all federated metadata, while SciWIn can consume the ARC objects as FAIR Digital Objects for reproducible computational workflows.
+The work presented here advances the FAIRagro Federated RDI Network from roadmap to operational system. With `sql-to-arc`, `inspire-to-arc`, and the Advanced Middleware API, we have realised the core of the network concept: automated pipelines that convert metadata from heterogeneous data sources into Annotated Research Contexts and publish them to the DataPLANT DataHub. The system has been validated with two FAIRagro RDIs — Edaphobase (relational database) and BonaRes (INSPIRE/CSW catalogue) — demonstrating the feasibility and extensibility of the approach. The generated ARCs serve downstream FAIRagro services: the Search Hub provides unified discovery across all federated metadata, while SciWIn can consume the ARC objects as FAIR Digital Objects for reproducible computational workflows. At the time of writing, the network connects more than ten FAIRagro RDIs in various stages of integration [27].
 
-The architecture follows a client–gateway pattern: source-specific conversion clients handle the extraction and mapping of metadata from different types of data sources, while the common Advanced Middleware API provides a stable, validated gateway to the target repository. This design allows the middleware to accommodate new types of data sources by developing additional conversion clients, without changes to the gateway or the target repository. The view-based adapter pattern of `sql-to-arc` further lowers the barrier for relational databases by requiring only SQL view creation rather than custom code — respecting the operational autonomy of RDI operators, a key principle of the FAIRagro federation concept.
+The architecture follows a client–gateway pattern: source-specific conversion clients handle the extraction and mapping of metadata from different types of data sources, while the common Advanced Middleware API provides a stable, validated gateway to the target repository. This design allows the FAIRagro Federated RDI Network to accommodate new types of data sources by developing additional conversion clients, without changes to the gateway or the target repository. The view-based adapter pattern of `sql-to-arc` further lowers the barrier for relational databases by requiring only SQL view creation rather than custom code — respecting the operational autonomy of RDI operators, a key principle of the FAIRagro federation concept.
 
-Future work will focus on several directions. On the technical side, we plan to support incremental updates so that only new or modified investigations are re-converted, and to enrich partial ontology annotations using ontology lookup services as part of the semi-automated curation process described in the roadmap. We also plan to connect further FAIRagro RDIs — both via existing clients and new ones — contributing to the step-wise expansion of the federated middleware infrastructure envisioned in the original roadmap.
+Future work will focus on several directions. On the technical side, we plan to support incremental updates so that only new or modified investigations are re-converted, and to enrich partial ontology annotations using ontology lookup services as part of the semi-automated curation process described in the roadmap. We also plan to connect further FAIRagro RDIs — both via existing clients and new ones — contributing to the step-wise expansion of the FAIRagro Federated RDI Network envisioned in the original roadmap.
 
-A particularly important development for the middleware is the ongoing standardisation of metadata descriptions for agrosystems research data. Within FAIRagro, the AgriSchemas initiative is developing a community guideline for using Schema.org [15] and Bioschemas [16] vocabularies in the agrosystems domain [17]. AgriSchemas is not itself an extension of Schema.org but rather a set of recommendations on how to combine existing Schema.org types and Bioschemas profiles to consistently describe agrosystems-specific metadata such as soil properties, crop experiments, and environmental observations. Once AgriSchemas reaches maturity and community adoption, it is expected to become the recommended metadata schema for the FAIRagro community. From the perspective of the middleware architecture presented here, AgriSchemas-compliant metadata exposed by RDIs would be consumed by a dedicated conversion client following the pull strategy — harvesting structured metadata from RDI landing pages or APIs and transforming it into ARCs for publication via the Advanced Middleware API. This future client would complement the existing `sql-to-arc` and `inspire-to-arc` tools, further broadening the range of data sources that can be integrated into the FAIR data ecosystem.
+A particularly important development for the FAIRagro Federated RDI Network is the ongoing standardisation of metadata descriptions for agrosystems research data. Within FAIRagro, the AgriSchemas initiative is developing a community guideline for using Schema.org [15] and Bioschemas [16] vocabularies in the agrosystems domain [17]. AgriSchemas is not itself an extension of Schema.org but rather a set of recommendations on how to combine existing Schema.org types and Bioschemas profiles to consistently describe agrosystems-specific metadata such as soil properties, crop experiments, and environmental observations. Once AgriSchemas reaches maturity and community adoption, it is expected to become the recommended metadata schema for the FAIRagro community. From the perspective of the network architecture presented here, AgriSchemas-compliant metadata exposed by RDIs would be consumed by a dedicated conversion client following the pull strategy — harvesting structured metadata from RDI landing pages or APIs and transforming it into ARCs for publication via the Advanced Middleware API. This future client would complement the existing `sql-to-arc` and `inspire-to-arc` tools, further broadening the range of data sources that can be integrated into the FAIR data ecosystem.
 
 ---
 
@@ -320,3 +320,5 @@ CK designed and implemented the software, wrote the documentation, and drafted t
 [25] Manghi, P., Atzori, C., Bardi, A., Baglioni, M., Schirrwagen, J., Dimitropoulos, H., ... & La Bruzzo, S. (2022). OpenAIRE Research Graph. *Zenodo*. <https://doi.org/10.5281/zenodo.6616871>
 
 [26] Leidel, A., Krumsieck, J., König, P., von Waldow, H., & Hoedt, F. (2024). Boosting Scientific Reusability: A Concept for a FAIR Scientific Workflow Infrastructure (SciWIn). [Poster]. *Zenodo*. <https://doi.org/10.5281/zenodo.11619214>
+
+[27] García Brizuela, J., Scharfenberg, C., Specka, X., Lange, M., & Arend, D. (2026). FAIRagro Federated RDI Network: Connecting Agrosystem Research Data. [Poster]. *FAIRagro Community Summit 2026*. [in press]
