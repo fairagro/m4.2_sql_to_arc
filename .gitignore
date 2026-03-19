@@ -217,7 +217,7 @@ scratch/
 
 # Cryptographic keys and certificates for testing that are not meant to be committed
 helmchart/**/*.crt
-helmchart/**/*.key
+**/*.key
 helmchart/**/*.csr
 helmchart/**/*.srl
 helmchart/**/server.conf

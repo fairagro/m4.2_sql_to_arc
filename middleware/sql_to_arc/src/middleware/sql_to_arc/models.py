@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, Json
+from pydantic import BaseModel, ConfigDict, Field, Json, model_validator
 from pydantic_core import PydanticUndefined
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,30 @@ class BaseRow(BaseModel):
     __view_name__: ClassVar[str] = ""
 
     model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_spec_overrides(cls, data: Any) -> Any:
+        """Replace NULL (None) with default values for fields that allow spec overrides."""
+        if not isinstance(data, dict):
+            return data
+
+        for field_name, field_info in cls.model_fields.items():
+            # Check if value is explicitly None (SQL NULL)
+            if data.get(field_name) is None:
+                json_extra = field_info.json_schema_extra
+                allow_override = json_extra.get("spec_override", False) if isinstance(json_extra, dict) else False
+
+                # If override is allowed, replace with the field's default value
+                if allow_override:
+                    # Only apply if a default exists
+                    if field_info.default is not PydanticUndefined:
+                        data[field_name] = field_info.default
+                    elif field_info.get_default(call_default_factory=True) is not None:
+                        # Pydantic's get_default handles factory calls safely
+                        data[field_name] = field_info.get_default(call_default_factory=True)
+
+        return data
 
 
 class InvestigationRow(BaseRow):

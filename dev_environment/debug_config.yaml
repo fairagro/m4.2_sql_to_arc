@@ -8,8 +8,8 @@ api_client:
   # NOTE: Change this to the external Middleware API URL
   api_url: "https://middleware.fairagro.net"
   timeout: 600
-  client_cert_path: "/etc/sql_to_arc/client.crt"
-  client_key_path: "/run/secrets/client.key"
+  client_cert_path: "dev_environment/client.crt"
+  client_key_path: "dev_environment/client.key"
   verify_ssl: true
 
 otel:

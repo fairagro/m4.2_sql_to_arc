@@ -14,7 +14,7 @@ from sqlalchemy import (
     select,
     table,
 )
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import NoSuchTableError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from middleware.sql_to_arc.models import (
@@ -66,7 +66,7 @@ class SchemaValidator:
         try:
             columns = await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_columns(view_name))
             return {col["name"] for col in columns}
-        except (ProgrammingError, sqlalchemy.exc.NoSuchTableError):
+        except (ProgrammingError, NoSuchTableError):
             logger.warning('Table or view "%s" does not exist or is not accessible.', view_name)
             return None
 
@@ -184,7 +184,8 @@ class Database:
         entity_name: str,
     ) -> RowModel | None:
         try:
-            return model.model_validate(dict(row))
+            validated: RowModel = model.model_validate(dict(row))
+            return validated
         except ValidationError as error:
             logger.warning("Skipping %s due to validation error: %s", entity_name, error)
             return None
@@ -198,9 +199,13 @@ class Database:
         view_name = InvestigationRow.__view_name__
         try:
             async with self.engine.connect() as conn:
-                # Use SQLAlchemy select() and limit() for dialect-agnosticism
-                t = table(view_name)
-                stmt = select(t).execution_options(stream_results=True)
+                # Use literal_column("*") to ensure SQLAlchemy generates 'SELECT *'
+                # instead of '"vInvestigation"."*"'
+                stmt: sqlalchemy.Select[Any] = (
+                    select(sqlalchemy.literal_column("*"))
+                    .select_from(table(view_name))
+                    .execution_options(stream_results=True)
+                )
                 if limit:
                     stmt = stmt.limit(limit)
 
@@ -235,10 +240,14 @@ class Database:
         view_name = model.__view_name__
         try:
             async with self.engine.connect() as conn:
-                # Use SQLAlchemy select() and in_() for dialect-agnosticism
-                t = table(view_name)
+                # Use literal_column("*") to select all columns
                 c_inv_ref: sqlalchemy.ColumnElement[Any] = column("investigation_ref")
-                stmt = select(t).where(c_inv_ref.in_(investigation_ids)).execution_options(stream_results=True)
+                stmt: sqlalchemy.Select[Any] = (
+                    select(sqlalchemy.literal_column("*"))
+                    .select_from(table(view_name))
+                    .where(c_inv_ref.in_(investigation_ids))
+                    .execution_options(stream_results=True)
+                )
 
                 result = await conn.stream(stmt)
                 async for row in result.mappings():
@@ -278,9 +287,14 @@ class Database:
         view_name = "vAnnotationTable"
         try:
             async with self.engine.connect() as conn:
-                t = table(view_name)
+                # Use literal_column("*") to select all columns
                 c_inv_ref: sqlalchemy.ColumnElement[Any] = column("investigation_ref")
-                stmt = select(t).where(c_inv_ref.in_(investigation_ids)).execution_options(stream_results=True)
+                stmt: sqlalchemy.Select[Any] = (
+                    select(sqlalchemy.literal_column("*"))
+                    .select_from(table(view_name))
+                    .where(c_inv_ref.in_(investigation_ids))
+                    .execution_options(stream_results=True)
+                )
 
                 result = await conn.stream(stmt)
                 async for row in result.mappings():
