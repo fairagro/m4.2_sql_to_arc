@@ -39,14 +39,14 @@ Configuration is defined by `middleware.sql_to_arc.config.Config` and can be pro
 
 ```python
 config = Config.from_data({
-  "connection_string": "postgresql+asyncpg://user:pass@localhost:5432/edaphobase",
-  "rdi": "edaphobase",
-  "api_client": {
-    "api_url": "http://localhost:8000",
-    "client_cert_path": "/path/to/cert.pem",
-    "client_key_path": "/path/to/key.pem",
-    "verify_ssl": "false",
-  },
+    "connection_string": "postgresql+asyncpg://user:pass@localhost:5432/edaphobase",
+    "rdi": "edaphobase",
+    "api_client": {
+        "api_url": "http://localhost:8000",
+        "client_cert_path": "/path/to/cert.pem",
+        "client_key_path": "/path/to/key.pem",
+        "verify_ssl": "false",
+    },
 })
 ```
 
