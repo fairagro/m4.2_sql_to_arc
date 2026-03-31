@@ -3,7 +3,7 @@ services:
     image: postgres:15
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
     ports:
@@ -24,7 +24,7 @@ services:
         condition: service_healthy
     environment:
       PGHOST: postgres
-      PGUSER: ${POSTGRES_USER:-postgres}
+      PGUSER: ${POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: postgres
     volumes:
@@ -72,7 +72,7 @@ services:
       - ./config.yaml:/etc/sql_to_arc/config.yaml:ro
       - ./client.crt:/etc/sql_to_arc/client.crt:ro
     command: >
-      sh -c "echo \"$$SQL_TO_ARC_CLIENT_KEY_DATA\" > /run/secrets/client.key &&
+      sh -c "printf '%s' \"$$SQL_TO_ARC_CLIENT_KEY_DATA\" > /run/secrets/client.key &&
             /middleware/sql_to_arc/sql_to_arc -c /etc/sql_to_arc/config.yaml"
     restart: no
 
