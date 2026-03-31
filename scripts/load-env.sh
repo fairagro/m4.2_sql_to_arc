@@ -83,6 +83,14 @@ else
     echo "⚠️ pre-commit not available - skipping hook installation"
 fi
 
+# Sync python dependencies with uv
+if command -v uv &> /dev/null; then
+    echo "🔧 Syncing Python dependencies..."
+    (cd "${mydir}/.." && uv sync --dev --all-packages)
+else
+    echo "⚠️ uv not available - skipping dependency sync"
+fi
+
 ENCRYPTED_FILE="${mydir}/../.env.integration.enc"
 DECRYPTED_FILE="${mydir}/../.env"
 
