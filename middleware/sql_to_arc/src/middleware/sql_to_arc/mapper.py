@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from arctrl import (  # type: ignore
+from arctrl import (
     ArcAssay,
     ArcInvestigation,
     ArcStudy,

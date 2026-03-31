@@ -196,7 +196,7 @@ def _spawn_investigation_task(
     idx: int,
     batch_data: RelatedDataBatch,
     res: WorkerResources,
-    running_tasks: set[asyncio.Task],
+    running_tasks: set[asyncio.Task[None]],
 ) -> None:
     """Create worker context and spawn a processing task."""
     ctx = WorkerContext(
@@ -242,7 +242,7 @@ async def process_investigations(
         ) as executor,
         trace.get_tracer(__name__).start_as_current_span("process_investigations"),
     ):
-        running_tasks: set[asyncio.Task] = set()
+        running_tasks: set[asyncio.Task[None]] = set()
         inv_idx = 0
         investigation_gen = db.stream_investigations(stats=stats, limit=config.debug_limit)
 

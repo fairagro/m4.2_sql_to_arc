@@ -3,7 +3,7 @@
 import datetime
 
 import pytest
-from arctrl import (  # type: ignore[import-untyped, import-not-found]
+from arctrl import (
     ArcAssay,
     ArcInvestigation,
     ArcStudy,

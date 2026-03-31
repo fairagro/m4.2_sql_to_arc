@@ -136,6 +136,11 @@ exclude = [
 # ]
 # ignore_missing_imports = true
 
+# arctrl has no type stubs and no py.typed marker — suppress the resulting noise
+[[tool.mypy.overrides]]
+module = ["arctrl"]
+ignore_missing_imports = true
+
 # Docstring-Regeln aktivieren, damit es wie pylint C0114/15/16 meckert
 [tool.ruff.lint.pydocstyle]
 convention = "pep257" # oder "numpy", oder "google"

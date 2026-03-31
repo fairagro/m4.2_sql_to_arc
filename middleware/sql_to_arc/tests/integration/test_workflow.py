@@ -8,10 +8,10 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from arctrl import ARC  # type: ignore[import-untyped]
+from arctrl import ARC
 
-from middleware.api_client import ApiClient
-from middleware.shared.api_models.models import CreateOrUpdateArcsResponse
+from middleware.api_client import ApiClient, ArcMetadata, ArcResult, ArcStatus
+from middleware.api_client.models import ArcLifecycleStatus
 from middleware.shared.config.config_base import OtelConfig
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import WorkerContext
@@ -61,11 +61,15 @@ def mock_db_connection(mock_db_cursor: AsyncMock) -> AsyncMock:
 def mock_api_client() -> AsyncMock:
     """Mock API client."""
     client = AsyncMock(spec=ApiClient)
-    client.create_or_update_arc.return_value = CreateOrUpdateArcsResponse(
-        client_id="test",
-        message="success",
-        rdi="test",
-        arcs=[],
+    client.create_or_update_arc.return_value = ArcResult(
+        arc_id="test",
+        status=ArcStatus.CREATED,
+        metadata=ArcMetadata(
+            arc_hash="",
+            status=ArcLifecycleStatus.ACTIVE,
+            first_seen="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        ),
     )
     return client
 
@@ -121,7 +125,7 @@ class WorkflowTester:
         mocker.patch("middleware.sql_to_arc.main.configure_logging")
 
         # Capture ARCs on API call
-        async def capture_arc(rdi: str, arc: Any) -> CreateOrUpdateArcsResponse:
+        async def capture_arc(rdi: str, arc: Any) -> ArcResult:
             serialized_arc = arc
             if isinstance(arc, dict):
                 # Convert back to ARC object for test compatibility
@@ -129,7 +133,16 @@ class WorkflowTester:
                 serialized_arc = ARC.from_rocrate_json_string(json.dumps(arc))
 
             self.captured_arcs.append(serialized_arc)
-            return CreateOrUpdateArcsResponse(client_id="test", message="success", rdi=rdi, arcs=[])
+            return ArcResult(
+                arc_id=rdi,
+                status=ArcStatus.CREATED,
+                metadata=ArcMetadata(
+                    arc_hash="",
+                    status=ArcLifecycleStatus.ACTIVE,
+                    first_seen="2026-01-01T00:00:00Z",
+                    last_seen="2026-01-01T00:00:00Z",
+                ),
+            )
 
         self.api_client.create_or_update_arc.side_effect = capture_arc
 
