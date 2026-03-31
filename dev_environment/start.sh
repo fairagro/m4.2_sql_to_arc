@@ -22,17 +22,17 @@ echo "==> Starting SQL-to-ARC with EXTERNAL API..."
 echo "    - Local PostgreSQL will be started"
 echo "    - Database will be initialized with Edaphobase dump"
 echo "    - SQL-to-ARC will connect to the API configured in config.yaml"
-echo "    - Using client certificates: client.crt, client.key"
+echo "    - Using client certificates: client.crt, secrets.enc.yaml"
 echo ""
 
-if [[ ! -f "client.key" ]]; then
-  echo "ERROR: client.key not found. Please provide your client key."
+if [[ ! -f "secrets.enc.yaml" ]]; then
+  echo "ERROR: secrets.enc.yaml not found. Please provide your secrets file."
   exit 1
 fi
 
-# Use sops exec-env to pass the decrypted key as an environment variable
-# without writing it to a physical disk file.
-sops exec-env "${script_dir}/client.key" \
+# Use sops exec-env to pass the decrypted secrets as environment variables
+# without writing them to physical disk files.
+sops exec-env "${script_dir}/secrets.enc.yaml" \
   "docker compose -f compose.yaml up $BUILD_FLAG"
 
 echo ""

@@ -24,6 +24,7 @@ db_port: 5432
 # This is used to tag or namespace the converted ARCs
 rdi: "edaphobase"
 
+
 # API Client Configuration
 # -----------------------
 # Settings for connecting to the Middleware API to upload ARCs

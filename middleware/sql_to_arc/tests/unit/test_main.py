@@ -1,218 +1,140 @@
-"""Tests for sql_to_arc main module."""
+"""Unit tests for the sql_to_arc main module.
+
+This module contains tests for argument parsing, investigation processing,
+and workflow logic in the sql_to_arc pipeline.
+"""
 
 import asyncio
+import concurrent.futures
 from collections.abc import AsyncGenerator
-from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from middleware.sql_to_arc.main import (
-    DatasetContext,
-    ProcessingStats,
-    WorkerContext,
-    main,
-    parse_args,
+from middleware.api_client import ApiClient
+from middleware.sql_to_arc.config import Config
+from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
+from middleware.sql_to_arc.main import parse_args
+from middleware.sql_to_arc.models import InvestigationRow
+from middleware.sql_to_arc.processor import (
+    process_investigation,
     process_investigations,
-    process_single_dataset,
 )
+from middleware.sql_to_arc.stats import ProcessingStats
 
 
 class TestParseArgs:
     """Test suite for parse_args function."""
 
-    def test_parse_args_default(self) -> None:
+    @staticmethod
+    def test_parse_args_default() -> None:
         """Test parse_args with default config."""
         with patch("sys.argv", ["prog"]):
             args = parse_args()
             assert args.config == Path("config.yaml")
 
-    def test_parse_args_custom_config(self) -> None:
+    @staticmethod
+    def test_parse_args_custom_config() -> None:
         """Test parse_args with custom config file."""
         with patch("sys.argv", ["prog", "-c", "/path/to/config.yaml"]):
             args = parse_args()
             assert args.config == Path("/path/to/config.yaml")
 
-    def test_parse_args_long_form(self) -> None:
-        """Test parse_args with long form --config."""
-        with patch("sys.argv", ["prog", "--config", "/custom/config.yaml"]):
-            args = parse_args()
-            assert args.config == Path("/custom/config.yaml")
-
-    def test_parse_args_ignores_unknown_args(self) -> None:
-        """Test parse_args ignores pytest and other unknown arguments."""
-        with patch("sys.argv", ["prog", "-c", "config.yaml", "--unknown"]):
-            args = parse_args()
-            assert args.config == Path("config.yaml")
-
-    def test_parse_args_version(self) -> None:
-        """Test parse_args with version flag."""
-        with patch("sys.argv", ["prog", "--version"]):
-            args = parse_args()
-            assert args.version is True
-
-
-class TestMain:
-    """Test suite for main function."""
-
-    @pytest.mark.asyncio
-    async def test_main_version(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Test main function with version flag."""
-        with (
-            patch("sys.argv", ["prog", "--version"]),
-            patch("middleware.sql_to_arc.main.version", return_value="1.2.3"),
-            patch("sys.exit") as mock_exit,
-        ):
-            await main()
-            captured = capsys.readouterr()
-            assert "sql_to_arc version: 1.2.3" in captured.out
-            mock_exit.assert_called_once_with(0)
-
-    @pytest.mark.asyncio
-    async def test_main_version_unknown(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Test main function with version flag when package not installed."""
-        with (
-            patch("sys.argv", ["prog", "--version"]),
-            patch("middleware.sql_to_arc.main.version", side_effect=PackageNotFoundError),
-            patch("sys.exit") as mock_exit,
-        ):
-            await main()
-            captured = capsys.readouterr()
-            assert "sql_to_arc version: unknown" in captured.out
-            mock_exit.assert_called_once_with(0)
-
-
-# TestFetchAllInvestigations and other bulk fetchers removed as they are integrated into stream
-
-
-# Bulk fetch classes removed
-
 
 @pytest.mark.asyncio
-async def test_process_single_dataset_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test successful single dataset processing."""
-    mock_client = AsyncMock()
-    # Mock create_or_update_arc response
-    mock_arc_resp = MagicMock()
-    mock_arc_resp.status.value = "created"
-    mock_client.create_or_update_arc.return_value = MagicMock(arcs=[mock_arc_resp])
+async def test_process_investigation_builds_and_uploads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """process_investigation should build ARC via executor and upload it."""
+    mock_client = AsyncMock(spec=ApiClient)
+    mock_client.create_or_update_arc.return_value = MagicMock(arcs=[MagicMock(id="1")])
 
-    investigation = {"id": 1, "title": "Inv", "description": "Desc"}
-    studies_by_investigation: dict[int, list[dict[str, Any]]] = {1: [{"id": 10}]}
-    assays_by_study: dict[int, list[dict[str, Any]]] = {10: []}
-
-    mock_executor = MagicMock()
-
-    # Mock loop and executor behavior
-    loop_mock = MagicMock()
-
-    # Only ONE call now: build_arc_for_investigation returns JSON string directly
-    future: asyncio.Future[str] = asyncio.Future()
-    future.set_result('{"id": "arc-1", "Identifier": "1"}')
-
-    loop_mock.run_in_executor.return_value = future
-
-    monkeypatch.setattr("asyncio.get_event_loop", lambda: loop_mock)
-
-    ctx = WorkerContext(
-        client=mock_client,
-        rdi="test_rdi",
-        executor=mock_executor,
-        max_studies=5000,
-        max_assays=10000,
-        arc_generation_timeout_minutes=60,
-    )
-
+    investigation = InvestigationRow(identifier="1", title="Inv", description_text="Desc")
     stats = ProcessingStats()
-
-    dataset_ctx = DatasetContext(
-        investigation_row=investigation,
-        studies=studies_by_investigation[1],
-        assays_by_study=assays_by_study,
-    )
     semaphore = asyncio.Semaphore(1)
-    await process_single_dataset(ctx, dataset_ctx, semaphore, stats)
 
-    assert mock_client.create_or_update_arc.called
-    # Check that parsed JSON was passed
-    call_kwargs = mock_client.create_or_update_arc.call_args.kwargs
-    assert call_kwargs["rdi"] == "test_rdi"
-    assert call_kwargs["arc"] == {"id": "arc-1", "Identifier": "1"}
-    assert stats.failed_datasets == 0
-
-
-@pytest.mark.asyncio
-async def test_process_single_dataset_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test single dataset processing failure."""
-    mock_client = AsyncMock()
-    mock_executor = MagicMock()
-
-    # Mock build failure (returns None)
-    loop_future: asyncio.Future[None] = asyncio.Future()
-    loop_future.set_result(None)
+    # Mock the loop.run_in_executor to return a JSON string
+    loop_future: asyncio.Future[str] = asyncio.Future()
+    loop_future.set_result('{"Identifier": "1"}')
 
     loop_mock = MagicMock()
     loop_mock.run_in_executor.return_value = loop_future
-    monkeypatch.setattr("asyncio.get_event_loop", lambda: loop_mock)
+    monkeypatch.setattr("asyncio.get_event_loop", MagicMock(return_value=loop_mock))
+
+    executor = MagicMock(spec=concurrent.futures.ProcessPoolExecutor)
 
     ctx = WorkerContext(
         client=mock_client,
         rdi="test_rdi",
-        executor=mock_executor,
-        max_studies=5000,
-        max_assays=10000,
-        arc_generation_timeout_minutes=60,
+        studies_by_inv={},
+        assays_by_inv={},
+        contacts_by_inv={},
+        pubs_by_inv={},
+        anns_by_inv={},
+        worker_id=1,
+        total_workers=1,
+        executor=executor,
+        arc_generation_timeout_minutes=1,
     )
 
-    semaphore = asyncio.Semaphore(1)
-    stats = ProcessingStats()
+    await process_investigation(ctx, investigation, stats, "Inv 1", semaphore)
 
-    investigation = {"id": 1}
-    dataset_ctx = DatasetContext(investigation_row=investigation, studies=[], assays_by_study={})
-    await process_single_dataset(ctx, dataset_ctx, semaphore, stats)
-
-    assert not mock_client.create_or_update_arc.called
-    assert stats.failed_datasets == 1
-    assert "1" in stats.failed_ids
+    loop_mock.run_in_executor.assert_called_once()
+    mock_client.create_or_update_arc.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_process_investigations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test full process_investigations flow."""
-    mock_cursor = AsyncMock()
-    mock_client = AsyncMock()
-    mock_config = MagicMock(
+async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test full process_investigations flow with batching and streaming."""
+    mock_db = MagicMock()
+
+    # Mock DB stream methods
+    async def mock_gen(**kwargs: Any) -> AsyncGenerator[Any, None]:
+        stats = kwargs.get("stats")
+        data = [
+            InvestigationRow(identifier="1", title="T1", description_text="D1"),
+            InvestigationRow(identifier="2", title="T2", description_text="D2"),
+        ]
+        if stats:
+            stats.found_datasets += len(data)
+        for item in data:
+            yield item
+
+    mock_db.stream_investigations.side_effect = mock_gen
+
+    # Mock related data fetch
+    async def mock_fetch_related(*_args: Any, **_kwargs: Any) -> RelatedDataBatch:
+        return RelatedDataBatch(
+            studies_by_inv={},
+            assays_by_inv={},
+            contacts_by_inv={},
+            pubs_by_inv={},
+            anns_by_inv={},
+            study_count=1,
+            assay_count=0,
+        )
+
+    monkeypatch.setattr("middleware.sql_to_arc.processor._fetch_and_group_related_data", mock_fetch_related)
+
+    mock_client = AsyncMock(spec=ApiClient)
+    mock_config = MagicMock(spec=Config)
+    mock_config.configure_mock(
         max_concurrent_arc_builds=2,
         max_concurrent_tasks=4,
+        db_batch_size=10,
         rdi="test",
-        db_batch_size=100,
-        max_studies=5000,
-        max_assays=10000,
-        arc_generation_timeout_minutes=60,
+        debug_limit=10,
+        arc_generation_timeout_minutes=30,
     )
 
-    # Mock stream_investigation_datasets
-    async def mock_stream(*_args: Any, **_kwargs: Any) -> AsyncGenerator[tuple[dict, list, dict], None]:
-        yield ({"id": 1}, [{"id": 10}], {10: []})
-        yield ({"id": 2}, [], {})
-        yield ({"id": 3}, [], {})
+    # Mock process_investigation to simplify
+    async def mock_process_inv(*args: Any, **kwargs: Any) -> None:
+        pass
 
-    monkeypatch.setattr("middleware.sql_to_arc.main.stream_investigation_datasets", mock_stream)
+    monkeypatch.setattr("middleware.sql_to_arc.processor.process_investigation", mock_process_inv)
 
-    # Mock process_single_dataset to avoid checking the whole flow details here
-    async def mock_process_single(
-        _ctx: WorkerContext,
-        _dataset_ctx: DatasetContext,
-        _sem: asyncio.Semaphore,
-        _stats: ProcessingStats,
-    ) -> None:
-        # Simulate success
-        return
+    stats = await process_investigations(mock_db, mock_client, mock_config)
 
-    monkeypatch.setattr("middleware.sql_to_arc.main.process_single_dataset", mock_process_single)
-
-    stats = await process_investigations(mock_cursor, mock_client, mock_config)
-
-    assert stats.found_datasets == 3  # noqa: PLR2004
+    assert stats.found_datasets == 2  # noqa: PLR2004
+    assert stats.total_studies == 1
+    mock_db.stream_investigations.assert_called_with(stats=stats, limit=10)

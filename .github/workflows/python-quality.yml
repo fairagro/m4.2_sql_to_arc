@@ -44,7 +44,7 @@ jobs:
 
     - name: Type checking with mypy
       run: |
-        uv run mypy middleware/ --ignore-missing-imports --strict-optional
+        uv run mypy middleware/
       continue-on-error: false
 
     - name: Security check with bandit

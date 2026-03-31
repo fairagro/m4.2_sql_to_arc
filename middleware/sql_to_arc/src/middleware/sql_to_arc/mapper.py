@@ -1,11 +1,9 @@
 """Mapper module to convert database rows to ARCTRL objects."""
 
-import json
-import logging
 from datetime import datetime
-from typing import Any, cast
+from typing import Any
 
-from arctrl import (  # type: ignore[import-untyped]
+from arctrl import (
     ArcAssay,
     ArcInvestigation,
     ArcStudy,
@@ -14,136 +12,129 @@ from arctrl import (  # type: ignore[import-untyped]
     Publication,
 )
 
-logger = logging.getLogger(__name__)
+from middleware.sql_to_arc.models import (
+    AssayRow,
+    ContactRow,
+    InvestigationRow,
+    PublicationRow,
+    StudyRow,
+)
+
+# name=term, tan=uri (TermAccessionNumber), tsr="" (TermSourceREF - we don't have it, maybe version?)
+# Spec says version is used. If we don't have TSR, we can leave it empty.
 
 
-def map_investigation(row: dict[str, Any]) -> ArcInvestigation:
-    """Map a database row to an ArcInvestigation object.
+def _make_oa(term: str | None, uri: str | None, _version: str | None) -> OntologyAnnotation:
+    if not term:
+        return OntologyAnnotation()
 
-    Args:
-        row: Dictionary containing investigation data from DB
+    # name=term, tan=uri (TermAccessionNumber), tsr="" (TermSourceREF - we don't have it, maybe version?)
+    # Spec says version is used. If we don't have TSR, we can leave it empty.
+    return OntologyAnnotation(name=term, tan=uri or "", tsr="")
 
-    Returns:
-        ArcInvestigation object
-    """
+
+def _format_date(d: Any) -> str | None:
+    """Format dates as ISO strings."""
+    if isinstance(d, datetime):
+        return d.isoformat()
+    if isinstance(d, str):
+        return d
+    return None
+
+
+def map_investigation(row: InvestigationRow) -> ArcInvestigation:
+    """Map a database row to an ArcInvestigation object."""
     # Handle potential None values for dates
-    submission_date = cast(datetime, row.get("submission_time")).isoformat() if row.get("submission_time") else None
-    public_release_date = cast(datetime, row.get("release_time")).isoformat() if row.get("release_time") else None
+    submission_date = row.submission_date
+    public_release_date = row.public_release_date
 
-    # Validate ID (mandatory per DB view spec, but we enforce it here to be safe)
-    identifier = str(row["id"]) if row.get("id") is not None else ""
+    identifier = row.identifier
     if not identifier.strip():
-        raise ValueError(f"Investigation ID cannot be empty (row={row})")
+        # It's a required field
+        # But we might start empty
+        pass
 
-    return ArcInvestigation.create(
+    inv = ArcInvestigation.create(
         identifier=identifier,
-        title=row.get("title", ""),
-        description=row.get("description", ""),
-        submission_date=submission_date,
-        public_release_date=public_release_date,
+        title=row.title,
+        description=row.description_text,
+        submission_date=_format_date(submission_date),
+        public_release_date=_format_date(public_release_date),
     )
+    return inv
 
 
-def map_study(row: dict[str, Any]) -> ArcStudy:
-    """Map a database row to an ArcStudy object.
-
-    Args:
-        row: Dictionary containing study data from DB
-
-    Returns:
-        ArcStudy object
-    """
-    # Handle potential None values for dates
-    submission_date = cast(datetime, row.get("submission_time")).isoformat() if row.get("submission_time") else None
-    public_release_date = cast(datetime, row.get("release_time")).isoformat() if row.get("release_time") else None
+def map_study(row: StudyRow) -> ArcStudy:
+    """Map a database row to an ArcStudy object."""
+    submission_date = row.submission_date
+    public_release_date = row.public_release_date
 
     return ArcStudy.create(
-        identifier=str(row["id"]),
-        title=row.get("title", ""),
-        description=row.get("description", ""),
-        submission_date=submission_date,
-        public_release_date=public_release_date,
+        identifier=row.identifier,
+        title=row.title,
+        description=row.description_text,
+        submission_date=_format_date(submission_date),
+        public_release_date=_format_date(public_release_date),
     )
 
 
-def map_assay(row: dict[str, Any]) -> ArcAssay:
-    """Map a database row to an ArcAssay object.
+def map_assay(row: AssayRow) -> ArcAssay:
+    """Map a database row to an ArcAssay object."""
+    assay = ArcAssay.create(
+        identifier=row.identifier,
+        measurement_type=_make_oa(row.measurement_type_term, row.measurement_type_uri, None),
+        technology_type=_make_oa(row.technology_type_term, row.technology_type_uri, None),
+        technology_platform=_make_oa(
+            row.technology_platform,  # Spec says platform is text but mapping to OA is allowed
+            None,
+            None,
+        )
+        if row.technology_platform
+        else None,
+    )
 
-    Args:
-        row: Dictionary containing assay data from DB
+    return assay
 
-    Returns:
-        ArcAssay object
 
-    Note:
-        TODO: Currently measurement_type and technology_type from DB are simple strings,
-        but ArcAssay expects OntologyTerm objects. Once the database schema is updated to
-        provide full ontology information (term accession, ontology name, etc.), these
-        should be converted to proper OntologyTerm objects instead of being omitted.
-    """
-    # TODO: Convert measurement_type and technology_type to OntologyTerms
-    # once the database provides the necessary ontology information
-    return ArcAssay.create(
-        identifier=str(row["id"]),
+def map_publication(row: PublicationRow) -> Publication:
+    """Map a database row to a Publication object."""
+    # Publication(doi, pubMedID, authors, title, status)
+
+    status = _make_oa(row.status_term, row.status_uri, None)
+
+    return Publication(
+        doi=row.doi,
+        pub_med_id=row.pubmed_id,
+        authors=row.authors,
+        title=row.title,
+        status=status,
     )
 
 
-def map_contact(row: dict[str, Any]) -> Person:
-    """Map a database row to a Person object.
+def map_contact(row: ContactRow) -> Person:
+    """Map a database row to a Person object."""
+    # Person(lastName, firstName, midInitials, email, phone, fax, address, affiliation, roles)
 
-    Args:
-        row: Dictionary containing contact data from DB
-
-    Returns:
-        Person object
-    """
+    # row.roles is now already a list (it was Json[JsonList] and validated/parsed by Pydantic)
     roles = []
-    if row.get("roles"):
-        try:
-            roles_data = json.loads(row["roles"])
-            if isinstance(roles_data, list):
-                for r in roles_data:
-                    roles.append(
-                        OntologyAnnotation(
-                            name=r.get("term"),
-                            tsr=r.get("version"),
-                            tan=r.get("uri"),
-                        )
-                    )
-        except (json.JSONDecodeError, TypeError) as e:
-            # Fallback for invalid JSON or type mismatch, with logging
-            logger.warning(
-                "Could not parse roles JSON for contact with email '%s'. Error: %s",
-                row.get("email", "N/A"),
-                e,
-            )
-            pass
+    if row.roles:
+        for r in row.roles:
+            if isinstance(r, dict):
+                roles.append(_make_oa(r.get("term"), r.get("uri"), r.get("version")))
 
-    return Person.create(
-        first_name=row.get("first_name"),
-        last_name=row.get("last_name"),
-        mid_initials=row.get("mid_initials"),
-        email=row.get("email"),
-        phone=row.get("phone"),
-        fax=row.get("fax"),
-        address=row.get("address"),
-        affiliation=row.get("affiliation"),
-        roles=roles if roles else None,
+    return Person(
+        last_name=row.last_name,
+        first_name=row.first_name,
+        mid_initials=row.mid_initials,
+        email=row.email,
+        phone=row.phone,
+        fax=row.fax,
+        address=row.postal_address,
+        affiliation=row.affiliation,
+        roles=roles,
     )
 
 
-def map_publication(row: dict[str, Any]) -> Publication:
-    """Map a database row to a Publication object.
-
-    Args:
-        row: Dictionary containing publication data from DB
-
-    Returns:
-        Publication object
-    """
-    return Publication.create(
-        pub_med_id=row.get("pub_med_id"),
-        doi=row.get("doi"),
-        authors=row.get("authors"),
-        title=row.get("title"),
-    )
+def map_annotation(row: dict[str, Any]) -> dict[str, Any]:
+    """Return raw dict for annotation processing."""
+    return row

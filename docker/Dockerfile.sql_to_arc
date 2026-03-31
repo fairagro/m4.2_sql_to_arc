@@ -8,18 +8,16 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY middleware ./middleware
 
 # Upgrade pip and install uv
-RUN pip install --no-cache-dir --upgrade pip==25.3 uv==0.9.27
+RUN pip install --no-cache-dir --upgrade pip==26.0.1 uv==0.11.2
 
 # Declare build argument for versioning
 ARG APP_VERSION=0.0.0
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${APP_VERSION}
+ENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SQL_TO_ARC=${APP_VERSION}
 
 # We prefer to build a wheel for our package first. This ensures we have a clean,
 # distributable artifact that contains only the necessary files.
-# We set HATCH_VCS_PRETEND_VERSION so hatch-vcs can work without .git folder.
-# We also set SETUPTOOLS_SCM_PRETEND_VERSION for compatibility with related tools.
-RUN HATCH_VCS_PRETEND_VERSION=${APP_VERSION#v} \
-    SETUPTOOLS_SCM_PRETEND_VERSION=${APP_VERSION#v} \
-    uv build --package sql_to_arc --wheel
+RUN uv build --package sql_to_arc --wheel
 
 
 # ---- Binary Build Stage ----
@@ -31,16 +29,27 @@ RUN apk add --no-cache \
     python3-dev=3.12.12-r0 \
     libffi-dev=3.5.2-r0 \
     openssl-dev=3.5.5-r0 \
-    cargo=1.91.1-r0 \
-    git=2.52.0-r0
+    cargo=1.91.1-r1 \
+    git=2.52.0-r0 \
+    unixodbc-dev=2.3.14-r0 \
+    curl=8.17.0-r1
+
+# Pre-download Microsoft ODBC Driver 18 for Alpine (kept for runtime stage)
+# Use -L to follow redirects
+RUN curl -L -O https://download.microsoft.com/download/9dcab408-e0d4-4571-a81a-5a0951e3445f/msodbcsql18_18.6.1.1-1_amd64.apk
 
 WORKDIR /build
 
 # Install uv core tool
-RUN pip install --no-cache-dir --upgrade pip==25.3 uv==0.9.27
+RUN pip install --no-cache-dir --upgrade pip==26.0.1 uv==0.11.2
 
 # Declare build argument for versioning
 ARG APP_VERSION=0.0.0
+# Pretend version for both workspace members to satisfy hatch-vcs
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${APP_VERSION}
+ENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SQL_TO_ARC=${APP_VERSION}
+
+
 
 # Bring in the pre-built wheel and project metadata
 COPY --from=package-builder /build/dist/*.whl /tmp/wheels/
@@ -56,13 +65,14 @@ COPY middleware ./middleware
 #    as pre-built wheels on PyPI.
 # 3. Thus, we use 'uv sync' to create a virtual environment (.venv) and resolve all
 #    complex dependencies exactly as specified in the uv.lock.
-RUN SETUPTOOLS_SCM_PRETEND_VERSION=${APP_VERSION#v} \
-    uv sync --no-dev
+# 4. We scope sync to the sql_to_arc workspace package so uv does not additionally
+#    build/install the root project (m4-2-sql-to-arc).
+RUN uv sync --no-dev --package sql_to_arc
 
-# 4. Install the application wheel.
-#    This replaces the editable install from 'uv sync' with the optimized wheel.
-RUN SETUPTOOLS_SCM_PRETEND_VERSION=${APP_VERSION#v} \
-    uv pip install /tmp/wheels/*.whl pyinstaller
+# 4. Finally, for packages like sql_to_arc that exist both as a workspace dependency
+#    and as a pre-built wheel, we explicitly 'uv pip install' the wheel. This ensures
+#    we use our optimized, pre-built package instead of the 'editable' source install.
+RUN uv pip install /tmp/wheels/*.whl pyinstaller
 
 # 5. FIX: Manually reinstall git dependencies using their INTERNAL names (underscore)
 #    to ensure proper namespace installation. We do this AFTER installing the wheel
@@ -90,6 +100,19 @@ FROM alpine:3.23.3
 
 WORKDIR /middleware
 
+# Install runtime dependencies for ODBC (MSSQL) and Oracle
+# We copy the pre-downloaded Microsoft ODBC driver from the builder stage
+# and install it using --allow-untrusted as the public key is not pre-installed in alpine.
+COPY --from=binary-builder /msodbcsql18_18.6.1.1-1_amd64.apk /tmp/
+
+RUN apk add --no-cache --upgrade \
+        unixodbc=2.3.14-r0 \
+        libstdc++=15.2.0-r2 \
+        gcompat=1.1.0-r4 \
+        zlib=1.3.2-r0 && \
+    apk add --no-cache --allow-untrusted /tmp/msodbcsql18_18.6.1.1-1_amd64.apk && \
+    rm /tmp/msodbcsql18_*.apk
+
 # Create non-root user and group
 RUN addgroup -S sql_to_arc && \
     adduser -S -H -G sql_to_arc sql_to_arc
@@ -100,4 +123,4 @@ COPY --chown=sql_to_arc:sql_to_arc --from=binary-builder /build/dist/sql_to_arc 
 USER sql_to_arc
 
 # Execute the binary inside the directory
-CMD ["/middleware/sql_to_arc/sql_to_arc"]
+CMD ["/middleware/sql_to_arc/sql_to_arc", "-c", "/etc/sql_to_arc/config.yaml"]

@@ -3,8 +3,8 @@ services:
     image: postgres:15
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
     ports:
       - "5432:5432"
@@ -24,9 +24,11 @@ services:
         condition: service_healthy
     environment:
       PGHOST: postgres
-      PGUSER: ${POSTGRES_USER:-postgres}
-      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: postgres
+    volumes:
+      - ./FAIRagro.sql:/tmp/FAIRagro.sql:ro
     entrypoint: /bin/bash
     command:
       - -c
@@ -39,9 +41,17 @@ services:
         psql -c "DROP DATABASE IF EXISTS edaphobase;"
         psql -c "CREATE DATABASE edaphobase;"
 
-        echo "Downloading and importing Edaphobase dump..."
-        wget -q -O - https://repo.edaphobase.org/rep/dumps/FAIRagro.sql | \
-          PGDATABASE=edaphobase psql
+        echo "Attempting to download Edaphobase dump..."
+        if wget -q -O /tmp/downloaded_FAIRagro.sql https://repo.edaphobase.org/rep/dumps/FAIRagro.sql; then
+          echo "Importing downloaded dump..."
+          PGDATABASE=edaphobase psql < /tmp/downloaded_FAIRagro.sql
+        elif [ -f /tmp/FAIRagro.sql ]; then
+          echo "Download failed. Importing local FAIRagro.sql fallback..."
+          PGDATABASE=edaphobase psql < /tmp/FAIRagro.sql
+        else
+          echo "Error: Could not download dump and no local fallback found."
+          exit 1
+        fi
 
         echo "Database initialization complete."
 
@@ -54,15 +64,15 @@ services:
       db-init:
         condition: service_completed_successfully
     environment:
-      SQL_TO_ARC_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      CLIENT_KEY_DATA: ${data}
+      SQL_TO_ARC_CONNECTION_STRING: ${CONNECTION_STRING}
+      SQL_TO_ARC_CLIENT_KEY_DATA: ${CLIENT_KEY}
     tmpfs:
       - /run/secrets:mode=1777
     volumes:
       - ./config.yaml:/etc/sql_to_arc/config.yaml:ro
       - ./client.crt:/etc/sql_to_arc/client.crt:ro
     command: >
-      sh -c "printf '%s' \"$$CLIENT_KEY_DATA\" > /run/secrets/client.key &&
+      sh -c "printf '%s' \"$$SQL_TO_ARC_CLIENT_KEY_DATA\" > /run/secrets/client.key &&
             /middleware/sql_to_arc/sql_to_arc -c /etc/sql_to_arc/config.yaml"
     restart: no
 
