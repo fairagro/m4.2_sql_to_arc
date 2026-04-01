@@ -23,6 +23,22 @@ The tool is configured using a YAML file, which can be overridden by Environment
 
 ### YAML Configuration (`config.yaml`)
 
+Example configuration file:
+
+```yaml
+connection_string: "postgresql+psycopg://user:password@localhost:5432/edaphobase"
+rdi: "edaphobase"
+rdi_url: "https://portal.edaphobase.org"
+max_concurrent_arc_builds: 4
+db_batch_size: 50
+
+api_client:
+  api_url: "https://middleware.fairagro.net/api/v1"
+  client_cert_path: "/run/secrets/client.crt"
+  client_key_path: "/run/secrets/client.key"
+  verify_ssl: true
+```
+
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `connection_string` | `string` | Database URI (e.g., `postgresql+psycopg://user:pass@host:5432/db`). |
@@ -35,6 +51,11 @@ The tool is configured using a YAML file, which can be overridden by Environment
 | `debug_limit` | `int` | (Optional) Limit processing to the first N investigations. |
 
 #### `api_client` Configuration
+
+The official **[FAIRagro Middleware API](https://middleware.fairagro.net/docs#/)** requires **mTLS (Mutual TLS)** for authentication. This means you must provide both a client certificate and a private key.
+
+To obtain a valid client certificate for your RDI, please contact the FAIRagro middleware team at:
+`carsten (dot) scharfenberg (at) zalf (dot) de`
 
 | Field | Type | Description |
 | :--- | :--- | :--- |

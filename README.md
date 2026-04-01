@@ -16,7 +16,7 @@ This repository contains the **SQL-to-ARC Converter**, a core component of the F
 
 The preferred method for working with this repository is using the **Dev Container** (VS Code).
 
-While it is possible to develop without the Dev Container (see prerequisites below), this approach is not tested and is therefore neither documented nor officially supported.
+While it is possible to develop without the Dev Container (see next steps below), this approach is not tested and is therefore neither documented nor officially supported.
 
 ### 1. Prerequisites (for manual setups only)
 
