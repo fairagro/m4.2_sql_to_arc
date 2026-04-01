@@ -1,142 +1,142 @@
-# Architektur-Dokumentation: SQL-to-ARC Middleware
+# Architectural Documentation: SQL-to-ARC Middleware
 
-## 1. Übersicht
+## 1. Overview
 
-Die SQL-to-ARC Middleware ist für die Konvertierung von Metadaten aus einer relationalen SQL-Datenbank in das **ARC (Annotated Research Context)** Format verantwortlich. Die Architektur ist auf **hohen Durchsatz**, **speichereffiziente Verarbeitung** und **Stabilität** bei großen Datenmengen ausgelegt.
+The SQL-to-ARC Middleware is responsible for converting metadata from a relational SQL database into the **ARC (Annotated Research Context)** format. The architecture is designed for **high throughput**, **memory-efficient processing**, and **stability** when handling large volumes of data.
 
-## 2. Kernkomponenten
+## 2. Core Components
 
-Die Middleware besteht aus drei Hauptschichten:
+The middleware consists of three main layers:
 
-1. **Async IO Loop (Controller):** Orchestriert den Datenfluss, verwaltet Datenbank-Streams und API-Uploads.
-2. **Process Pool Executor (Worker):** Parallelisiert die CPU-lastige ARC-Berechnung in separaten Betriebssystem-Prozessen.
-3. **Streaming Generator (Data Layer):** Liest Daten in Chunks aus der Datenbank, um den RAM-Verbrauch konstant zu halten.
-
----
-
-## 3. Detaillierte Architekturkonzepte
-
-### 3.1 Parallelisierung & CPU-Offloading
-
-Da die Generierung von ARCs (via `arctrl`) rechenintensiv ist und Python durch das Global Interpreter Lock (GIL) limitiert wird, nutzt die Middleware einen `ProcessPoolExecutor`.
-
-- **Vorteil:** Jede ARC-Berechnung läuft auf einem eigenen CPU-Kern.
-- **Implementierung:** `loop.run_in_executor(executor, build_arc_for_investigation, ...)`
-- **Multiprocessing Support:** Der Aufruf von `multiprocessing.freeze_support()` stellt sicher, dass die Middleware auch in "eingefrorenen" Umgebungen (wie PyInstaller-Binaries unter Windows) korrekt neue Prozesse starten kann. Unter Linux ist dies primär eine Best-Practice für die Cross-Platform Kompatibilität.
-
-### 3.2 Concurrency & Flow Control (Die Semaphore)
-
-Zusätzlich zum Prozess-Pool wird eine `asyncio.Semaphore` verwendet. Dies adressiert zwei kritische Probleme, die ein reiner Prozess-Pool nicht lösen kann:
-
-1. **Memory Protection:** Ohne Semaphore würde Python für alle (z. B. 10.000) Datensätze gleichzeitig asynchrone Tasks starten und Daten aus der DB im RAM halten. Die Semaphore limitiert die Anzahl der *gleichzeitig aktiven* Workflows.
-2. **Network/IO Backpressure:** Die Semaphore begrenzt auch die Anzahl der gleichzeitigen HTTP-Verbindungen zur API, um Timeouts und Rate-Limiting zu vermeiden.
-
-**Diskussionspunkt:** *Warum nicht einfach die Größe des Prozess-Pools limitieren?*
-Der Prozess-Pool limitiert nur die CPU-Auslastung. Die Semaphore limitiert den **gesamten Lebenszyklus** (Datenvorbereitung -> Build -> Upload). Sie verhindert, dass der Speicher mit "wartenden" Daten überläuft, bevor diese überhaupt an den Pool übergeben werden.
-
-### 3.3 Speichereffizientes Daten-Streaming
-
-Die Middleware implementiert einen **Lazy-Loading** Ansatz für Datenbank-Entitäten:
-
-- **Chunking:** Über den Generator `stream_investigation_datasets` werden Untersuchungen mit `fetchmany(batch_size)` geladen.
-- **Relationales Batching:** Für jeden Chunk (z. B. 100 Untersuchungen) werden die zugehörigen Studies und Assays in einem einzigen Bulk-Query (`WHERE investigation_id = ANY(...)`) nachgeladen.
-- **Effekt:** Wir vermeiden das "N+1 Query" Problem (extrem langsam) und gleichzeitig den "Full Table Load" (extrem speicherhungrig).
+1. **Async IO Loop (Controller):** Orchestrates the data flow, manages database streams, and handles API uploads.
+2. **Process Pool Executor (Worker):** Parallelizes CPU-intensive ARC calculations in separate operating system processes.
+3. **Streaming Generator (Data Layer):** Reads data in chunks from the database to keep RAM consumption constant.
 
 ---
 
-## 4. Speicher-Management & Performance-Optimierung
+## 3. Detailed Architectural Concepts
 
-Bei der Verarbeitung von tausenden Investigations (ARC-Containern) kann der RAM-Verbrauch kritisch werden. Die Middleware implementiert hierfür drei Strategien:
+### 3.1 Parallelization & CPU Offloading
 
-### 4.1 Backlog Flow Control (Produzenten-Pause)
+Since generating ARCs (via `arctrl`) is computationally intensive and Python is limited by the Global Interpreter Lock (GIL), the middleware utilizes a `ProcessPoolExecutor`.
 
-Der asynchrone Datenbank-Stream produziert Daten schneller, als der Prozess-Pool sie konvertieren kann.
+* **Advantage:** Each ARC calculation runs on its own CPU core.
+* **Implementation:** `loop.run_in_executor(executor, build_single_arc_task, ...)`
+* **Multiprocessing Support:** Calling `multiprocessing.freeze_support()` ensures the middleware correctly starts new processes even in "frozen" environments (such as PyInstaller binaries on Windows). On Linux, this is primarily a best practice for cross-platform compatibility.
 
-- **Problem:** Tausende `asyncio.Tasks` würden gleichzeitig im RAM auf ihre Ausführung warten, inklusive aller zugehörigen Datenbank-Zeilen.
-- **Lösung:** Eine Drosselung im Haupt-Loop: `if len(running_tasks) >= max_concurrent_tasks: await asyncio.wait(...)`. Der Stream pausiert, bis wieder Kapazität frei ist. Dies limitiert die Anzahl der Datensätze, die sich gleichzeitig im Speicher befinden.
+### 3.2 Concurrency & Flow Control (The Semaphore)
+
+In addition to the process pool, an `asyncio.Semaphore` is used. This addresses two critical issues that a pure process pool cannot solve:
+
+1. **Memory Protection:** Without a semaphore, Python would start asynchronous tasks for all (e.g., 10,000) datasets simultaneously and keep the database data in RAM. The semaphore limits the number of *concurrently active* workflows.
+2. **Network/IO Backpressure:** The semaphore also limits the number of simultaneous HTTP connections to the API to avoid timeouts and rate-limiting.
+
+**Discussion Point:** *Why not simply limit the size of the process pool?*
+The process pool only limits CPU usage. The semaphore limits the **entire lifecycle** (data preparation -> build -> upload). It prevents the memory from overflowing with "waiting" data before it is even handed over to the pool.
+
+### 3.3 Memory-Efficient Data Streaming
+
+The middleware implements a **lazy-loading** approach for database entities:
+
+* **Chunking:** Using the `stream_investigations` generator (in the `Database` class), investigations are loaded in batches.
+* **Relational Batching:** Associated studies, assays, contacts, and publications are fetched in bulk for each batch using specialized queries (e.g., `WHERE investigation_ref = ANY(...)`).
+* **Effect:** We avoid the "N+1 Query" problem (extremely slow) while also avoiding a "Full Table Load" (extremely memory-intensive).
+
+---
+
+## 4. Memory Management & Performance Optimization
+
+When processing thousands of investigations (ARC containers), RAM consumption can become critical. The middleware implements three strategies for this:
+
+### 4.1 Backlog Flow Control (Producer Pause)
+
+The asynchronous database stream produces data faster than the process pool can convert it.
+
+* **Problem:** Thousands of `asyncio.Tasks` would wait in RAM simultaneously for execution, including all associated database rows.
+* **Solution:** Throttling in the main loop managed by the semaphore and task set management. The stream pauses until capacity becomes available. This limits the number of datasets residing in memory at once.
 
 ### 4.2 Worker-Side Serialization & GC
 
-Die ARC-Objekte der `arctrl` Bibliothek sind komplex und beanspruchen sowohl Python- als auch .NET-Speicher.
+ARC objects in the `arctrl` library are complex and consume both Python and .NET-bridge memory.
 
-- **Strategie:** Die Konvertierung zum JSON-String erfolgt direkt im Worker-Prozess.
-- **Memory Cleanup:** Nach der Serialisierung werden die ARC-Objekte im Worker explizit gelöscht (`del`) und der Garbage Collector (`gc.collect()`) aufgerufen, bevor der Prozess das Ergebnis an den Hauptprozess zurückgibt. Dies verhindert das "Anschwellen" der Worker-Prozesse.
+* **Strategy:** Conversion to a JSON-LD string is performed directly within the worker process.
+* **Memory Cleanup:** After serialization, ARC objects in the worker are explicitly deleted (`del`) and the garbage collector (`gc.collect()`) is called before the process returns the result to the main process. This prevents worker processes from "swelling."
 
-### 4.3 JSON vs. Objekt-Transfer
+### 4.3 JSON vs. Object Transfer
 
-Zwischen dem Hauptprozess und den Workern werden keine komplexen ARC-Objekte übertragen, sondern lediglich primitive Python-Datentypen (Dicts) als Input und fertige JSON-Strings als Output. Dies minimiert den Overhead der Inter-Prozess-Kommunikation (IPC).
+In the current implementation, large ARC objects are not transferred between the main process and workers. Instead, primitive Python types (like dicts) are used as input, and serialized JSON-LD strings are returned as output. This minimizes Inter-Process Communication (IPC) overhead.
 
-### 4.4 Entkopplung von I/O und CPU (Workload Balancing)
+### 4.4 Decoupling I/O and CPU (Workload Balancing)
 
-Um die CPU-Auslastung zu maximieren, wird die Anzahl der gleichzeitig aktiven Tasks (`max_concurrent_tasks`) unabhängig von der Anzahl der CPU-Worker (`max_concurrent_arc_builds`) gesteuert.
+To maximize CPU utilization, the number of concurrently active tasks (`max_concurrent_tasks`) is controlled independently of the number of CPU workers (`max_concurrent_arc_builds`).
 
-- **Prinzip:** Während ein Teil der Tasks auf die Netzwerk-Antwort der API wartet (I/O), können die CPU-Worker bereits den nächsten ARC-Build aus der Warteschlange verarbeiten.
-- **Konfiguration:** Standardmäßig ist die Task-Kapazität doppelt so groß wie die Anzahl der CPU-Worker (einstellbar via `max_concurrent_tasks`), um Latenzen zu überbrücken, ohne den RAM zu überlasten.
-
----
-
-## 5. Datenfluss (Step-by-Step)
-
-1. **Producer:** Der Hauptprozess startet den Streaming-Generator.
-2. **Throttle:** Der Loop wartet an der `Semaphore` auf einen freien Slot.
-3. **Data Fetch:** Eine Untersuchung wird aus der DB gelesen.
-4. **Build (CPU):** Der Datensatz wird an den `ProcessPoolExecutor` geschickt. Der Haupt-Loop bleibt währenddessen frei für andere Aufgaben.
-5. **Upload (I/O):** Das Ergebnis (JSON) wird asynchron per HTTP an die Middleware-API gesendet.
-6. **Release:** Die Semaphore wird freigegeben, der nächste Datensatz fließt nach.
+* **Principle:** While some tasks wait for the API's network response (I/O), CPU workers can already process the next ARC build from the queue.
+* **Configuration:** By default, task capacity is four times larger than the number of CPU workers (configurable via `max_concurrent_tasks`) to bridge latencies without overstretching RAM.
 
 ---
 
-## 6. Fehlerbehandlung & Monitoring
+## 5. Data Flow (Step-by-Step)
 
-- **Gezieltes Exception Handling:** Fehler beim Upload oder beim Build führen nicht zum Abbruch des gesamten Laufs.
-- **ProcessingStats:** Jeder Erfolg und Fehler wird mit ID erfasst und am Ende als JSON-LD Report ausgegeben.
-- **Tracing:** Die gesamte Kette ist mit OpenTelemetry (Tracing) instrumentiert, um Performance-Engpässe im Prozess-Pool oder Netzwerk zu identifizieren.
+1. **Producer:** The main process starts the streaming generator.
+2. **Throttle:** The loop waits on the `Semaphore` for an available slot.
+3. **Data Fetch:** Investigation data and related entities (Studies, Assays, etc.) are fetched from the database.
+4. **Build (CPU):** The dataset is sent to the `ProcessPoolExecutor`. The main loop remains free for other tasks in the meantime.
+5. **Upload (I/O):** The result (JSON) is sent asynchronously via HTTP to the Middleware API using `ApiClient`.
+6. **Release:** The semaphore is released, and the next dataset flows in.
 
 ---
 
-## 7. Zusammenfassung der Design-Entscheidungen
+## 6. Error Handling & Monitoring
 
-| Problem | Lösung | Grund |
+* **Targeted Exception Handling:** Errors during upload or build do not cause the entire run to abort.
+* **ProcessingStats:** Every success and failure is recorded by ID and output as a JSON-LD report at the end.
+* **Tracing:** The entire chain is instrumented with **OpenTelemetry** (tracing) to identify performance bottlenecks in the process pool or network.
+* **Pre-flight Schema Validation:** The middleware verifies that all required database views and columns exist before starting the process.
+
+---
+
+## 7. Summary of Design Decisions
+
+| Problem | Solution | Reason |
 | :--- | :--- | :--- |
-| GIL / CPU-Limit | `ProcessPoolExecutor` | Echte Parallelität auf mehreren Kernen. |
-| Niedrige CPU Auslastung | I/O-CPU Entkopplung | `max_concurrent_tasks` erlaubt API-Uploads parallel zu neuen ARC-Builds. |
-| Memory Overflow (Backlog) | Producer Throttling | Verhindert, dass zu viele Datensätze gleichzeitig im RAM "warten". |
-| Memory Leak (Worker) | `gc.collect()` + JSON Return | Gibt Speicher im Worker sofort nach der Konvertierung frei. |
-| Datenbank-Last | `fetchmany` + `ANY()` | Optimale Balance zwischen Abfrage-Anzahl und Speicherlast. |
-| Skalierbarkeit | Single ARC Processing | Früherer Erfolg/Fehler-Feedback pro Untersuchung statt nur pro Batch. |
+| GIL / CPU Limit | `ProcessPoolExecutor` | True parallelism across multiple cores. |
+| Low CPU Utilization | I/O-CPU Decoupling | `max_concurrent_tasks` allows API uploads in parallel with new ARC builds. |
+| Memory Overflow (Backlog) | Producer Throttling | Prevents too many datasets from "waiting" in RAM simultaneously. |
+| Memory Leak (Worker) | `gc.collect()` + JSON Return | Frees memory in the worker immediately after conversion. |
+| Database Load | Server-side Cursors + `ANY()` | Optimal balance between number of queries and memory load. |
+| Scalability | Single ARC Processing | Earlier success/error feedback per investigation instead of per batch only. |
 
 ---
 
 ## 8. Performance Tuning Guide
 
-Um die Middleware optimal an die vorhandene Hardware und die Datenstruktur der Datenbank anzupassen, können folgende Parameter in der Konfigurationsdatei (`config.yaml`) optimiert werden:
+To optimally adapt the middleware to existing hardware and database structures, the following parameters in the configuration file (`config.yaml`) can be optimized:
 
-### 8.1 CPU & Parallelisierung
+### 8.1 CPU & Parallelization
 
-- **`max_concurrent_arc_builds`**: Bestimmt die Anzahl der Worker-Prozesse im `ProcessPoolExecutor`.
-  - **Empfehlung**: Setzen Sie diesen Wert auf die Anzahl der verfügbaren CPU-Kerne minus 1 (um Reserven für den Hauptprozess und das Betriebssystem zu lassen).
-  - **Effekt**: Höhere CPU-Last, aber schnellere Verarbeitung der ARC-Generierung.
+* **`max_concurrent_arc_builds`**: Determines the number of worker processes in the `ProcessPoolExecutor`.
+  * **Recommendation**: Set this value to the number of available CPU cores minus 1 (to leave reserves for the main process and the operating system).
+  * **Effect**: Higher CPU load, but faster execution of ARC generation.
 
-### 8.2 Durchsatz & I/O Balancing
+### 8.2 Throughput & I/O Balancing
 
-- **`max_concurrent_tasks`**: Limitiert die Anzahl der gleichzeitig aktiven asynchronen Workflows (Datenfetch + Build + Upload).
-  - **Faustformel**: `4 * max_concurrent_arc_builds`.
-  - **Warum?**: Während z.B. 4 Kerne ARCs berechnen, können die restlichen Tasks auf die Netzwerk-Antwort der API warten (I/O). Ein zu hoher Wert führt zu erhöhtem RAM-Verbrauch; ein zu niedriger Wert lässt die CPU leerlaufen ("Stop-and-Go").
-  - **Tuning**: Wenn die CPU-Auslastung trotz Arbeit stark schwankt, erhöhen Sie diesen Wert leicht (z.B. auf `5 * builds`).
+* **`max_concurrent_tasks`**: Limits the number of concurrently active asynchronous workflows (data fetch + build + upload).
+  * **Rule of Thumb**: `4 * max_concurrent_arc_builds`.
+  * **Why?**: While 4 cores are calculating ARCs, other tasks can wait for the API's network response (I/O). A value that is too high leads to increased RAM consumption; a value that is too low causes the CPU to run dry ("Stop-and-Go").
 
-### 8.3 Datenbank-Effizienz
+### 8.3 Database Efficiency
 
-- **`db_batch_size`**: Anzahl der Investigations, die pro Datenbank-Chunk geladen werden.
-  - **Standard**: 100.
-  - **Tuning**: Erhöhen Sie diesen Wert bei sehr vielen kleinen Investigations (wenige Studies/Assays), um die Anzahl der SQL-Roundtrips zu senken. Senken Sie ihn, wenn einzelne Investigations extrem groß sind, um den RAM-Verbrauch des Hauptprozesses zu limitieren.
+* **`db_batch_size`**: Number of investigations loaded per database chunk.
+  * **Default**: 100.
+  * **Tuning**: Increase this value if you have many small investigations (few studies/assays) to reduce SQL roundtrips. Decrease it if individual investigations are extremely large to limit the RAM consumption of the main process.
 
-### 8.4 Stabilität & Timeouts
+### 8.4 Stability & Timeouts
 
-- **`arc_generation_timeout_minutes`**: Maximalzeit für einen einzelnen `build_arc_for_investigation` Aufruf im Worker.
-  - **Tuning**: Erhöhen Sie diesen Wert, falls Sie im Log "Timeout" Fehler bei sehr großen Datensätzen (z.B. Tausende Assays) sehen.
+* **`arc_generation_timeout_minutes`**: Maximum time for a single `build_single_arc_task` call in the worker.
+  * **Tuning**: Increase this value if you see "Timeout" errors in the log for very large datasets (e.g., thousands of assays).
 
-### 8.5 Zusammenfassung: Das optimale Setup finden
+### 8.5 Summary: Finding the Optimal Setup
 
-1. **CPU-Limit finden**: Erhöhen Sie `max_concurrent_arc_builds` bis die CPU-Kerne ausgelastet sind.
-2. **I/O-Löcher füllen**: Erhöhen Sie `max_concurrent_tasks`, wenn die CPU-Last zwischen den Builds auf 0% sinkt (Anzeichen für Warten auf API-Uploads).
-3. **RAM-Check**: Überwachen Sie den Speicherverbrauch. Der RAM-Bedarf steigt linear mit `max_concurrent_tasks` und der Größe der Investigations im Batch.
+1. **Find CPU Limit:** Increase `max_concurrent_arc_builds` until CPU cores are saturated.
+2. **Fill I/O Gaps:** Increase `max_concurrent_tasks` if CPU load drops to 0% between builds (an indication of waiting for API uploads).
+3. **RAM Check:** Monitor memory consumption. RAM requirements increase linearly with `max_concurrent_tasks` and the size of investigations in the batch.

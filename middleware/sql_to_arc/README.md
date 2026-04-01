@@ -1,106 +1,124 @@
-# SQL to ARC Converter
+# SQL-to-ARC Middleware Converter
 
-The `sql_to_arc` package converts data from a PostgreSQL database schema into FAIR ARC containers using ARCtrl, and uploads them to the Advanced Middleware API.
+The **SQL-to-ARC Converter** is a high-performance middleware component designed to bridge research data infrastructures (RDIs) and the FAIRagro metadata ecosystem.
 
-## Features
+## Overview
 
-- Async Database access via `sqlalchemy` (asyncio with asyncpg, aiosqlite, etc.)
-- SQL View-based mapping of data to ARCtrl models
-- Batch upload to the Middleware API using `ApiClient`
-- Pydantic-based configuration with generic Connection String support
+SQL-to-ARC runs locally at the RDI provider's infrastructure. It connects to the provider's SQL database, extracts metadata from a [pre-defined set of database views](docs/sql_to_arc_database_views.md), and transforms this data into **Annotated Research Context (ARC)** objects using the [ARCtrl Library](https://github.com/nfdi4plants/ARCtrl).
 
-## Requirements
+Once an ARC is constructed and validated, the tool uses the [middleware api_client library](https://github.com/fairagro/m4.2_advanced_middleware_api/tree/main/middleware/api_client) to transmit the resulting RO-Crate JSON-LD payloads to the [FAIRagro Middleware API](https://github.com/fairagro/m4.2_advanced_middleware_api).
 
-- Python 3.12+
-- PostgreSQL reachable from runtime
-- The workspace packages `shared` and `api_client` available (uv workspace)
+### Key Features
 
-## Install (uv)
+- **High Throughput:** Parallel processing using a CPU-bound process pool for ARC generation.
+- **Memory Efficient:** Streaming database access via server-side cursors and batching.
+- **Robust:** Pre-flight schema validation and comprehensive OpenTelemetry tracing.
+- **Configurable:** Fully customizable via YAML, Environment Variables, or Docker Secrets.
 
-This repo uses `uv` for dependency management.
-
-```bash
-# from repository root
-uv sync --all-packages
-uv run python -m middleware.sql_to_arc.main
-```
-
-If you prefer a virtual environment only for this package:
-
-```bash
-cd middleware/sql_to_arc
-uv sync
-uv run python -m middleware.sql_to_arc.main
-```
+---
 
 ## Configuration
 
-Configuration is defined by `middleware.sql_to_arc.config.Config` and can be provided as dict, env, or file. The default example in `main.py`:
+The tool is configured using a YAML file, which can be overridden by Environment Variables.
 
-```python
-config = Config.from_data({
-    "connection_string": "postgresql+asyncpg://user:pass@localhost:5432/edaphobase",
-    "rdi": "edaphobase",
-    "api_client": {
-        "api_url": "http://localhost:8000",
-        "client_cert_path": "/path/to/cert.pem",
-        "client_key_path": "/path/to/key.pem",
-        "verify_ssl": "false",
-    },
-})
-```
+### YAML Configuration (`config.yaml`)
 
-Environment variables can be supported by extending `Config` (e.g., `pydantic` `BaseSettings`).
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `connection_string` | `string` | Database URI (e.g., `postgresql+psycopg://user:pass@host:5432/db`). |
+| `rdi` | `string` | Unique identifier for your RDI (e.g., `edaphobase`). |
+| `rdi_url` | `string` | Public URL of your RDI (used for provenance metadata). |
+| `api_client` | `object` | Configuration for the Middleware API connection (see below). |
+| `max_concurrent_arc_builds` | `int` | Number of parallel worker processes (Default: `5`). |
+| `max_concurrent_tasks` | `int` | Max concurrent IO+CPU tasks (Default: `4 * builds`). |
+| `db_batch_size` | `int` | Investigations to fetch per DB chunk (Default: `100`). |
+| `debug_limit` | `int` | (Optional) Limit processing to the first N investigations. |
 
-## Running
+#### `api_client` Configuration
 
-Run the converter locally (async):
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `api_url` | `string` | URL of the Middleware API. |
+| `client_cert_path` | `string` | Path to the client certificate (PEM). |
+| `client_key_path` | `string` | Path to the client private key (PEM). |
+| `verify_ssl` | `bool` | Whether to verify the API's SSL certificate (Default: `true`). |
 
-```bash
-uv run python -m middleware.sql_to_arc.main
-```
+### Environment Variables
 
-This will:
+All configuration fields can be set via environment variables using the prefix **`SQL_TO_ARC_`**.
 
-- Open a DB connection
-- Fetch Investigations, Studies, Assays
-- Map them to ARCtrl objects
-- Upload batches to the Middleware API
+- **Examples:**
+  - `SQL_TO_ARC_CONNECTION_STRING="postgresql://..."`
+  - `SQL_TO_ARC_RDI="my-rdi"`
+  - `SQL_TO_ARC_DEBUG_LIMIT=10`
 
-## Docker
+### Secrets Handling
 
-A Dockerfile for building a standalone binary exists at `docker/Dockerfile.sql_to_arc`.
+In containerized environments, sensitive values like the `connection_string` or `client_key` can be provided via **Docker Secrets**. The tool looks for files in `/run/secrets/` with names matching the lowercase environment variable (e.g., `/run/secrets/sql_to_arc_connection_string`).
 
-Build:
+---
 
-```bash
-docker build -f docker/Dockerfile.sql_to_arc -t sql-to-arc .
-```
+## Usage
 
-Run:
+### 1. From Source (Development)
 
-```bash
-docker run --rm -e DB_HOST=... -e DB_USER=... -e DB_PASSWORD=... -e API_URL=... sql-to-arc
-```
-
-Adjust env variables or mount configuration as needed.
-
-## Development
-
-- Tests are under `middleware/sql_to_arc/tests`
-- Mapping logic in `middleware/sql_to_arc/src/middleware/sql_to_arc/mapper.py`
-- Main entrypoint `middleware/sql_to_arc/src/middleware/sql_to_arc/main.py`
-
-Lint / format / type-check:
+Requires [uv](https://github.com/astral-sh/uv) installed.
 
 ```bash
-uv run ruff check
-uv run ruff format
-uv run mypy -p middleware.sql_to_arc
+# Install dependencies for all workspace members
+uv sync --all-packages
+
+# Run the converter with a specific config file
+uv run python -m middleware.sql_to_arc.main -c my_config.yaml
 ```
 
-## Troubleshooting
+### 2. Local Docker Image
 
-- Connection errors: verify DB host/port/user/password
-- API errors: ensure `api_client` settings and server availability
-- Type errors: run `uv run mypy` and update models/config accordingly
+Build the image from the repository root:
+
+```bash
+docker build -f docker/Dockerfile.sql_to_arc -t sql-to-arc:local .
+```
+
+Run with environment variables:
+
+```bash
+docker run --rm \
+  -e SQL_TO_ARC_CONNECTION_STRING="postgresql://..." \
+  -e SQL_TO_ARC_RDI="my-rdi" \
+  -v $(pwd)/certs:/certs \
+  -e SQL_TO_ARC_API_CLIENT__CLIENT_CERT_PATH="/certs/client.crt" \
+  sql-to-arc:local
+```
+
+### 3. Official Docker Image
+
+Pull the latest official image from Docker Hub (once available):
+
+```bash
+docker pull fairagro/sql-to-arc:latest
+
+docker run --rm \
+  --env-file .env \
+  -v $(pwd)/config.yaml:/etc/sql_to_arc/config.yaml:ro \
+  fairagro/sql-to-arc:latest -c /etc/sql_to_arc/config.yaml
+```
+
+---
+
+## CLI Options
+
+| Option | Description |
+| :--- | :--- |
+| `-c`, `--config` | Path to the YAML configuration file (Default: `config.yaml`). |
+| `-v`, `--version` | Show the version and exit. |
+| `-h`, `--help` | Show help and exit. |
+
+---
+
+## Documentation Links
+
+- [Architectural Design](docs/ARCHITECTURAL_DESIGN.md)
+- [Database View Specification](docs/sql_to_arc_database_views.md)
+- [ARCtrl Documentation](https://nfdi4plants.org/ARCtrl/)
+- [Middleware API Client](https://github.com/fairagro/m4.2_advanced_middleware_api/tree/main/middleware/api_client)

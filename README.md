@@ -1,3 +1,66 @@
-# m4.2_advanced_middleware_api
+# FAIRagro SQL-to-ARC Middleware
 
-The API component of the advanced middleware that accepts ARCs in RO-Create format and pushes them to the datahub
+This repository contains the **SQL-to-ARC Converter**, a core component of the FAIRagro advanced middleware architecture. It enables Research Data Infrastructure (RDI) providers to transform their relational metadata into standardized Annotated Research Context (ARC) objects and transmit them to the central FAIRagro Middleware API.
+
+## 📁 Repository Structure
+
+| Folder | Description |
+| :--- | :--- |
+| [middleware/](middleware/) | Source code of the converter component. |
+| [docs/](docs/) | Architectural design, database view specifications, and API documentation. |
+| [dev_environment/](dev_environment/) | Docker-based local development setup (Postgres, Mock API). |
+| [scripts/](scripts/) | Tooling for quality checks, environment setup, and Git LFS. |
+| [docker/](docker/) | Dockerfiles and container structure tests. |
+
+## 🚀 Getting Started (Development)
+
+This project uses [uv](https://github.com/astral-sh/uv) for dependency management and workspace orchestration.
+
+### 1. Prerequisites
+
+- **Python 3.12+**
+- **Docker & Docker Compose**
+- **Git LFS** (installed via `./scripts/setup-git-lfs.sh`)
+
+### 2. Environment Setup
+
+Clone the repository and install all workspace dependencies:
+
+```bash
+uv sync --all-packages
+```
+
+### 3. Start Local Development Environment
+
+The `dev_environment` folder provides a full stack including a PostgreSQL database pre-filled with edaphobase data:
+
+```bash
+cd dev_environment
+./start.sh --build
+```
+
+This will start the database and run a test iteration of the converter.
+
+## 🔧 Component Documentation
+
+Detailed information on how to use, configure, and deploy the specific components can be found in their respective subdirectories:
+
+- **[SQL-to-ARC Converter README](middleware/sql_to_arc/README.md)**: Configuration (YAML/Env), CLI options, and production deployment.
+- **[Architectural Design](docs/ARCHITECTURAL_DESIGN.md)**: Deep dive into the concurrency model, memory management, and data flow.
+- **[Database View Spec](docs/sql_to_arc_database_views.md)**: The SQL views required for the RDI provider database.
+
+## 🧪 Quality Standards
+
+We maintain high code quality through automated checks:
+
+```bash
+# Run all quality checks (Ruff, Mypy, Pylint, Bandit)
+./scripts/quality-check.sh
+
+# Run unit and integration tests
+uv run pytest middleware/sql_to_arc/tests/
+```
+
+---
+**Maintained by:** FAIRagro Middleware Team  
+**License:** [LICENSE](LICENSE)
