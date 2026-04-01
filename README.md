@@ -14,11 +14,14 @@ This repository contains the **SQL-to-ARC Converter**, a core component of the F
 
 ## 🚀 Getting Started (Development)
 
-This project uses [uv](https://github.com/astral-sh/uv) for dependency management and workspace orchestration.
+The preferred method for working with this repository is using the **Dev Container** (VS Code).
 
-### 1. Prerequisites
+While it is possible to develop without the Dev Container (see prerequisites below), this approach is not tested and is therefore neither documented nor officially supported.
+
+### 1. Prerequisites (for manual setups only)
 
 - **Python 3.12+**
+- **[uv](https://github.com/astral-sh/uv)** (Dependency Management & Workspace Orchestration)
 - **Docker & Docker Compose**
 - **Git LFS** (installed via `./scripts/setup-git-lfs.sh`)
 
@@ -32,14 +35,9 @@ uv sync --all-packages
 
 ### 3. Start Local Development Environment
 
-The `dev_environment` folder provides a full stack including a PostgreSQL database pre-filled with edaphobase data:
+The `dev_environment` folder provides a full stack including a PostgreSQL database pre-filled with edaphobase data.
 
-```bash
-cd dev_environment
-./start.sh --build
-```
-
-This will start the database and run a test iteration of the converter.
+Please refer to the **[Development Environment README](dev_environment/README.md)** for detailed instructions on prerequisites (like secret management and mTLS keys), setup, and usage.
 
 ## 🔧 Component Documentation
 
@@ -62,5 +60,5 @@ uv run pytest middleware/sql_to_arc/tests/
 ```
 
 ---
-**Maintained by:** FAIRagro Middleware Team  
+**Maintained by:** FAIRagro Middleware Team
 **License:** [LICENSE](LICENSE)

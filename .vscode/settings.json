@@ -11,7 +11,6 @@
   "python.testing.autoTestDiscoverOnSaveEnabled": true,
   "python.testing.pytestPath": "${workspaceFolder}/.venv/bin/pytest",
   "python.testing.cwd": "${workspaceFolder}",
-  "python-envs.pythonProjects": [],
 
   // Code formatting - use ruff for both linting and formatting
   "[python]": {
@@ -49,5 +48,5 @@
   ],
   "pylint.importStrategy": "fromEnvironment",
 
-  "python-envs.defaultEnvManager": "ms-python.python:venv"
+  "python-envs.defaultEnvManager": "ms-python.python:system"
 }
