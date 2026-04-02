@@ -38,9 +38,9 @@ scripts/
     └── post-merge
 
 dev_environment/
-├── start.sh              # Start Docker Compose (Postgres + Converter)
-├── compose.yaml          # Docker services definition
-└── config.yaml           # Development configuration for the converter
+├── start-dev.sh          # Start Docker Compose (Postgres + Converter)
+├── compose.dev.yaml      # Docker services definition
+└── config.dev.yaml       # Development configuration for the converter
 ```
 
 ## 🔧 Important Commands
@@ -61,9 +61,13 @@ uv sync --dev --all-packages
 ### Development Environment
 
 ```bash
-# Start local database and run converter
+# Start a full local demo (including mock API, no secrets/mTLS required)
 cd dev_environment
-./start.sh --build
+./start-demo.sh --build
+
+# Start local database and run converter (requires decryption via sops)
+cd dev_environment
+./start-dev.sh --build
 
 # View logs
 docker compose logs -f
@@ -108,7 +112,7 @@ services:
   sql_to_arc:         # The converter component (this repo)
 ```
 
-**Configuration**: `dev_environment/config.yaml`
+**Configuration**: `dev_environment/config.dev.yaml`
 
 - Connects to `postgres` service on port 5432.
 - Uses `api_url` pointing to an external Middleware API if needed.

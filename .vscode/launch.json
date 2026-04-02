@@ -13,7 +13,7 @@
             "envFile": "${workspaceFolder}/.env",
             "args": [
                 "-c",
-                "${workspaceFolder}/dev_environment/debug_config.yaml"
+                "${workspaceFolder}/dev_environment/config.debug.yaml"
             ]
         },
         {
