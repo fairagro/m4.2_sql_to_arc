@@ -156,7 +156,7 @@ docker run --rm \
 
 ## Documentation Links
 
-- [Architectural Design](docs/ARCHITECTURAL_DESIGN.md)
-- [Database View Specification](docs/sql_to_arc_database_views.md)
+- [Architectural Design](../docs/ARCHITECTURAL_DESIGN.md)
+- [Database View Specification](../docs/sql_to_arc_database_views.md)
 - [ARCtrl Documentation](https://nfdi4plants.org/ARCtrl/)
 - [Middleware API Client](https://github.com/fairagro/m4.2_advanced_middleware_api/tree/main/middleware/api_client)
