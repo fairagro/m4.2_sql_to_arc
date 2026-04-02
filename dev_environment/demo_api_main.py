@@ -13,8 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from arctrl import ARC
-from arctrl.py.fable_modules.fable_library.async_ import start_as_task
-from fastapi import FastAPI, Request  # type: ignore # pylint: disable=import-error
+from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
+from fastapi import FastAPI, Request
 
 app = FastAPI()
 
@@ -75,7 +75,7 @@ def _handle_error(arc_dir: Path, rdi: str, arc_id: str, exc: Exception) -> None:
 
 
 @app.post("/v3/arcs")
-async def upload_arc(request: Request):
+async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
     """
     Handle the submission of an ARC RO-Crate.
 
@@ -97,8 +97,10 @@ async def upload_arc(request: Request):
     if rdi is None:
         rdi = data.get("rdi", "unknown")
 
-    output_path = Path(f"/data/arcs/{rdi}")
+    output_path = Path("/data/arcs")
     output_path.mkdir(parents=True, exist_ok=True)
+    _chown_tree(output_path)  # Ensure the root output dir belongs to the host user
+
     arc_id = arc_payload.get("identifier", f"arc_{os.urandom(4).hex()}")
     now = datetime.now(UTC).isoformat()
     arc_dir = output_path / arc_id
@@ -133,7 +135,7 @@ async def upload_arc(request: Request):
 
 
 @app.get("/live")
-def live():
+def live() -> dict[str, str]:
     """
     Liveness probe for the demo API.
 
