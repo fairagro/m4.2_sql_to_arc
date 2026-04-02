@@ -1,49 +1,96 @@
 # SQL to ARC Converter Configuration Example
-# Copy this file to config.yaml and adjust the values
+# This file contains ALL available configuration options with their default or example values.
 
-# Database Connection Settings
-# ---------------------------
-# Name of the source database (e.g., PostgreSQL database name)
-db_name: "edaphobase"
+# ------------------------------------------------------------------------------
+# 1. CORE SETTINGS
+# ------------------------------------------------------------------------------
 
-# Database user with read access
-db_user: "reader"
+# Full SQLAlchemy connection string for the source database.
+# Supported: postgresql+psycopg
+connection_string: "postgresql+psycopg://postgres:postgres@localhost:5432/rdi"
 
-# Database password (will be handled securely)
-db_password: "secure_password_here"
-
-# Database host address (hostname or IP)
-db_host: "localhost"
-
-# Database port (default: 5432 for PostgreSQL)
-db_port: 5432
-
-# RDI Identifier
-# -------------
-# Unique identifier for the Research Data Infrastructure (RDI)
-# This is used to tag or namespace the converted ARCs
+# Unique identifier for the Research Data Infrastructure (RDI).
 rdi: "edaphobase"
 
+# Public URL of the RDI portal (used for provenance metadata).
+rdi_url: "https://edaphobase.org"
 
-# API Client Configuration
-# -----------------------
-# Settings for connecting to the Middleware API to upload ARCs
+# Console logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+log_level: "INFO"
+
+
+# ------------------------------------------------------------------------------
+# 2. PROCESSING & PERFORMANCE
+# ------------------------------------------------------------------------------
+
+# Number of parallel worker processes for ARC generation (CPU-bound).
+# Recommended: Number of CPU cores available.
+max_concurrent_arc_builds: 4
+
+# Maximum concurrent tasks (IO + CPU). Defaults to 4 * max_concurrent_arc_builds.
+max_concurrent_tasks: ~
+
+# Number of investigations to fetch from the database per batch.
+db_batch_size: 100
+
+# Safety limit: Maximum number of studies per investigation.
+max_studies: 5000
+
+# Safety limit: Maximum number of assays per investigation.
+max_assays: 10000
+
+# Timeout in minutes for generating a single ARC.
+arc_generation_timeout_minutes: 30
+
+# (Optional) Limit processing to the first N investigations for debugging.
+debug_limit: ~
+
+
+# ------------------------------------------------------------------------------
+# 3. MIDDLEWARE API CLIENT (mTLS)
+# ------------------------------------------------------------------------------
+
 api_client:
-  # Base URL of the Middleware API
+  # Base URL of the FAIRagro Middleware API.
   api_url: "http://localhost:8000"
 
-  # Path to the client certificate file (PEM format) for mTLS authentication
-  client_cert_path: "/path/to/client.crt"
+  # Mutual TLS (mTLS) Credentials
+  client_cert_path: "dev_environment/client.crt"
+  client_key_path: "dev_environment/client.key"
+  
+  # (Optional) Path to a custom CA certificate to verify the API server.
+  ca_cert_path: ~
 
-  # Path to the client private key file (PEM format)
-  client_key_path: "/path/to/client.key"
-
-  # Path to the CA certificate file (optional, for self-signed server certs)
-  # ca_cert_path: "/path/to/ca.crt"
-
-  # Request timeout in seconds (default: 30.0)
+  # Request timeout in seconds.
   timeout: 30.0
 
-  # Verify SSL certificates (default: true)
-  # Set to false only for testing with self-signed certs without CA
+  # Whether to verify the API server's SSL certificate.
   verify_ssl: true
+
+  # Whether to follow HTTP redirects.
+  follow_redirects: true
+
+  # Maximum concurrent HTTP requests to the API.
+  max_concurrency: 10
+
+  # Maximum retries for transient HTTP errors (5xx, timeouts).
+  max_retries: 3
+
+  # Exponential backoff factor for retries.
+  retry_backoff_factor: 2.0
+
+
+# ------------------------------------------------------------------------------
+# 4. OPENTELEMETRY TRACING
+# ------------------------------------------------------------------------------
+
+otel:
+  # OTel collector endpoint (e.g., http://localhost:4318).
+  # If null (~), tracing is disabled or uses default env vars.
+  endpoint: ~
+
+  # Whether to print OpenTelemetry spans to the console in a readable format.
+  log_console_spans: false
+
+  # Logging level for OTLP log export.
+  log_level: "INFO"

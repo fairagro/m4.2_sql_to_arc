@@ -102,6 +102,8 @@ In containerized environments, sensitive values like the `connection_string` or 
 
 ## Usage
 
+The following examples assume you are in the root of the repository.
+
 ### 1. From Source (Development)
 
 Requires [uv](https://github.com/astral-sh/uv) installed.
@@ -110,8 +112,8 @@ Requires [uv](https://github.com/astral-sh/uv) installed.
 # Install dependencies for all workspace members
 uv sync --all-packages
 
-# Run the converter with a specific config file
-uv run python -m middleware.sql_to_arc.main -c my_config.yaml
+# Run the converter using the example config directly
+uv run python -m middleware.sql_to_arc.main -c middleware/sql_to_arc/config.example.yaml
 ```
 
 ### 2. Local Docker Image
@@ -119,17 +121,13 @@ uv run python -m middleware.sql_to_arc.main -c my_config.yaml
 Build the image from the repository root:
 
 ```bash
+# Build the converter image
 docker build -f docker/Dockerfile.sql_to_arc -t sql-to-arc:local .
-```
 
-Run with environment variables:
-
-```bash
+# Run using the example config via a volume mount
 docker run --rm \
-  -e SQL_TO_ARC_CONNECTION_STRING="postgresql://..." \
-  -e SQL_TO_ARC_RDI="my-rdi" \
-  -v $(pwd)/certs:/certs \
-  -e SQL_TO_ARC_API_CLIENT__CLIENT_CERT_PATH="/certs/client.crt" \
+  --env-file .env \
+  -v $(pwd)/middleware/sql_to_arc/config.example.yaml:/etc/sql_to_arc/config.yaml:ro \
   sql-to-arc:local
 ```
 
@@ -138,12 +136,10 @@ docker run --rm \
 Pull the latest official image from Docker Hub (once available):
 
 ```bash
-docker pull fairagro/sql-to-arc:latest
-
 docker run --rm \
   --env-file .env \
-  -v $(pwd)/config.yaml:/etc/sql_to_arc/config.yaml:ro \
-  fairagro/sql-to-arc:latest -c /etc/sql_to_arc/config.yaml
+  -v $(pwd)/middleware/sql_to_arc/config.example.yaml:/etc/sql_to_arc/config.yaml:ro \
+  zalf/fairagro-advanced-middleware-sql_to_arc/sql-to-arc:latest
 ```
 
 ---

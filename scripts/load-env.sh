@@ -126,13 +126,15 @@ fi
 # Decrypt the encrypted file and write to .env
 if grep -q '"sops"' "$ENCRYPTED_FILE" 2>/dev/null; then
     # Decrypt encrypted file and write to .env
-    sops -d "$ENCRYPTED_FILE" > "$DECRYPTED_FILE" 2>/dev/null
+    # We remove the CLIENT_KEY for the .env file because it breaks Docker's --env-file parser.
+    # We use a perl regex to find the CLIENT_KEY="..." multiline block and delete it entirely.
+    sops -d "$ENCRYPTED_FILE" 2>/dev/null | perl -0777 -pe 's/CLIENT_KEY=".*?"\n?//gs' > "$DECRYPTED_FILE"
     if [ $? -eq 0 ]; then
-        echo "✅ Encrypted secrets decrypted to $DECRYPTED_FILE"
+        echo "✅ Encrypted secrets decrypted to $DECRYPTED_FILE (CLIENT_KEY omitted for Docker compatibility)"
 
-        # Also load for current shell
+        # Also load for current shell (the shell CAN handle the full file, so we re-decrypt for memory)
         set -a
-        source "$DECRYPTED_FILE"
+        source <(sops -d "$ENCRYPTED_FILE" 2>/dev/null)
         set +a
     else
         echo "❌ Error decrypting $ENCRYPTED_FILE"

@@ -12,6 +12,17 @@ This repository contains the **SQL-to-ARC Converter**, a core component of the F
 | [scripts/](scripts/) | Tooling for quality checks, environment setup, and Git LFS. |
 | [docker/](docker/) | Dockerfiles and container structure tests. |
 
+## 🌟 Quick Start (Full Local Demo)
+
+For the best **out-of-the-box experience**, you can run a complete local demonstration. This setup starts a PostgreSQL database with demo data, a local Mock Middleware API, and the SQL-to-ARC converter to process and save results locally:
+
+```bash
+# Start the full demo stack (requires Docker)
+./dev_environment/start-demo.sh --build
+```
+
+> **Note:** This demo does not require any secrets or mTLS keys. Generated ARCs will be saved to `dev_environment/demo_output/`.
+
 ## 🚀 Getting Started (Development)
 
 The preferred method for working with this repository is using the **Dev Container** (VS Code).
