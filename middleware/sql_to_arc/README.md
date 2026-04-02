@@ -4,7 +4,7 @@ The **SQL-to-ARC Converter** is a high-performance middleware component designed
 
 ## Overview
 
-SQL-to-ARC runs locally at the RDI provider's infrastructure. It connects to the provider's SQL database, extracts metadata from a [pre-defined set of database views](docs/sql_to_arc_database_views.md), and transforms this data into **Annotated Research Context (ARC)** objects using the [ARCtrl Library](https://github.com/nfdi4plants/ARCtrl).
+SQL-to-ARC runs locally at the RDI provider's infrastructure. It connects to the provider's SQL database, extracts metadata from a [pre-defined set of database views](../../docs/sql_to_arc_database_views.md), and transforms this data into **Annotated Research Context (ARC)** objects using the [ARCtrl Library](https://github.com/nfdi4plants/ARCtrl).
 
 Once an ARC is constructed and validated, the tool uses the [middleware api_client library](https://github.com/fairagro/m4.2_advanced_middleware_api/tree/main/middleware/api_client) to transmit the resulting RO-Crate JSON-LD payloads to the [FAIRagro Middleware API](https://github.com/fairagro/m4.2_advanced_middleware_api).
 
@@ -156,7 +156,7 @@ docker run --rm \
 
 ## Documentation Links
 
-- [Architectural Design](../docs/ARCHITECTURAL_DESIGN.md)
-- [Database View Specification](../docs/sql_to_arc_database_views.md)
+- [Architectural Design](../../docs/ARCHITECTURAL_DESIGN.md)
+- [Database View Specification](../../docs/sql_to_arc_database_views.md)
 - [ARCtrl Documentation](https://nfdi4plants.org/ARCtrl/)
 - [Middleware API Client](https://github.com/fairagro/m4.2_advanced_middleware_api/tree/main/middleware/api_client)
