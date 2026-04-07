@@ -1,124 +1,165 @@
 """Data models for the SQL-to-ARC conversion process."""
 
-import concurrent.futures
+import logging
 from datetime import datetime
-from typing import Any, NamedTuple
+from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, Json, model_validator
+from pydantic_core import PydanticUndefined
 
-from middleware.api_client import ApiClient
+logger = logging.getLogger(__name__)
+
+# JSON types representing the expected structure after parsing
+type JsonList = list[Any]
 
 
-class InvestigationRow(BaseModel):
+def spec_field(
+    *,
+    required: bool | None = None,
+    allow_spec_override: bool = False,
+    default: Any = PydanticUndefined,
+    **kwargs: Any,
+) -> Any:
+    """Define database-mapped fields with ARC spec metadata."""
+    # We store the explicitly provided value (True, False, or None)
+    # The model validator will infer the value if it stays None
+    return Field(
+        default=default,
+        json_schema_extra={
+            "spec_required": required,
+            "spec_override": allow_spec_override,
+        },
+        **kwargs,
+    )
+
+
+class MissingRequiredColumnsError(ValueError):
+    """Raised when required database columns are missing for a row model."""
+
+    def __init__(self, model_name: str, columns: list[str]) -> None:
+        """Initialize exception with model name and missing required columns."""
+        self.model_name = model_name
+        self.columns = columns
+        super().__init__(f'Missing required columns for "{model_name}": {", ".join(columns)}')
+
+
+class RequiredColumnsNullError(ValueError):
+    """Raised when required database columns contain NULL values for a row model."""
+
+    def __init__(self, model_name: str, columns: list[str]) -> None:
+        """Initialize exception with model name and required NULL columns."""
+        self.model_name = model_name
+        self.columns = columns
+        super().__init__(f'Required columns contain NULL for "{model_name}": {", ".join(columns)}')
+
+
+class BaseRow(BaseModel):
+    """Base model for database rows with centralized configuration."""
+
+    __view_name__: ClassVar[str] = ""
+
+    model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_spec_overrides(cls, data: Any) -> Any:
+        """Replace NULL (None) with default values for fields that allow spec overrides."""
+        if not isinstance(data, dict):
+            return data
+
+        for field_name, field_info in cls.model_fields.items():
+            # Check if value is explicitly None (SQL NULL)
+            if data.get(field_name) is None:
+                json_extra = field_info.json_schema_extra
+                allow_override = json_extra.get("spec_override", False) if isinstance(json_extra, dict) else False
+
+                # If override is allowed, replace with the field's default value
+                if allow_override:
+                    # Only apply if a default exists
+                    if field_info.default is not PydanticUndefined:
+                        data[field_name] = field_info.default
+                    elif field_info.get_default(call_default_factory=True) is not None:
+                        # Pydantic's get_default handles factory calls safely
+                        data[field_name] = field_info.get_default(call_default_factory=True)
+
+        return data
+
+
+class InvestigationRow(BaseRow):
     """Pydantic model for investigation database rows."""
 
-    identifier: str
-    title: str = ""
-    description_text: str = ""
-    submission_date: datetime | None = None
-    public_release_date: datetime | None = None
+    __view_name__: ClassVar[str] = "vInvestigation"
 
-    model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True, from_attributes=True)
+    identifier: str = spec_field()
+    title: str = spec_field()
+    description_text: str = spec_field(default="", allow_spec_override=True)
+    submission_date: datetime | None = spec_field(default=None)
+    public_release_date: datetime | None = spec_field(default=None)
 
 
-class StudyRow(BaseModel):
+class StudyRow(BaseRow):
     """Pydantic model for study database rows."""
 
-    identifier: str
-    investigation_ref: str
-    title: str = ""
-    description_text: str = ""
-    submission_date: datetime | None = None
-    public_release_date: datetime | None = None
+    __view_name__: ClassVar[str] = "vStudy"
 
-    model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True, from_attributes=True)
+    identifier: str = spec_field()
+    investigation_ref: str = spec_field()
+    title: str = spec_field()
+    description_text: str | None = spec_field(default=None)
+    submission_date: datetime | None = spec_field(default=None)
+    public_release_date: datetime | None = spec_field(default=None)
 
 
-class AssayRow(BaseModel):
+class AssayRow(BaseRow):
     """Pydantic model for assay database rows."""
 
-    identifier: str
-    study_ref: str | None = None
-    investigation_ref: str
-    measurement_type_term: str | None = None
-    measurement_type_uri: str | None = None
-    technology_type_term: str | None = None
-    technology_type_uri: str | None = None
-    technology_platform: str | None = None
+    __view_name__: ClassVar[str] = "vAssay"
 
-    model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True, from_attributes=True)
+    identifier: str = spec_field()
+    investigation_ref: str = spec_field()
+    study_ref: Json[JsonList] | None = spec_field(default=None)
+    title: str | None = spec_field(default=None)
+    description_text: str | None = spec_field(default=None)
+    measurement_type_term: str | None = spec_field(default=None)
+    measurement_type_uri: str | None = spec_field(default=None)
+    measurement_type_version: str | None = spec_field(default=None)
+    technology_type_term: str | None = spec_field(default=None)
+    technology_type_uri: str | None = spec_field(default=None)
+    technology_type_version: str | None = spec_field(default=None)
+    technology_platform: str | None = spec_field(default=None)
 
 
-class PublicationRow(BaseModel):
+class PublicationRow(BaseRow):
     """Pydantic model for publication database rows."""
 
-    investigation_ref: str | None = None
-    study_ref: str | None = None
-    doi: str = ""
-    pubmed_id: str = ""
-    authors: str = ""
-    title: str = ""
-    status_term: str | None = None
-    status_uri: str | None = None
+    __view_name__: ClassVar[str] = "vPublication"
 
-    model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True, from_attributes=True)
+    investigation_ref: str = spec_field()
+    target_type: str = spec_field()
+    pubmed_id: str | None = spec_field(default=None)
+    doi: str | None = spec_field(default=None)
+    authors: str | None = spec_field(default=None)
+    title: str | None = spec_field(default=None)
+    status_term: str | None = spec_field(default=None)
+    status_uri: str | None = spec_field(default=None)
+    status_version: str | None = spec_field(default=None)
+    target_ref: str | None = spec_field(default=None)
 
 
-class ContactRow(BaseModel):
+class ContactRow(BaseRow):
     """Pydantic model for contact database rows."""
 
-    investigation_ref: str | None = None
-    study_ref: str | None = None
-    assay_ref: str | None = None
-    last_name: str = ""
-    first_name: str = ""
-    mid_initials: str = ""
-    email: str = ""
-    phone: str = ""
-    fax: str = ""
-    postal_address: str = ""
-    affiliation: str = ""
-    roles: str | None = None  # JSON string
+    __view_name__: ClassVar[str] = "vContact"
 
-    model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True, from_attributes=True)
-
-
-class ArcBuildData(NamedTuple):
-    """Data bundle for building a single ARC."""
-
-    investigation_row: InvestigationRow
-    studies: list[StudyRow]
-    assays: list[AssayRow]
-    contacts: list[ContactRow]
-    publications: list[PublicationRow]
-    annotations: list[dict[str, Any]]
-
-
-class WorkerContext(BaseModel):
-    """Context data for a worker process."""
-
-    client: ApiClient
-    rdi: str
-    studies_by_inv: dict[str, list[StudyRow]]
-    assays_by_inv: dict[str, list[AssayRow]]
-    contacts_by_inv: dict[str, list[ContactRow]]
-    pubs_by_inv: dict[str, list[PublicationRow]]
-    anns_by_inv: dict[str, list[dict[str, Any]]]
-    worker_id: int
-    total_workers: int
-    executor: concurrent.futures.Executor
-    arc_generation_timeout_minutes: int = 30
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
-class RelatedDataBatch(NamedTuple):
-    """Batch of related data grouped by investigation ID."""
-
-    studies_by_inv: dict[str, list[StudyRow]]
-    assays_by_inv: dict[str, list[AssayRow]]
-    contacts_by_inv: dict[str, list[ContactRow]]
-    pubs_by_inv: dict[str, list[PublicationRow]]
-    anns_by_inv: dict[str, list[dict[str, Any]]]
-    study_count: int
-    assay_count: int
+    investigation_ref: str = spec_field()
+    target_type: str = spec_field()
+    last_name: str | None = spec_field(default=None)
+    first_name: str | None = spec_field(default=None)
+    mid_initials: str | None = spec_field(default=None)
+    email: str | None = spec_field(default=None)
+    phone: str | None = spec_field(default=None)
+    fax: str | None = spec_field(default=None)
+    postal_address: str | None = spec_field(default=None)
+    affiliation: str | None = spec_field(default=None)
+    roles: Json[JsonList] | None = spec_field(default=None)
+    target_ref: str | None = spec_field(default=None)

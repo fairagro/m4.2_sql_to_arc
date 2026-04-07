@@ -26,6 +26,8 @@ dev = [
 
 [tool.uv.sources]
 sql_to_arc = { workspace = true }
+api_client = { git = "https://github.com/fairagro/m4.2_advanced_middleware_api.git", branch = "main", subdirectory = "middleware/api_client" }
+shared = { git = "https://github.com/fairagro/m4.2_advanced_middleware_api.git", branch = "main", subdirectory = "middleware/shared" }
 
 [tool.uv.workspace]
 members = [
@@ -61,8 +63,13 @@ lint.select = [
   "SIM", # flake8-simplify
   "A",   # flake8-builtins
   "ARG", # flake8-unused-arguments
+  "BLE", # flake8-blind-except (fängt zu generische Exceptions ab)
   "PLR", # Pylint Refactor (inkl. complexity rules wie too-many-return-statements)
+  "SLF", # flake8-self (Private member access)
 ]
+
+# Muss für PLR0917 aktiviert sein
+preview = true
 
 # Maximale Zeilenlänge wie in pylint (Standard: 100)
 line-length = 120
@@ -84,17 +91,30 @@ known-first-party = ["middleware"]
 force-single-line = false
 combine-as-imports = true
 
+[tool.ruff.lint.per-file-ignores]
+"middleware/*/tests/**/*.py" = ["SLF001"]
+
 # Black and isort replaced by ruff format - configurations removed to avoid conflicts
 
 [tool.mypy]
 python_version = "3.12"
+mypy_path = "middleware/sql_to_arc/src"
+namespace_packages = true
+explicit_package_bases = true
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 explicit_package_bases = true
 namespace_packages = true
-mypy_path = "middleware/sql_to_arc/src"
 
 # Exclude directories from type checking
 exclude = [
@@ -108,6 +128,18 @@ exclude = [
   ".mypy_cache",
   ".ruff_cache",
 ]
+
+# [[tool.mypy.overrides]]
+# module = [
+#     "middleware.api_client.*",
+#     "middleware.shared.*",
+# ]
+# ignore_missing_imports = true
+
+# arctrl has no type stubs and no py.typed marker — suppress the resulting noise
+[[tool.mypy.overrides]]
+module = ["arctrl"]
+ignore_missing_imports = true
 
 # Docstring-Regeln aktivieren, damit es wie pylint C0114/15/16 meckert
 [tool.ruff.lint.pydocstyle]
@@ -140,6 +172,7 @@ markers = [
     "asyncio: marks tests as async",
     "unit: marks tests as unit tests",
     "integration: marks tests as integration tests",
+    "system: marks tests as system tests",
 ]
 
 [tool.coverage.run]
@@ -243,8 +276,17 @@ disable = [
     # Additional opinionated/style checks often handled by formatters
     "R0903",  # too-few-public-methods (opinionated, often not relevant)
     "R0913",  # too-many-arguments (opinionated, case-by-case basis)
+    "R0917",  # too-many-positional-arguments (handled by ruff PLR0917)
     "C0301",  # line-too-long (handled by ruff formatter)
     "R0801",  # duplicate-code (can be noisy in tests)
+    "R0914",  # too-many-locals (handled by ruff PLR0914)
+
+    # Exception checks (covered by ruff BLE001)
+    "W0718",  # broad-exception-caught
+    "W0703",  # broad-except
+
+    # Private member access
+    "W0212",  # protected-access
 ]
 
 [tool.hatch.version]

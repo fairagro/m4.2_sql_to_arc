@@ -8,12 +8,13 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from arctrl import ARC  # type: ignore[import-untyped]
+from arctrl import ARC
 
-from middleware.api_client import ApiClient
-from middleware.shared.api_models.models import CreateOrUpdateArcsResponse
+from middleware.api_client import ApiClient, ArcMetadata, ArcResult, ArcStatus
+from middleware.api_client.models import ArcLifecycleStatus
 from middleware.shared.config.config_base import OtelConfig
 from middleware.sql_to_arc.config import Config
+from middleware.sql_to_arc.context import WorkerContext
 from middleware.sql_to_arc.main import main
 from middleware.sql_to_arc.models import (
     AssayRow,
@@ -21,7 +22,6 @@ from middleware.sql_to_arc.models import (
     InvestigationRow,
     PublicationRow,
     StudyRow,
-    WorkerContext,
 )
 from middleware.sql_to_arc.processor import process_investigation
 from middleware.sql_to_arc.stats import ProcessingStats
@@ -61,11 +61,15 @@ def mock_db_connection(mock_db_cursor: AsyncMock) -> AsyncMock:
 def mock_api_client() -> AsyncMock:
     """Mock API client."""
     client = AsyncMock(spec=ApiClient)
-    client.create_or_update_arc.return_value = CreateOrUpdateArcsResponse(
-        client_id="test",
-        message="success",
-        rdi="test",
-        arcs=[],
+    client.create_or_update_arc.return_value = ArcResult(
+        arc_id="test",
+        status=ArcStatus.CREATED,
+        metadata=ArcMetadata(
+            arc_hash="",
+            status=ArcLifecycleStatus.ACTIVE,
+            first_seen="2026-01-01T00:00:00Z",
+            last_seen="2026-01-01T00:00:00Z",
+        ),
     )
     return client
 
@@ -83,7 +87,8 @@ class WorkflowTester:
         """
         self.mocker = mocker
         self.api_client = mock_api_client
-        self.db = MagicMock()
+        self.db = AsyncMock()
+        self.db.validate_schema = AsyncMock(return_value=None)
         self.db.to_jsonld.return_value = "{}"
         self.captured_arcs: list[ARC] = []
 
@@ -120,7 +125,7 @@ class WorkflowTester:
         mocker.patch("middleware.sql_to_arc.main.configure_logging")
 
         # Capture ARCs on API call
-        async def capture_arc(rdi: str, arc: Any) -> CreateOrUpdateArcsResponse:
+        async def capture_arc(rdi: str, arc: Any) -> ArcResult:
             serialized_arc = arc
             if isinstance(arc, dict):
                 # Convert back to ARC object for test compatibility
@@ -128,18 +133,28 @@ class WorkflowTester:
                 serialized_arc = ARC.from_rocrate_json_string(json.dumps(arc))
 
             self.captured_arcs.append(serialized_arc)
-            return CreateOrUpdateArcsResponse(client_id="test", message="success", rdi=rdi, arcs=[])
+            return ArcResult(
+                arc_id=rdi,
+                status=ArcStatus.CREATED,
+                metadata=ArcMetadata(
+                    arc_hash="",
+                    status=ArcLifecycleStatus.ACTIVE,
+                    first_seen="2026-01-01T00:00:00Z",
+                    last_seen="2026-01-01T00:00:00Z",
+                ),
+            )
 
         self.api_client.create_or_update_arc.side_effect = capture_arc
 
-    def _as_gen(self, data: list[dict[str, Any]], model_cls: type[Any] | None = None) -> AsyncGenerator[Any, None]:
+    @staticmethod
+    def _as_gen(data: list[dict[str, Any]], model_cls: type[Any] | None = None) -> AsyncGenerator[Any, None]:
         async def gen() -> AsyncGenerator[Any, None]:
             for item in data:
                 yield model_cls.model_validate(item) if model_cls else item
 
         return gen()
 
-    def set_db_content(  # noqa: PLR0913
+    def set_db_content(  # noqa: PLR0913, PLR0917
         self,
         investigations: list[dict[str, Any]] | None = None,
         studies: list[dict[str, Any]] | None = None,
@@ -149,23 +164,59 @@ class WorkflowTester:
         annotations: list[dict[str, Any]] | None = None,
     ) -> None:
         """Mock the database streaming methods with provided data."""
-        self.db.stream_investigations.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            investigations or [], InvestigationRow
+
+        def _prepare_data(data: list[dict[str, Any]] | None, target_cls: type[Any] | None) -> list[dict[str, Any]]:
+            if not data or not target_cls:
+                return data or []
+            prepared = []
+            model_fields = target_cls.model_fields.keys()
+            for item in data:
+                new_item = item.copy()
+                # Rename description to description_text if needed
+                if "description" in new_item and "description_text" in model_fields:
+                    new_item["description_text"] = new_item.pop("description")
+                # Add default values for required fields missing in test data
+                for field_name, field_info in target_cls.model_fields.items():
+                    extra = field_info.json_schema_extra
+                    is_required = isinstance(extra, dict) and extra.get("spec_required")
+                    if is_required and field_name not in new_item:
+                        new_item[field_name] = "Test Value"
+                prepared.append(new_item)
+            return prepared
+
+        # The stream_* methods are async generator methods (not coroutines), so they must
+        # be set as regular MagicMock, not AsyncMock. AsyncMock would wrap the return
+        # value in a coroutine, but async generators are called directly (no await) and
+        # return an AsyncGenerator object immediately.
+        self.db.stream_investigations = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(investigations, InvestigationRow), InvestigationRow
+            )
         )
-        self.db.stream_studies.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            studies or [], StudyRow
+        self.db.stream_studies = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(studies, StudyRow), StudyRow
+            )
         )
-        self.db.stream_assays.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            assays or [], AssayRow
+        self.db.stream_assays = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(assays, AssayRow), AssayRow
+            )
         )
-        self.db.stream_contacts.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            contacts or [], ContactRow
+        self.db.stream_contacts = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(contacts, ContactRow), ContactRow
+            )
         )
-        self.db.stream_publications.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            publications or [], PublicationRow
+        self.db.stream_publications = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                _prepare_data(publications, PublicationRow), PublicationRow
+            )
         )
-        self.db.stream_annotation_tables.side_effect = lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-            annotations or []
+        self.db.stream_annotation_tables = MagicMock(
+            side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
+                annotations or []
+            )
         )
 
     async def run(self) -> list[ARC]:
@@ -178,7 +229,7 @@ class WorkflowTester:
         )
         self.mocker.patch("middleware.sql_to_arc.processor.concurrent.futures.ProcessPoolExecutor", MockExecutor)
 
-        await main()
+        await main(["-c", "config.yaml"])
         return self.captured_arcs
 
 
@@ -192,8 +243,20 @@ def workflow_tester(mocker: MagicMock, mock_api_client: AsyncMock) -> WorkflowTe
 async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None:
     """Test worker investigations processing."""
     investigation_rows: list[dict[str, Any]] = [
-        {"identifier": 1, "title": "Test 1", "description": "Desc 1", "submission_time": None, "release_time": None},
-        {"identifier": 2, "title": "Test 2", "description": "Desc 2", "submission_time": None, "release_time": None},
+        {
+            "identifier": 1,
+            "title": "Test 1",
+            "description_text": "Desc 1",
+            "submission_time": None,
+            "release_time": None,
+        },
+        {
+            "identifier": 2,
+            "title": "Test 2",
+            "description_text": "Desc 2",
+            "submission_time": None,
+            "release_time": None,
+        },
     ]
     studies_by_investigation: dict[str, list[StudyRow]] = {
         "1": [StudyRow.model_validate(study) for study in list[dict[str, Any]]()],
@@ -648,7 +711,7 @@ async def test_assay_with_annotations(workflow_tester: WorkflowTester) -> None:
 
 
 @pytest.mark.asyncio
-async def test_comprehensive_annotation_flow(workflow_tester: WorkflowTester) -> None:
+async def test_comprehensive_annotation_flow(workflow_tester: WorkflowTester) -> None:  # noqa: PLR0914
     """
     Test a complete flow with multiple linked annotation tables.
 

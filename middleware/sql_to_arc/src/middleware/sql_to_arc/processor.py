@@ -16,13 +16,13 @@ from pydantic import BaseModel
 from middleware.api_client import ApiClient, ApiClientError
 from middleware.sql_to_arc.builder import build_single_arc_task
 from middleware.sql_to_arc.config import Config
-from middleware.sql_to_arc.database import Database
-from middleware.sql_to_arc.models import (
+from middleware.sql_to_arc.context import (
     ArcBuildData,
-    InvestigationRow,
     RelatedDataBatch,
     WorkerContext,
 )
+from middleware.sql_to_arc.database import Database
+from middleware.sql_to_arc.models import InvestigationRow
 from middleware.sql_to_arc.stats import ProcessingStats
 
 logger = logging.getLogger(__name__)
@@ -73,10 +73,18 @@ async def _build_and_upload_single_arc(
     # Acquire semaphore to limit concurrency
     async with semaphore:
         # Prepare data bundle for this investigation
+        studies = ctx.studies_by_inv.get(inv_id, [])
+        assays = ctx.assays_by_inv.get(inv_id, [])
+
+        if assays and not studies:
+            logger.warning(
+                "%s: Investigation %s has assays but no studies. This is allowed but unusual.", inv_info, inv_id
+            )
+
         build_data = ArcBuildData(
             investigation_row=investigation,
-            studies=ctx.studies_by_inv.get(inv_id, []),
-            assays=ctx.assays_by_inv.get(inv_id, []),
+            studies=studies,
+            assays=assays,
             contacts=ctx.contacts_by_inv.get(inv_id, []),
             publications=ctx.pubs_by_inv.get(inv_id, []),
             annotations=ctx.anns_by_inv.get(inv_id, []),
@@ -108,7 +116,7 @@ async def _build_and_upload_single_arc(
             logger.error("%s: ARC generation timed out for investigation %s", inv_info, inv_id)
             stats.failed_datasets += 1
             stats.failed_ids.append(inv_id)
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except (ValueError, RuntimeError) as e:
             logger.error("%s: Failed to build ARC for investigation %s: %s", inv_info, inv_id, e)
             stats.failed_datasets += 1
             stats.failed_ids.append(inv_id)
@@ -188,10 +196,9 @@ def _spawn_investigation_task(
     idx: int,
     batch_data: RelatedDataBatch,
     res: WorkerResources,
-    running_tasks: set[asyncio.Task],
+    running_tasks: set[asyncio.Task[None]],
 ) -> None:
     """Create worker context and spawn a processing task."""
-    res.stats.found_datasets += 1
     ctx = WorkerContext(
         client=res.client,
         rdi=res.config.rdi,
@@ -235,9 +242,9 @@ async def process_investigations(
         ) as executor,
         trace.get_tracer(__name__).start_as_current_span("process_investigations"),
     ):
-        running_tasks: set[asyncio.Task] = set()
+        running_tasks: set[asyncio.Task[None]] = set()
         inv_idx = 0
-        investigation_gen = db.stream_investigations(limit=config.debug_limit)
+        investigation_gen = db.stream_investigations(stats=stats, limit=config.debug_limit)
 
         while True:
             batch = []
@@ -247,9 +254,12 @@ async def process_investigations(
                         batch.append(await anext(investigation_gen))
                     except StopAsyncIteration:
                         break
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                logger.error("Unexpected error while fetching investigations: %s", e, exc_info=True)
+            except (RuntimeError, OSError, ConnectionError) as e:
+                logger.error("Database or connection error while fetching investigations: %s", e, exc_info=True)
                 break
+            except Exception as e:
+                logger.error("Unexpected error while fetching investigations: %s", e, exc_info=True)
+                raise
 
             if not batch:
                 break

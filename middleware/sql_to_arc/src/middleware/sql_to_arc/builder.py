@@ -6,7 +6,7 @@ import logging
 from collections import defaultdict
 from typing import Any, cast
 
-from arctrl import (  # type: ignore[import-untyped]
+from arctrl import (
     ARC,
     ArcAssay,
     ArcStudy,
@@ -17,6 +17,7 @@ from arctrl import (  # type: ignore[import-untyped]
     OntologyAnnotation,
 )
 
+from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.mapper import (
     map_assay,
     map_contact,
@@ -25,7 +26,6 @@ from middleware.sql_to_arc.mapper import (
     map_study,
 )
 from middleware.sql_to_arc.models import (
-    ArcBuildData,
     AssayRow,
     ContactRow,
     PublicationRow,
@@ -150,7 +150,7 @@ def _add_publications_to_arc(
             study.Publications.append(map_publication(p_row))
 
 
-def _get_column_key(r: dict[str, Any]) -> tuple:
+def _get_column_key(r: dict[str, Any]) -> tuple[Any, ...]:
     """Extract a unique key for a column definition."""
     return (
         r.get("column_type"),
@@ -163,7 +163,7 @@ def _get_column_key(r: dict[str, Any]) -> tuple:
     )
 
 
-def _build_header(key: tuple) -> CompositeHeader | None:
+def _build_header(key: tuple[Any, ...]) -> CompositeHeader | None:
     """Build a CompositeHeader from a column key tuple."""
     c_type, c_io, c_val, c_ann_term, c_ann_uri, c_ann_ver, c_name = key
     try:
@@ -246,9 +246,9 @@ def _build_arc_table(t_name: str, rows: list[dict[str, Any]]) -> ArcTable | None
     if max_row_idx < 0:
         return None
 
-    col_keys: list[tuple] = []
+    col_keys: list[tuple[Any, ...]] = []
     seen_keys = set()
-    col_to_rows: dict[tuple, dict[int, dict[str, Any]]] = defaultdict(dict)
+    col_to_rows: dict[tuple[Any, ...], dict[int, dict[str, Any]]] = defaultdict(dict)
 
     for r in rows:
         key = _get_column_key(r)

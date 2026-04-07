@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import logging
 import multiprocessing
-import sys
 import time
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -25,8 +24,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger(__name__)
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments, ignoring unknown args (e.g., pytest flags)."""
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="SQL to ARC Converter")
     parser.add_argument(
         "-c",
@@ -41,27 +40,31 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Show version and exit",
     )
-    args, _ = parser.parse_known_args()
+    args = parser.parse_args(argv)
     return args
 
 
 async def run_conversion(config: Config) -> ProcessingStats:
     """Run the conversion."""
     db = Database(config.connection_string.get_secret_value())
+
+    # 1. Validate DB schema before starting
+    await db.validate_schema()
+
     async with ApiClient(config.api_client) as client:
         return await process_investigations(db, client, config)
 
 
-async def main() -> None:
+async def main(argv: list[str] | None = None) -> None:
     """Execute the main entry point."""
-    args = parse_args()
+    args = parse_args(argv)
 
     if args.version:
         try:
             print(f"sql_to_arc version: {version('sql_to_arc')}")
         except PackageNotFoundError:
             print("sql_to_arc version: unknown (package not installed)")
-        sys.exit(0)
+        return
 
     try:
         wrapper = ConfigWrapper.from_yaml_file(args.config, prefix="SQL_TO_ARC")

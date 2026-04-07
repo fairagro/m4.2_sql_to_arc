@@ -6,8 +6,8 @@ from typing import Any
 import pytest
 
 from middleware.sql_to_arc.builder import build_single_arc_task
+from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.models import (
-    ArcBuildData,
     AssayRow,
     ContactRow,
     InvestigationRow,
@@ -176,7 +176,11 @@ def test_build_arc_with_contacts_and_pubs(
 def test_build_ignores_irrelevant_data(sample_investigation: dict[str, Any]) -> None:
     """Test that data linked to other investigations is correctly filtered out."""
     # Data for other investigation
-    other_study = {"identifier": "styX", "investigation_ref": "inv2"}
+    other_study = {
+        "identifier": "styX",
+        "investigation_ref": "inv2",
+        "title": "Other Study",
+    }
 
     arc_data = ArcBuildData(
         investigation_row=InvestigationRow.model_validate(sample_investigation),
