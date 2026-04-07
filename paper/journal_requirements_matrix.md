@@ -113,7 +113,7 @@ Applied to: Edaphobase (Soil Fauna DB, via `sql-to-arc`) and BonaRes (Soil/Agric
 
 ---
 
-### 3.1 GigaScience — Technical Note
+### 3.1 [GigaScience — Technical Note](https://academic.oup.com/gigascience/pages/technical_note)
 
 #### Overall Evaluation: ✅ Suitable (with additions) · JIF 3.9
 
@@ -135,7 +135,7 @@ Applied to: Edaphobase (Soil Fauna DB, via `sql-to-arc`) and BonaRes (Soil/Agric
 
 ---
 
-### 3.2 Journal of Integrative Bioinformatics (JIB)
+### 3.2 [Journal of Integrative Bioinformatics (JIB)](https://www.degruyterbrill.com/publication/journal_key/JIB/downloadAsset/JIB_Instructions%20for%20Authors.pdf)
 
 #### Overall Evaluation: ✅ Suitable (lowest barrier) · JIF 1.8
 
@@ -154,7 +154,7 @@ Applied to: Edaphobase (Soil Fauna DB, via `sql-to-arc`) and BonaRes (Soil/Agric
 
 ---
 
-### 3.3 Scientific Data (Nature)
+### 3.3 [Scientific Data (Nature)](https://www.nature.com/sdata/submission-guidelines)
 
 #### Overall Evaluation: ❌ Not Suitable · JIF 6.9
 
@@ -169,7 +169,7 @@ Applied to: Edaphobase (Soil Fauna DB, via `sql-to-arc`) and BonaRes (Soil/Agric
 
 ---
 
-### 3.4 Data Science Journal (CODATA)
+### 3.4 [Data Science Journal (CODATA)](https://datascience.codata.org/about/submissions)
 
 #### Overall Evaluation: ✅ Suitable (as Practice Paper) · CiteScore 3.4
 
@@ -188,7 +188,7 @@ Applied to: Edaphobase (Soil Fauna DB, via `sql-to-arc`) and BonaRes (Soil/Agric
 
 ---
 
-### 3.5 Computers & Electronics in Agriculture (CEA)
+### 3.5 [Computers & Electronics in Agriculture (CEA)](https://www.sciencedirect.com/journal/computers-and-electronics-in-agriculture/publish/guide-for-authors)
 
 #### Overall Evaluation: ❌ Not Suitable · JIF 8.9
 
@@ -203,7 +203,7 @@ Applied to: Edaphobase (Soil Fauna DB, via `sql-to-arc`) and BonaRes (Soil/Agric
 
 ---
 
-### 3.6 SoftwareX (Elsevier)
+### 3.6 [SoftwareX (Elsevier)](https://www.sciencedirect.com/journal/softwarex/publish/guide-for-authors)
 
 #### Overall Evaluation: ⚠️ Conditionally Suitable · JIF 2.4
 
