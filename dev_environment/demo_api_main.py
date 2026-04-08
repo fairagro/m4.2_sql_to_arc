@@ -11,6 +11,7 @@ import os
 import traceback
 from datetime import UTC, datetime
 from pathlib import Path
+import re
 
 from arctrl import ARC
 from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
@@ -122,13 +123,24 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
             target = (base_resolved / rid).resolve()
             return rid, target
 
+        # Allow only simple, short directory names consisting of safe characters.
+        # This ensures that user-controlled identifiers cannot introduce path
+        # traversal or unexpected filesystem semantics.
+        safe_name_pattern = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
         if isinstance(raw_id, str) and raw_id.strip():
             candidate_id = raw_id.strip()
             # Reduce to a single path component and normalize it.
             safe_name = os.path.normpath(Path(candidate_id).name)
-            # Reject empty names, current/parent directory markers, or anything that
-            # would reintroduce directory components on this platform.
-            if not safe_name or safe_name in {".", ".."} or "/" in safe_name or "\\" in safe_name:
+            # Reject empty names, current/parent directory markers, any embedded
+            # separators, or names that do not match the allowed pattern.
+            if (
+                not safe_name
+                or safe_name in {".", ".."}
+                or "/" in safe_name
+                or "\\" in safe_name
+                or not safe_name_pattern.match(safe_name)
+            ):
                 arc_id, candidate_dir = _fallback()
             else:
                 candidate_dir = (base_resolved / safe_name).resolve()
