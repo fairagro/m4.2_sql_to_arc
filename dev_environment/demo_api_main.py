@@ -102,20 +102,36 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
     _chown_tree(output_path)  # Ensure the root output dir belongs to the host user
 
     # Derive a safe ARC identifier from the payload. The ARC identifier is used
-    # as a directory name below, so ensure it cannot escape the output_path.
+    # as a directory name below, so ensure it cannot escape the output_path and
+    # does not contain any path traversal or directory separators.
     raw_arc_id = arc_payload.get("identifier")
+
+    def _generate_random_arc_id() -> str:
+        return f"arc_{os.urandom(4).hex()}"
+
     if isinstance(raw_arc_id, str) and raw_arc_id.strip():
         candidate_id = raw_arc_id.strip()
-        # Prevent absolute paths and directory components; keep only the final name.
-        if Path(candidate_id).is_absolute():
-            candidate_id = f"arc_{os.urandom(4).hex()}"
-        safe_name = Path(candidate_id).name
-        if not safe_name:
-            arc_id = f"arc_{os.urandom(4).hex()}"
+        # Reduce to a single path component and normalize it.
+        safe_name = os.path.normpath(Path(candidate_id).name)
+        # Reject empty names, current/parent directory markers, or anything that
+        # would reintroduce directory components on this platform.
+        if not safe_name or safe_name in {".", ".."} or "/" in safe_name or "\\" in safe_name:
+            arc_id = _generate_random_arc_id()
         else:
-            arc_id = safe_name
+            # Build the full path and ensure it stays within the output_path root.
+            full_path = (output_path / safe_name).resolve()
+            try:
+                common_root = os.path.commonpath([str(output_path.resolve()), str(full_path)])
+            except ValueError:
+                # On error (e.g., different drives), fall back to a random ID.
+                arc_id = _generate_random_arc_id()
+            else:
+                if common_root != str(output_path.resolve()):
+                    arc_id = _generate_random_arc_id()
+                else:
+                    arc_id = safe_name
     else:
-        arc_id = f"arc_{os.urandom(4).hex()}"
+        arc_id = _generate_random_arc_id()
 
     now = datetime.now(UTC).isoformat()
     arc_dir = output_path / arc_id
