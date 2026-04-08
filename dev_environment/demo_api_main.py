@@ -174,6 +174,39 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
                 "last_seen": now,
             },
         }
+
+    # Final safety check: ensure the resolved ARC directory is strictly within
+    # the resolved output root directory before performing any filesystem I/O.
+    try:
+        base_real = os.path.realpath(output_path)
+        arc_real = os.path.realpath(arc_dir)
+        common_root = os.path.commonpath([base_real, arc_real])
+    except ValueError:
+        return {
+            "arc_id": "invalid",
+            "status": "error",
+            "metadata": {
+                "rdi": rdi,
+                "arc_hash": "demo_hash",
+                "status": "REJECTED",
+                "first_seen": now,
+                "last_seen": now,
+            },
+        }
+
+    if common_root != base_real:
+        return {
+            "arc_id": "invalid",
+            "status": "error",
+            "metadata": {
+                "rdi": rdi,
+                "arc_hash": "demo_hash",
+                "status": "REJECTED",
+                "first_seen": now,
+                "last_seen": now,
+            },
+        }
+
     payload_path = arc_dir.with_suffix(".payload.json")
 
     with open(payload_path, "w", encoding="utf-8") as handle:
