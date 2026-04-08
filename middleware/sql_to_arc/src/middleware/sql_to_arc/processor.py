@@ -68,7 +68,22 @@ async def _build_and_upload_single_arc(
     inv_info: str,
     semaphore: asyncio.Semaphore,
 ) -> None:
-    """Build a single ARC and upload it."""
+    """
+    Orchestrate the creation and transmission of a single ARC.
+
+    This function handles the lifecycle of one research dataset:
+    1. Acquires a semaphore slot (concurrency control).
+    2. Gathers pre-fetched relational data into a bundle.
+    3. Offloads the CPU-intensive ARC generation to a Process Pool.
+    4. Uploads the resulting JSON to the Middleware API.
+
+    Args:
+        ctx: Context containing executors and pre-fetched data.
+        investigation: The metadata row for the investigation.
+        stats: Global stats object to update on success/failure.
+        inv_info: Logging prefix for traceability.
+        semaphore: Semaphore to limit concurrent processing.
+    """
     inv_id = str(investigation.identifier)
     # Acquire semaphore to limit concurrency
     async with semaphore:
@@ -106,8 +121,7 @@ async def _build_and_upload_single_arc(
                 stats.failed_ids.append(inv_id)
                 return
 
-            json_size_kb = len(arc_json.encode("utf-8")) / 1024
-            logger.info("%s: ARC JSON created: size=%.2fKB", inv_info, json_size_kb)
+            logger.info("%s: ARC JSON created: size=%.2fKB", inv_info, len(arc_json.encode("utf-8")) / 1024)
 
             # Upload single ARC
             await _upload_and_update_stats(ctx, arc_json, inv_id, stats, inv_info)
@@ -154,10 +168,18 @@ async def _fetch_and_group_related_data(db: Database, investigation_ids: list[st
     async def group_stream(
         gen: AsyncGenerator[Any, None],
     ) -> tuple[dict[str, list[Any]], int]:
+        """
+        Help to consume an async generator and group items by their investigation reference.
+
+        This organizes relational data (like Studies or Assays) into a lookup table where
+        the key is the 'investigation_ref'. This is essential for the 1:N mapping during
+        ARC construction.
+        """
         m = defaultdict(list)
         count = 0
         async for r in gen:
-            # All models and the annotation dict have investigation_ref
+            # All models and the annotation dict have investigation_ref.
+            # We handle both Pydantic models (obj.field) and raw dicts (obj[field]).
             inv_ref = r["investigation_ref"] if isinstance(r, dict) else r.investigation_ref
             m[str(inv_ref)].append(r)
             count += 1
@@ -198,7 +220,16 @@ def _spawn_investigation_task(
     res: WorkerResources,
     running_tasks: set[asyncio.Task[None]],
 ) -> None:
-    """Create worker context and spawn a processing task."""
+    """
+    Create worker context and spawn a processing task.
+
+    Args:
+        investigation: The data row from DB representing the research dataset.
+        idx: The global sequence number of this investigation (used for logging context).
+        batch_data: The pre-fetched relational data (studies, assays, etc.) for the current batch.
+        res: Shared resources (API client, config, stats, executor, semaphore).
+        running_tasks: The set of currently active asyncio tasks for backpressure tracking.
+    """
     ctx = WorkerContext(
         client=res.client,
         rdi=res.config.rdi,
@@ -213,9 +244,17 @@ def _spawn_investigation_task(
         arc_generation_timeout_minutes=res.config.arc_generation_timeout_minutes,
     )
 
+    # Logging Context: 'inv_info' provides a human-readable prefix (e.g. "Investigation 42")
+    # that is passed down to sub-functions to keep log entries traceable back to their origin
+    # without repeating the logic of generating this string everywhere.
     inv_info = f"Investigation {idx}"
+    # MUTABLE ARGUMENTS: Note that 'res.stats' and 'running_tasks' are passed by reference.
+    # The 'process_investigation' task will update 'res.stats' directly on failure
+    # and 'running_tasks' will automatically discard this task via its done_callback.
     task = asyncio.create_task(process_investigation(ctx, investigation, res.stats, inv_info, res.semaphore))
     running_tasks.add(task)
+    # Self-cleanup: When the task is finished (success or failure), it removes itself
+    # from the 'running_tasks' set to free up slots for the next batch.
     task.add_done_callback(running_tasks.discard)
 
 
@@ -226,6 +265,8 @@ async def process_investigations(
 ) -> ProcessingStats:
     """Fetch investigations from DB and process them concurrently with flow control."""
     stats = ProcessingStats()
+    # 1. Flow Control: Use a semaphore to limit the number of active tasks.
+    # This prevents the application from reading too much data into RAM at once.
     semaphore = asyncio.Semaphore(config.max_concurrent_tasks)
 
     logger.info(
@@ -235,6 +276,8 @@ async def process_investigations(
         config.db_batch_size,
     )
 
+    # 2. Parallelization: Setup a Process Pool to handle CPU-intensive ARC generation.
+    # We use "spawn" as the start method for better isolation and cross-platform compatibility.
     with (
         concurrent.futures.ProcessPoolExecutor(
             max_workers=config.max_concurrent_arc_builds,
@@ -244,15 +287,21 @@ async def process_investigations(
     ):
         running_tasks: set[asyncio.Task[None]] = set()
         inv_idx = 0
+        # Initialize the streaming generator for investigations
         investigation_gen = db.stream_investigations(stats=stats, limit=config.debug_limit)
 
         while True:
+            # 3. Memory-Efficient Fetching: Get a chunk of investigations from the generator.
+            # We fetch in batches to balance between DB roundtrips and RAM usage.
+            # 'anext' is used to manually advance the async generator.
             batch = []
             try:
                 for _ in range(config.db_batch_size):
                     try:
+                        # Fetch next investigation from the server-side cursor
                         batch.append(await anext(investigation_gen))
                     except StopAsyncIteration:
+                        # End of stream reached, triggered by 'anext'
                         break
             except (RuntimeError, OSError, ConnectionError) as e:
                 logger.error("Database or connection error while fetching investigations: %s", e, exc_info=True)
@@ -264,15 +313,18 @@ async def process_investigations(
             if not batch:
                 break
 
+            # 4. Backpressure: If we reached the task limit, wait for at least one to finish.
+            # This is crucial for throttling the 'Producer' (the DB generator).
             if len(running_tasks) >= config.max_concurrent_tasks:
                 await asyncio.wait(running_tasks, return_when=asyncio.FIRST_COMPLETED)
 
-            # 3. Relational Batching: Fetch all related data for this batch at once
+            # 5. Relational Batching: Fetch ALL related data (Studies, Assays, etc.)
+            # for the entire batch in ONE go to avoid N+1 query performance hits.
             batch_data = await _fetch_and_group_related_data(db, [str(inv.identifier) for inv in batch])
             stats.total_studies += batch_data.study_count
             stats.total_assays += batch_data.assay_count
 
-            # 4. Prepare resources for spawning tasks
+            # 6. Resource Injection: Bundle dependencies to pass them to worker tasks.
             res = WorkerResources(
                 client=client,
                 config=config,
@@ -281,7 +333,10 @@ async def process_investigations(
                 semaphore=semaphore,
             )
 
-            # 5. Spawn tasks for each investigation in the batch
+            # 7. Task Execution: Spawn an asynchronous task for each investigation.
+            # Each task will later use the Semaphore to enter the Process Pool.
+            # IN-PLACE UPDATES: These tasks will directly update 'stats' and
+            # manage their own lifecycle within 'running_tasks'.
             for investigation in batch:
                 inv_idx += 1
                 _spawn_investigation_task(
@@ -292,6 +347,7 @@ async def process_investigations(
                     running_tasks,
                 )
 
+        # 8. Cleanup: Wait for all remaining background tasks (uploads, builds) to finish.
         if running_tasks:
             logger.info("Waiting for %d remaining tasks to complete...", len(running_tasks))
             await asyncio.gather(*running_tasks)

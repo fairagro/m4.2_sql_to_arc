@@ -1,0 +1,8 @@
+connection_string: "postgresql+psycopg://postgres:postgres@postgres:5432/rdi"
+rdi: "demo"
+rdi_url: "https://example.org"
+
+api_client:
+  api_url: "http://middleware-api:8000/"
+  verify_ssl: false
+

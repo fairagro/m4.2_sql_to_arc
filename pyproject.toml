@@ -22,6 +22,8 @@ dev = [
   "ruff>=0.14.8",
   "pre-commit>=4.0.0",
   "respx>=0.20.0",
+  "fastapi>=0.135.3",
+  "uvicorn>=0.42.0",
 ]
 
 [tool.uv.sources]

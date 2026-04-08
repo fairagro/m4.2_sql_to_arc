@@ -63,7 +63,7 @@ uv run mypy middleware/
 source scripts/load-env.sh
 
 # Docker
-cd dev_environment && ./start.sh --build
+cd dev_environment && ./start-dev.sh --build
 ```
 
 ## ⚠️ Common Patterns

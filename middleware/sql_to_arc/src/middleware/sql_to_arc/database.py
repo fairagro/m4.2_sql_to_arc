@@ -200,7 +200,7 @@ class Database:
         try:
             async with self.engine.connect() as conn:
                 # Use literal_column("*") to ensure SQLAlchemy generates 'SELECT *'
-                # instead of '"vInvestigation"."*"'
+                # instead of '"vInvestigation"."*"' which can cause issues with some dialects
                 stmt: sqlalchemy.Select[Any] = (
                     select(sqlalchemy.literal_column("*"))
                     .select_from(table(view_name))
@@ -209,11 +209,13 @@ class Database:
                 if limit:
                     stmt = stmt.limit(limit)
 
+                # Execute stream to use server-side cursor (prevents loading all rows into RAM)
                 result = await conn.stream(stmt)
                 async for row in result.mappings():
                     # Count everything we find in the database
                     stats.found_datasets += 1
 
+                    # Map raw DB row to Pydantic model with validation
                     investigation = self._validate_and_map(row, InvestigationRow, "investigation")
                     if investigation is None:
                         # If validation fails, it's a found but failed dataset
@@ -221,8 +223,10 @@ class Database:
                         stats.failed_ids.append(row.get("identifier", "unknown"))
                         continue
 
+                    # Yield validated model to the async loop in processor.py
                     yield investigation
         except ProgrammingError as e:
+            # Handle missing view gracefully (e.g. during initial setup or empty DBs)
             if f'relation "{view_name.lower()}" does not exist' in str(e).lower():
                 logger.warning('Table or view "%s" does not exist. Treating as empty.', view_name)
             else:

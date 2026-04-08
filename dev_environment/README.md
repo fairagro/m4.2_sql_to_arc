@@ -30,19 +30,32 @@ The SQL-to-ARC converter that:
 - Waits for db-init to complete
 - Connects to PostgreSQL and Middleware API
 - Mounts encrypted secrets via sops
-- Currently set to `sleep 3600` (modify compose.yaml to enable converter)
+- Currently set to `sleep 3600` (modify compose.dev.yaml to enable converter)
 
-### 4. middleware-api
+### 4. middleware-api (Demo Only)
 
-The FAIRagro Middleware API service that:
+A simple mock service that simulates the Middleware API for local testing.
 
-- Builds from `../docker/Dockerfile.api`
-- Runs on port `8000`
-- Provides REST API for ARC management
-- No mTLS validation in dev mode (HTTP without client certs)
-- Health check via `/live` endpoint
+- No mTLS required (uses HTTP)
+- Logs all incoming ARC uploads
+- Available via `http://localhost:8000`
 
-## Quick Start
+## Quick Start (Demo Mode - Recommended for First Time)
+
+If you don't have the mTLS keys yet and just want to see the workflow in action with a local database and a mock API:
+
+```bash
+./start-demo.sh --build
+```
+
+This starts:
+
+1. **postgres**: A local DB.
+2. **db-init**: Fills the DB with sample data.
+3. **middleware-api**: A local mock API.
+4. **sql-to-arc**: The converter, pointing to the local mock.
+
+## Quick Start (Standard/External Mode)
 
 ### Prerequisites
 
@@ -50,10 +63,10 @@ The FAIRagro Middleware API service that:
 - [sops](https://github.com/getsops/sops) for secret management
 - Age or PGP key configured for sops decryption
 
-### Start Everything
+### Start with Decryption
 
 ```bash
-./start.sh
+./start-dev.sh
 ```
 
 This will:
@@ -65,7 +78,7 @@ This will:
 With image rebuild:
 
 ```bash
-./start.sh --build
+./start-dev.sh --build
 ```
 
 ### Start with External Middleware API
@@ -126,9 +139,9 @@ sops client.key
 sops -d client.key
 ```
 
-The `start.sh` script uses `sops exec-file` to temporarily decrypt `client.key` during container startup.
+The `start-dev.sh` script uses `sops exec-file` to temporarily decrypt `client.key` during container startup.
 
-### config.yaml
+### config.dev.yaml
 
 Application configuration for sql_to_arc:
 
@@ -172,7 +185,7 @@ docker compose logs sql_to_arc
 Common issues:
 
 - Secrets not mounted → verify sops decryption works: `sops -d client.key`
-- API unreachable → check `api_url` in config.yaml
+- API unreachable → check `api_url` in config.dev.yaml
 - Database connection → verify db-init completed successfully
 
 ### Rebuild specific service
@@ -182,7 +195,7 @@ docker compose build sql_to_arc
 docker compose up sql_to_arc
 ```
 
-## Manual Usage (without start.sh)
+## Manual Usage (without start-dev.sh)
 
 If you don't want to use sops or the start script:
 
@@ -201,15 +214,15 @@ sops exec-file client.key \
 ## Development Workflow
 
 1. Make changes to sql_to_arc code
-2. Rebuild image: `./start.sh --build`
+2. Rebuild image: `./start-dev.sh --build`
 3. View logs: `docker compose logs -f sql_to_arc`
 4. Iterate
 
 ## Files
 
-- `compose.yaml` - Docker Compose service definitions
-- `config.yaml` - Application configuration
+- `compose.dev.yaml` - Docker Compose service definitions
+- `config.dev.yaml` - Application configuration
 - `client.crt` - Client certificate (plain)
 - `client.key` - Client private key (encrypted with sops)
-- `start.sh` - Startup script with sops integration
+- `start-dev.sh` - Startup script with sops integration
 - `run.sh` - **DEPRECATED** - Old script (kept for reference)

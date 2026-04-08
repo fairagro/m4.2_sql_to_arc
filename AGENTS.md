@@ -38,9 +38,9 @@ scripts/
     └── post-merge
 
 dev_environment/
-├── start.sh              # Start Docker Compose (Postgres + Converter)
-├── compose.yaml          # Docker services definition
-└── config.yaml           # Development configuration for the converter
+├── start-dev.sh          # Start Docker Compose (Postgres + Converter)
+├── compose.dev.yaml      # Docker services definition
+└── config.dev.yaml       # Development configuration for the converter
 ```
 
 ## 🔧 Important Commands
@@ -61,9 +61,13 @@ uv sync --dev --all-packages
 ### Development Environment
 
 ```bash
-# Start local database and run converter
+# Start a full local demo (including mock API, no secrets/mTLS required)
 cd dev_environment
-./start.sh --build
+./start-demo.sh --build
+
+# Start local database and run converter (requires decryption via sops)
+cd dev_environment
+./start-dev.sh --build
 
 # View logs
 docker compose logs -f
@@ -72,7 +76,22 @@ docker compose logs -f
 docker compose down
 ```
 
-## 📝 Key Implementation Details
+## Architecture Rules
+
+Before generating or modifying code, read **[docs/ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md)**.
+
+It defines binding constraints that MUST be followed:
+
+- **Module Dependency Graph**: Which module may import from which (no circular imports).
+- **Extension Points**: How to add new DB entities, mapper functions, or config values.
+- **Concurrency Rules**: IPC contract for worker processes, Semaphore scope.
+- **Error Handling**: Per-investigation failure isolation, stats update pattern.
+- **Config**: NEVER use `os.environ` directly — always extend `Config` in `config.py`.
+- **Database Access**: All SQL goes through `Database`; always use server-side cursors and bulk fetches.
+
+---
+
+## �📝 Key Implementation Details
 
 ### External Dependencies
 
@@ -108,7 +127,7 @@ services:
   sql_to_arc:         # The converter component (this repo)
 ```
 
-**Configuration**: `dev_environment/config.yaml`
+**Configuration**: `dev_environment/config.dev.yaml`
 
 - Connects to `postgres` service on port 5432.
 - Uses `api_url` pointing to an external Middleware API if needed.
