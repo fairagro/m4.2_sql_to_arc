@@ -8,10 +8,10 @@ and writes the resulting ARC directory structure to the local file system.
 
 import json
 import os
+import re
 import traceback
 from datetime import UTC, datetime
 from pathlib import Path
-import re
 
 from arctrl import ARC
 from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
@@ -58,60 +58,79 @@ def _chown_tree(path: Path) -> None:
 
 
 def _handle_error(arc_dir: Path, rdi: str, arc_id: str, exc: Exception) -> None:
-    """
-    Log and store error information when ARC processing fails.
-
-    Args:
-        arc_dir: The directory where the ARC was supposed to be saved.
-        rdi: The RDI identifier.
-        arc_id: The ARC identifier.
-        exc: The exception that occurred.
-    """
     tb = traceback.format_exc()
-    print(f"Error writing ARC for {rdi}/{arc_id}: {exc}")
+    print(f"Error writing ARC for {rdi}/{arc_id} (dir={arc_dir}): {exc}\n{tb}")
 
-    # Always log errors under a fixed subdirectory of OUTPUT_ROOT to avoid
-    # any dependence on user-controlled identifiers when constructing paths.
-    errors_root = (OUTPUT_ROOT / "errors").resolve()
-    errors_root.mkdir(parents=True, exist_ok=True)
 
-    error_path = errors_root / "error.txt"
-            # In the unlikely event that commonpath still fails, log directly under
-        handle.write(f"RDI: {rdi}\n")
-        handle.write(f"ARC ID: {arc_id}\n")
-        handle.write(f"ARC directory: {arc_dir}\n")
-        handle.write(f"Exception: {exc}\n\n")
+# Pre-compiled pattern for safe ARC directory names (no path traversal, predictable charset).
+_SAFE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+
+def _generate_random_arc_id() -> str:
+    return f"arc_{os.urandom(4).hex()}"
+
+
+def _derive_safe_arc_id(base_dir: Path, raw_id: object) -> tuple[str, Path] | tuple[None, None]:
+    """
+    Derive a safe ARC identifier and corresponding directory path.
+
+    Guarantees that the returned path stays within base_dir. Returns (None, None)
+    if no safe identifier can be derived.
+    """
+    base_resolved = base_dir.resolve()
+
+    def _fallback() -> tuple[str, Path]:
+        rid = _generate_random_arc_id()
+        return rid, (base_resolved / rid).resolve()
+
+    if isinstance(raw_id, str) and raw_id.strip():
+        safe_name = os.path.normpath(Path(raw_id.strip()).name)
+        if (
+            not safe_name
+            or safe_name in {".", ".."}
+            or "/" in safe_name
+            or "\\" in safe_name
+            or not _SAFE_NAME_PATTERN.match(safe_name)
+        ):
+            arc_id, candidate_dir = _fallback()
         else:
-                # If the resolved "errors" directory is still not under OUTPUT_ROOT,
-    _chown_tree(errors_root)
-                # fall back to using the OUTPUT_ROOT directory itself.
+            candidate_dir = (base_resolved / safe_name).resolve()
+            arc_id = safe_name
+    else:
+        arc_id, candidate_dir = _fallback()
 
-                safe_arc_dir = base_root
+    try:
+        common_root = os.path.commonpath([str(base_resolved), str(candidate_dir)])
+    except ValueError:
+        return None, None
 
-    safe_arc_dir.mkdir(parents=True, exist_ok=True)
-    error_path = safe_arc_dir / "error.txt"
-    with open(error_path, "w", encoding="utf-8") as handle:
-        handle.write(str(exc))
-        handle.write("\n\n")
-        handle.write(tb)
-    _chown_tree(safe_arc_dir)
+    if common_root != str(base_resolved):
+        return None, None
+
+    return arc_id, candidate_dir
+
+
+def _rejected_response(rdi: str | None, now: str) -> dict[str, str | dict[str, str]]:
+    return {
+        "arc_id": "invalid",
+        "status": "error",
+        "metadata": {
+            "rdi": rdi or "unknown",
+            "arc_hash": "demo_hash",
+            "status": "REJECTED",
+            "first_seen": now,
+            "last_seen": now,
+        },
+    }
 
 
 @app.post("/v3/arcs")
 async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
-    """
-    Handle the submission of an ARC RO-Crate.
+    """Handle the submission of an ARC RO-Crate.
 
-    This endpoint receives the RO-Crate JSON-LD payload, validates it,
-    and uses the arctrl library to reconstruct the ARC directory structure.
-    The resulting files are saved to the local 'demo_output' volume.
-
-    Args:
-        rdi: The identifier of the Research Data Infrastructure.
-        payload: The request body containing the 'arc' (RO-Crate JSON).
-
-    Returns:
-        A dictionary matching the ArcResult schema expected by the ApiClient.
+    Receives the RO-Crate JSON-LD payload, validates it, and uses the arctrl
+    library to reconstruct the ARC directory structure. Results are saved to
+    the local 'demo_output' volume.
     """
     rdi = request.query_params.get("rdi")
     data = await request.json()
@@ -122,115 +141,25 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
 
     output_path = OUTPUT_ROOT
     output_path.mkdir(parents=True, exist_ok=True)
-    _chown_tree(output_path)  # Ensure the root output dir belongs to the host user
-
-    # Derive a safe ARC identifier from the payload. The ARC identifier is used
-    # as a directory name below, so ensure it cannot escape the output_path and
-    # does not contain any path traversal or directory separators.
-    raw_arc_id = arc_payload.get("identifier")
-
-    def _generate_random_arc_id() -> str:
-        return f"arc_{os.urandom(4).hex()}"
-
-    def _derive_safe_arc_id(base_dir: Path, raw_id: object) -> tuple[str, Path] | tuple[None, None]:
-        """
-        Derive a safe ARC identifier and corresponding directory path that
-        is guaranteed to stay within the given base_dir. Returns (None, None)
-        if no safe identifier can be derived.
-        """
-        base_resolved = base_dir.resolve()
-
-        def _fallback() -> tuple[str, Path]:
-            rid = _generate_random_arc_id()
-            target = (base_resolved / rid).resolve()
-            return rid, target
-
-        # Allow only simple, short directory names consisting of safe characters.
-        # This ensures that user-controlled identifiers cannot introduce path
-        # traversal or unexpected filesystem semantics.
-        safe_name_pattern = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
-
-        if isinstance(raw_id, str) and raw_id.strip():
-            candidate_id = raw_id.strip()
-            # Reduce to a single path component and normalize it.
-            safe_name = os.path.normpath(Path(candidate_id).name)
-            # Reject empty names, current/parent directory markers, any embedded
-            # separators, or names that do not match the allowed pattern.
-            if (
-                not safe_name
-                or safe_name in {".", ".."}
-                or "/" in safe_name
-                or "\\" in safe_name
-                or not safe_name_pattern.match(safe_name)
-            ):
-                arc_id, candidate_dir = _fallback()
-            else:
-                candidate_dir = (base_resolved / safe_name).resolve()
-                arc_id = safe_name
-        else:
-            arc_id, candidate_dir = _fallback()
-
-        try:
-            common_root = os.path.commonpath([str(base_resolved), str(candidate_dir)])
-        except ValueError:
-            return None, None
-
-        if common_root != str(base_resolved):
-            return None, None
-
-        return arc_id, candidate_dir
+    _chown_tree(output_path)
 
     now = datetime.now(UTC).isoformat()
 
-    arc_id, arc_dir = _derive_safe_arc_id(output_path, raw_arc_id)
+    arc_id, arc_dir = _derive_safe_arc_id(output_path, arc_payload.get("identifier"))
     if arc_id is None or arc_dir is None:
-        # Reject paths that would escape the output root (for example via symlinks).
-        return {
-            "arc_id": "invalid",
-            "status": "error",
-            "metadata": {
-                "rdi": rdi,
-                "arc_hash": "demo_hash",
-                "status": "REJECTED",
-                "first_seen": now,
-                "last_seen": now,
-            },
-        }
+        return _rejected_response(rdi, now)
 
-    # Final safety check: ensure the resolved ARC directory is strictly within
-    # the resolved output root directory before performing any filesystem I/O.
+    # Final safety check via realpath to catch symlink escapes.
     try:
         base_real = os.path.realpath(output_path)
-        arc_real = os.path.realpath(arc_dir)
-        common_root = os.path.commonpath([base_real, arc_real])
+        common_root = os.path.commonpath([base_real, os.path.realpath(arc_dir)])
     except ValueError:
-        return {
-            "arc_id": "invalid",
-            "status": "error",
-            "metadata": {
-                "rdi": rdi,
-                "arc_hash": "demo_hash",
-                "status": "REJECTED",
-                "first_seen": now,
-                "last_seen": now,
-            },
-        }
+        return _rejected_response(rdi, now)
 
     if common_root != base_real:
-        return {
-            "arc_id": "invalid",
-            "status": "error",
-            "metadata": {
-                "rdi": rdi,
-                "arc_hash": "demo_hash",
-                "status": "REJECTED",
-                "first_seen": now,
-                "last_seen": now,
-            },
-        }
+        return _rejected_response(rdi, now)
 
     payload_path = arc_dir.with_suffix(".payload.json")
-
     with open(payload_path, "w", encoding="utf-8") as handle:
         json.dump(arc_payload, handle, indent=2)
     _chown_tree(payload_path)
