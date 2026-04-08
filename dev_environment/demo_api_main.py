@@ -70,44 +70,36 @@ def _generate_random_arc_id() -> str:
     return f"arc_{os.urandom(4).hex()}"
 
 
-def _derive_safe_arc_id(base_dir: Path, raw_id: object) -> tuple[str, Path] | tuple[None, None]:
+def _derive_safe_arc_id(base_dir: Path, raw_id: object) -> tuple[str, Path]:
     """
     Derive a safe ARC identifier and corresponding directory path.
 
-    Guarantees that the returned path stays within base_dir. Returns (None, None)
-    if no safe identifier can be derived.
+    Always returns a valid (arc_id, path) pair that is guaranteed to be
+    contained within base_dir. Falls back to a random ID when the provided
+    raw_id cannot be used safely.
     """
-    base_resolved = base_dir.resolve()
+    # Resolve symlinks on the base directory once so all comparisons are stable.
+    base_real = Path(os.path.realpath(base_dir))
 
     def _fallback() -> tuple[str, Path]:
         rid = _generate_random_arc_id()
-        return rid, (base_resolved / rid).resolve()
+        return rid, base_real / rid
 
-    if isinstance(raw_id, str) and raw_id.strip():
-        safe_name = os.path.normpath(Path(raw_id.strip()).name)
-        if (
-            not safe_name
-            or safe_name in {".", ".."}
-            or "/" in safe_name
-            or "\\" in safe_name
-            or not _SAFE_NAME_PATTERN.match(safe_name)
-        ):
-            arc_id, candidate_dir = _fallback()
-        else:
-            candidate_dir = (base_resolved / safe_name).resolve()
-            arc_id = safe_name
-    else:
-        arc_id, candidate_dir = _fallback()
+    if not (isinstance(raw_id, str) and raw_id.strip()):
+        return _fallback()
 
-    try:
-        common_root = os.path.commonpath([str(base_resolved), str(candidate_dir)])
-    except ValueError:
-        return None, None
+    safe_name = os.path.normpath(Path(raw_id.strip()).name)
+    if not safe_name or safe_name in {".", ".."} or not _SAFE_NAME_PATTERN.match(safe_name):
+        return _fallback()
 
-    if common_root != str(base_resolved):
-        return None, None
+    # Normalize with realpath and verify containment *before* returning the path.
+    # This is the CodeQL-recommended pattern for preventing path traversal:
+    # construct → realpath → startswith-check.
+    candidate_real = Path(os.path.realpath(base_real / safe_name))
+    if not str(candidate_real).startswith(str(base_real) + os.sep):
+        return _fallback()
 
-    return arc_id, candidate_dir
+    return safe_name, candidate_real
 
 
 def _rejected_response(rdi: str | None, now: str) -> dict[str, str | dict[str, str]]:
@@ -146,18 +138,6 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
     now = datetime.now(UTC).isoformat()
 
     arc_id, arc_dir = _derive_safe_arc_id(output_path, arc_payload.get("identifier"))
-    if arc_id is None or arc_dir is None:
-        return _rejected_response(rdi, now)
-
-    # Final safety check via realpath to catch symlink escapes.
-    try:
-        base_real = os.path.realpath(output_path)
-        common_root = os.path.commonpath([base_real, os.path.realpath(arc_dir)])
-    except ValueError:
-        return _rejected_response(rdi, now)
-
-    if common_root != base_real:
-        return _rejected_response(rdi, now)
 
     payload_path = arc_dir.with_suffix(".payload.json")
     with open(payload_path, "w", encoding="utf-8") as handle:
