@@ -101,7 +101,22 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
     output_path.mkdir(parents=True, exist_ok=True)
     _chown_tree(output_path)  # Ensure the root output dir belongs to the host user
 
-    arc_id = arc_payload.get("identifier", f"arc_{os.urandom(4).hex()}")
+    # Derive a safe ARC identifier from the payload. The ARC identifier is used
+    # as a directory name below, so ensure it cannot escape the output_path.
+    raw_arc_id = arc_payload.get("identifier")
+    if isinstance(raw_arc_id, str) and raw_arc_id.strip():
+        candidate_id = raw_arc_id.strip()
+        # Prevent absolute paths and directory components; keep only the final name.
+        if Path(candidate_id).is_absolute():
+            candidate_id = f"arc_{os.urandom(4).hex()}"
+        safe_name = Path(candidate_id).name
+        if not safe_name:
+            arc_id = f"arc_{os.urandom(4).hex()}"
+        else:
+            arc_id = safe_name
+    else:
+        arc_id = f"arc_{os.urandom(4).hex()}"
+
     now = datetime.now(UTC).isoformat()
     arc_dir = output_path / arc_id
     payload_path = arc_dir.with_suffix(".payload.json")
