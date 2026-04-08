@@ -19,6 +19,9 @@ from fastapi import FastAPI, Request
 
 app = FastAPI()
 
+# Root directory under which all ARC data and error logs are stored.
+OUTPUT_ROOT = Path("/data/arcs")
+
 
 def _get_target_owner() -> tuple[int, int] | None:
     uid_value = os.environ.get("LOCAL_UID")
@@ -66,13 +69,54 @@ def _handle_error(arc_dir: Path, rdi: str, arc_id: str, exc: Exception) -> None:
     """
     tb = traceback.format_exc()
     print(f"Error writing ARC for {rdi}/{arc_id}: {exc}")
-    arc_dir.mkdir(parents=True, exist_ok=True)
-    error_path = arc_dir / "error.txt"
+
+    # Ensure that error logging always happens under the configured OUTPUT_ROOT,
+    # regardless of how arc_dir was derived. This avoids using any potentially
+    # untrusted path prefixes.
+    base_root = OUTPUT_ROOT.resolve()
+
+    # Derive a simple, safe subdirectory name from the provided arc_dir/arc_id.
+    # Prefer the final path component of arc_dir; fall back to arc_id; and
+    # finally to a generic name if necessary.
+    candidate_name = arc_dir.name if arc_dir.name not in {"", ".", ".."} else arc_id
+    if not isinstance(candidate_name, str) or not candidate_name:
+        candidate_name = "unknown"
+
+    # Reuse the same safe-name pattern as in upload_arc.
+    safe_name_pattern = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+    candidate_name = candidate_name.strip()
+    if (
+        not candidate_name
+        or candidate_name in {".", ".."}
+        or "/" in candidate_name
+        or "\\" in candidate_name
+        or not safe_name_pattern.match(candidate_name)
+    ):
+        safe_name = "unknown"
+    else:
+        safe_name = candidate_name
+
+    # Build the final directory for error logging under the safe root.
+    safe_arc_dir = (base_root / safe_name).resolve()
+    try:
+        common_root = os.path.commonpath([str(base_root), str(safe_arc_dir)])
+    except ValueError:
+        # Fall back to logging under a generic error directory if something goes wrong.
+        safe_arc_dir = (base_root / "errors").resolve()
+        common_root = os.path.commonpath([str(base_root), str(safe_arc_dir)])
+
+    if common_root != str(base_root):
+        # As an additional safeguard, if the computed directory is not under
+        # OUTPUT_ROOT, force it into a fixed "errors" directory.
+        safe_arc_dir = (base_root / "errors").resolve()
+
+    safe_arc_dir.mkdir(parents=True, exist_ok=True)
+    error_path = safe_arc_dir / "error.txt"
     with open(error_path, "w", encoding="utf-8") as handle:
         handle.write(str(exc))
         handle.write("\n\n")
         handle.write(tb)
-    _chown_tree(arc_dir)
+    _chown_tree(safe_arc_dir)
 
 
 @app.post("/v3/arcs")
@@ -98,7 +142,7 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
     if rdi is None:
         rdi = data.get("rdi", "unknown")
 
-    output_path = Path("/data/arcs")
+    output_path = OUTPUT_ROOT
     output_path.mkdir(parents=True, exist_ok=True)
     _chown_tree(output_path)  # Ensure the root output dir belongs to the host user
 
