@@ -40,14 +40,14 @@ mkdir -p "${script_dir}/demo_output"
 
 # Start services using the base compose file + the demo override
 # This now overrides the db-init service to use demo.sql without downloads
-docker compose -f compose.dev.yaml -f compose.demo.yaml up $BUILD_FLAG --abort-on-container-exit --exit-code-from sql_to_arc
+docker compose -f compose.demo.yaml up $BUILD_FLAG --abort-on-container-exit --exit-code-from sql_to_arc
 
 echo ""
 echo "==> Demo finished! Cleaning up containers..."
-docker compose -f compose.dev.yaml -f compose.demo.yaml down -v
+docker compose -f compose.demo.yaml down -v
 
 echo ""
 echo "==> You can find the generated ARCs in: dev_environment/demo_output/"
 echo "    (Wait a moment for files to appear if they are being processed...)"
-echo "    - View logs: docker compose -f compose.dev.yaml -f compose.demo.yaml logs"
-echo "    - Clean up: docker compose -f compose.dev.yaml -f compose.demo.yaml down -v"
+echo "    - View logs: docker compose -f compose.demo.yaml logs"
+echo "    - Clean up: docker compose -f compose.demo.yaml down -v"

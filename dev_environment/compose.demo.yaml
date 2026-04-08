@@ -1,27 +1,20 @@
 services:
-  db-init:
+  postgres:
     image: postgres:15
-    depends_on:
-      postgres:
-        condition: service_healthy
+    restart: unless-stopped
     environment:
-      PGHOST: postgres
-      PGUSER: ${POSTGRES_USER}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-      PGDATABASE: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: rdi
+    ports:
+      - "5432:5432"
     volumes:
-      - ./demo.sql:/tmp/demo.sql:ro
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        set -euo pipefail
-        echo "Recreating rdi database for demo..."
-        psql -c "DROP DATABASE IF EXISTS rdi;"
-        psql -c "CREATE DATABASE rdi;"
-        echo "Importing local demo.sql..."
-        PGDATABASE=rdi psql < /tmp/demo.sql
-        echo "Demo database initialization complete."
+      - ./demo.sql:/docker-entrypoint-initdb.d/01-demo.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rdi"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   middleware-api:
     image: python:3.12-slim
@@ -40,20 +33,22 @@ services:
       - -c
       - |
         set -e
-        apt-get update
-        apt-get install -y --no-install-recommends curl
         pip install fastapi uvicorn arctrl
         uvicorn main:app --app-dir /app --host 0.0.0.0 --port 8000
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/live"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/live')\" 2>/dev/null || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   sql_to_arc:
+    image: sql_to_arc:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sql_to_arc
     depends_on:
-      db-init:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       middleware-api:
         condition: service_healthy
     volumes:
