@@ -109,41 +109,50 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
     def _generate_random_arc_id() -> str:
         return f"arc_{os.urandom(4).hex()}"
 
-    if isinstance(raw_arc_id, str) and raw_arc_id.strip():
-        candidate_id = raw_arc_id.strip()
-        # Reduce to a single path component and normalize it.
-        safe_name = os.path.normpath(Path(candidate_id).name)
-        # Reject empty names, current/parent directory markers, or anything that
-        # would reintroduce directory components on this platform.
-        if not safe_name or safe_name in {".", ".."} or "/" in safe_name or "\\" in safe_name:
-            arc_id = _generate_random_arc_id()
-        else:
-            # Build the full path and ensure it stays within the output_path root.
-            full_path = (output_path / safe_name).resolve()
-            try:
-                common_root = os.path.commonpath([str(output_path.resolve()), str(full_path)])
-            except ValueError:
-                # On error (e.g., different drives), fall back to a random ID.
-                arc_id = _generate_random_arc_id()
+    def _derive_safe_arc_id(base_dir: Path, raw_id: object) -> tuple[str, Path] | tuple[None, None]:
+        """
+        Derive a safe ARC identifier and corresponding directory path that
+        is guaranteed to stay within the given base_dir. Returns (None, None)
+        if no safe identifier can be derived.
+        """
+        base_resolved = base_dir.resolve()
+
+        def _fallback() -> tuple[str, Path]:
+            rid = _generate_random_arc_id()
+            target = (base_resolved / rid).resolve()
+            return rid, target
+
+        if isinstance(raw_id, str) and raw_id.strip():
+            candidate_id = raw_id.strip()
+            # Reduce to a single path component and normalize it.
+            safe_name = os.path.normpath(Path(candidate_id).name)
+            # Reject empty names, current/parent directory markers, or anything that
+            # would reintroduce directory components on this platform.
+            if not safe_name or safe_name in {".", ".."} or "/" in safe_name or "\\" in safe_name:
+                arc_id, candidate_dir = _fallback()
             else:
-                if common_root != str(output_path.resolve()):
-                    arc_id = _generate_random_arc_id()
-                else:
-                    arc_id = safe_name
-    else:
-        arc_id = _generate_random_arc_id()
+                candidate_dir = (base_resolved / safe_name).resolve()
+                arc_id = safe_name
+        else:
+            arc_id, candidate_dir = _fallback()
+
+        try:
+            common_root = os.path.commonpath([str(base_resolved), str(candidate_dir)])
+        except ValueError:
+            return None, None
+
+        if common_root != str(base_resolved):
+            return None, None
+
+        return arc_id, candidate_dir
 
     now = datetime.now(UTC).isoformat()
-    arc_dir = output_path / arc_id
 
-    # Ensure the resolved target directory stays within the intended output root.
-    output_root_resolved = output_path.resolve()
-    arc_dir_resolved = arc_dir.resolve()
-    common_root = Path(os.path.commonpath([str(output_root_resolved), str(arc_dir_resolved)]))
-    if common_root != output_root_resolved:
+    arc_id, arc_dir = _derive_safe_arc_id(output_path, raw_arc_id)
+    if arc_id is None or arc_dir is None:
         # Reject paths that would escape the output root (for example via symlinks).
         return {
-            "arc_id": arc_id,
+            "arc_id": "invalid",
             "status": "error",
             "metadata": {
                 "rdi": rdi,
@@ -153,8 +162,6 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
                 "last_seen": now,
             },
         }
-
-    arc_dir = arc_dir_resolved
     payload_path = arc_dir.with_suffix(".payload.json")
 
     with open(payload_path, "w", encoding="utf-8") as handle:
