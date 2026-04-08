@@ -76,7 +76,22 @@ docker compose logs -f
 docker compose down
 ```
 
-## 📝 Key Implementation Details
+## � Architecture Rules
+
+Before generating or modifying code, read **[docs/ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md)**.
+
+It defines binding constraints that MUST be followed:
+
+- **Module Dependency Graph**: Which module may import from which (no circular imports).
+- **Extension Points**: How to add new DB entities, mapper functions, or config values.
+- **Concurrency Rules**: IPC contract for worker processes, Semaphore scope.
+- **Error Handling**: Per-investigation failure isolation, stats update pattern.
+- **Config**: NEVER use `os.environ` directly — always extend `Config` in `config.py`.
+- **Database Access**: All SQL goes through `Database`; always use server-side cursors and bulk fetches.
+
+---
+
+## �📝 Key Implementation Details
 
 ### External Dependencies
 
