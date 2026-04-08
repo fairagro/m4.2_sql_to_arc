@@ -135,6 +135,26 @@ async def upload_arc(request: Request) -> dict[str, str | dict[str, str]]:
 
     now = datetime.now(UTC).isoformat()
     arc_dir = output_path / arc_id
+
+    # Ensure the resolved target directory stays within the intended output root.
+    output_root_resolved = output_path.resolve()
+    arc_dir_resolved = arc_dir.resolve()
+    common_root = Path(os.path.commonpath([str(output_root_resolved), str(arc_dir_resolved)]))
+    if common_root != output_root_resolved:
+        # Reject paths that would escape the output root (for example via symlinks).
+        return {
+            "arc_id": arc_id,
+            "status": "error",
+            "metadata": {
+                "rdi": rdi,
+                "arc_hash": "demo_hash",
+                "status": "REJECTED",
+                "first_seen": now,
+                "last_seen": now,
+            },
+        }
+
+    arc_dir = arc_dir_resolved
     payload_path = arc_dir.with_suffix(".payload.json")
 
     with open(payload_path, "w", encoding="utf-8") as handle:
