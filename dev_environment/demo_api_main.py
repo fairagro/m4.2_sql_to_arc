@@ -107,8 +107,19 @@ def _handle_error(arc_dir: Path, rdi: str, arc_id: str, exc: Exception) -> None:
 
     if common_root != str(base_root):
         # As an additional safeguard, if the computed directory is not under
-        # OUTPUT_ROOT, force it into a fixed "errors" directory.
+        # OUTPUT_ROOT, force it into a fixed "errors" directory and re-validate.
         safe_arc_dir = (base_root / "errors").resolve()
+        try:
+            common_root = os.path.commonpath([str(base_root), str(safe_arc_dir)])
+        except ValueError:
+            # In the unlikely event that commonpath still fails, log directly under
+            # the resolved OUTPUT_ROOT itself.
+            safe_arc_dir = base_root
+        else:
+            if common_root != str(base_root):
+                # If the resolved "errors" directory is still not under OUTPUT_ROOT,
+                # fall back to using the OUTPUT_ROOT directory itself.
+                safe_arc_dir = base_root
 
     safe_arc_dir.mkdir(parents=True, exist_ok=True)
     error_path = safe_arc_dir / "error.txt"
