@@ -76,7 +76,7 @@ docker compose logs -f
 docker compose down
 ```
 
-## � Architecture Rules
+## Architecture Rules
 
 Before generating or modifying code, read **[docs/ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md)**.
 
