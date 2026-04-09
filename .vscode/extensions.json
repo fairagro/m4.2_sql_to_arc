@@ -21,8 +21,6 @@
     "charliermarsh.ruff",
     "tim-koehler.helm-intellisense",
     "vadzimnestsiarenka.helm-template-preview-and-more",
-    "ms-vscode-remote.remote-containers",
-    "jebbs.plantuml",
-    "systemticks.c4-dsl-extension"
+    "ms-vscode-remote.remote-containers"
   ],
 }

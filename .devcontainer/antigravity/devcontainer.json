@@ -101,9 +101,7 @@
 				"github.copilot-chat",
 				"charliermarsh.ruff",
 				"tim-koehler.helm-intellisense",
-				"vadzimnestsiarenka.helm-template-preview-and-more",
-				"jebbs.plantuml",
-				"systemticks.c4-dsl-extension"
+				"vadzimnestsiarenka.helm-template-preview-and-more"
 			]
 		}
 	},
