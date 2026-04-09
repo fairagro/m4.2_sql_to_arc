@@ -29,13 +29,12 @@ must be stateless and side-effect-free.
 `study_ref` is a JSON array string → parse and register the assay with
 every referenced study.
 
-`study_ref` is missing or empty → assay is added to the ARC but linked
-to no study (logged as warning).
+Investigation has assays but no studies → log warning.
 
 Unknown column type → skip that column, log warning.
 
-Annotation table targets a study/assay that doesn't exist in this
-investigation's data → skip the table silently.
+Annotation table targets a study/assay identifier that does not exist in
+the current investigation's data → skip the table, log warning.
 
-Contacts/publications with an unknown `target_type` → not attached
-anywhere (silently dropped by filter).
+Contact or publication has an unknown `target_type` → not attached
+anywhere; log warning.

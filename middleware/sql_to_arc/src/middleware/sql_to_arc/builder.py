@@ -49,6 +49,11 @@ def _add_studies_to_arc(arc: ARC, study_rows: list[StudyRow]) -> dict[str, ArcSt
 def _add_assays_to_arc(arc: ARC, assay_rows: list[AssayRow], study_map: dict[str, ArcStudy]) -> dict[str, ArcAssay]:
     """Add assays to ARC, link to studies, and return assay map."""
     assay_map: dict[str, ArcAssay] = {}
+    if assay_rows and not study_map:
+        logger.warning(
+            "Investigation has %d assay(s) but no studies — assays will not be linked to any study.",
+            len(assay_rows),
+        )
     for a_row in assay_rows:
         assay = map_assay(a_row)
         arc.AddAssay(assay)
@@ -293,6 +298,13 @@ def _process_annotation_tables(
             table = _build_arc_table(t_name, rows)
             if table:
                 target.AddTable(table)
+        else:
+            logger.warning(
+                "Annotation table '%s' targets %s '%s' which does not exist in this investigation; skipping.",
+                t_name,
+                t_type,
+                t_ref,
+            )
 
 
 def build_single_arc_task(data: ArcBuildData) -> str:

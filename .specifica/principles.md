@@ -40,6 +40,11 @@ before use, fail closed, apply least privilege.
 - Code quality gates: Ruff (lint + format), mypy, pylint, bandit, pytest —
   all must pass before merge. Every new feature requires matching tests.
 - No `noqa`/`type: ignore` suppressions unless technically unavoidable.
+- Validation belongs in the Pydantic model where possible. Use `Literal` types or
+  `@field_validator` to enforce valid values — a `ValidationError` triggers the
+  standard skip-with-warning path in `database.py`. Only write custom warning code
+  outside Pydantic when a spec violation should log a warning but NOT skip the row
+  (rescue scenario).
 
 ## Module Dependency Graph
 

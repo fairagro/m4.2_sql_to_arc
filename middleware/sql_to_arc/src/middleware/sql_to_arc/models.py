@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, Json, model_validator
 from pydantic_core import PydanticUndefined
@@ -135,7 +135,7 @@ class PublicationRow(BaseRow):
     __view_name__: ClassVar[str] = "vPublication"
 
     investigation_ref: str = spec_field()
-    target_type: str = spec_field()
+    target_type: Literal["investigation", "study"] = spec_field()
     pubmed_id: str | None = spec_field(default=None)
     doi: str | None = spec_field(default=None)
     authors: str | None = spec_field(default=None)
@@ -152,7 +152,7 @@ class ContactRow(BaseRow):
     __view_name__: ClassVar[str] = "vContact"
 
     investigation_ref: str = spec_field()
-    target_type: str = spec_field()
+    target_type: Literal["investigation", "study", "assay"] = spec_field()
     last_name: str | None = spec_field(default=None)
     first_name: str | None = spec_field(default=None)
     mid_initials: str | None = spec_field(default=None)
@@ -174,12 +174,12 @@ class AnnotationTableRow(BaseRow):
     __view_name__: ClassVar[str] = "vAnnotationTable"
 
     investigation_ref: str = spec_field()
-    target_type: str = spec_field()
+    target_type: Literal["study", "assay"] = spec_field()
     target_ref: str = spec_field()
     table_name: str = spec_field()
     column_type: str = spec_field()
     row_index: int = spec_field()
-    column_io_type: str | None = spec_field(default=None)
+    column_io_type: Literal["data", "material_name", "sample_name", "source_name"] | None = spec_field(default=None)
     column_value: str | None = spec_field(default=None)
     column_annotation_term: str | None = spec_field(default=None)
     column_annotation_uri: str | None = spec_field(default=None)
