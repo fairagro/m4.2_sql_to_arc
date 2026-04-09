@@ -154,9 +154,24 @@ docker run --rm \
 
 ---
 
+## Performance Tuning
+
+1. **Find the CPU ceiling** — increase `max_concurrent_arc_builds` until
+   CPU cores are saturated (≈ cores − 1 is the practical maximum).
+2. **Fill I/O gaps** — if CPU drops to 0 % between builds (network latency
+   during API uploads), increase `max_concurrent_tasks`;
+   rule of thumb: 4 × `max_concurrent_arc_builds`.
+3. **Watch RAM** — memory scales linearly with `max_concurrent_tasks` ×
+   average investigation size. Reduce `db_batch_size` for very large
+   investigations if the main process grows too large.
+4. **Timeout errors** — increase `arc_generation_timeout_minutes` only if
+   logs show timeouts on legitimately large datasets (e.g. thousands of
+   assays).
+
+---
+
 ## Documentation Links
 
-- [Architectural Design](../../docs/ARCHITECTURAL_DESIGN.md)
 - [Database View Specification](../../docs/sql_to_arc_database_views.md)
 - [ARCtrl Documentation](https://nfdi4plants.org/ARCtrl/)
 - [Middleware API Client](https://github.com/fairagro/m4.2_advanced_middleware_api/tree/main/middleware/api_client)

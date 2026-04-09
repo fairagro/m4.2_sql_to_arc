@@ -68,13 +68,8 @@ Main process (async event loop)
    — Fail fast with a clear diagnostic if the DB schema doesn't match
    the expected views. Better than partial output with silent column gaps.
 
-## Configuration Parameters
+7. **OpenTelemetry tracing across the full pipeline**
+   — `processor.py` and `main.py` instrument each investigation span and
+   the overall run span. This allows identifying bottlenecks in the process
+   pool (CPU-bound) versus the API upload (I/O-bound) in production.
 
-| Parameter | Default | Effect |
-| --- | --- | --- |
-| `max_concurrent_arc_builds` | 5 | Worker process count (≈ CPU cores − 1) |
-| `max_concurrent_tasks` | 4 × builds | Active lifecycle slots (CPU + IO) |
-| `db_batch_size` | 100 | Investigations fetched per DB round-trip |
-| `arc_generation_timeout_minutes` | 30 | Per-investigation worker timeout |
-| `max_studies` / `max_assays` | 5000 / 10000 | Safety cap; oversized datasets skipped |
-| `debug_limit` | None | Cap investigations for testing |
