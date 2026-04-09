@@ -24,11 +24,6 @@ must be stateless and side-effect-free.
 - [ ] Never import `database`, `processor`, or `config`; inputs arrive
       as pure Pydantic data
 
-## Supported Column Types (Annotation Tables)
-
-`input`, `output`, `characteristic`, `factor`, `parameter`, `component`,
-`comment`, `performer`, `date`
-
 ## Edge Cases
 
 `study_ref` is a JSON array string → parse and register the assay with

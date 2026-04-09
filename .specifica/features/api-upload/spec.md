@@ -7,32 +7,26 @@ machine at runtime.
 
 ## Requirements
 
-- [ ] Upload each ARC as a JSON body to `POST /v3/arcs?rdi=<rdi>`
-- [ ] Include the `rdi` identifier as a query parameter on every request
-- [ ] Parse the API response and log success or failure per investigation
+- [ ] For each successfully built ARC, call
+      `ApiClient.create_or_update_arc(rdi, arc)` with the RO-Crate dict
 - [ ] On `ConnectionError`, `TimeoutError`, or `ApiClientError` → count as
       `failed_datasets`, add `investigation_id` to `failed_ids`, continue
-- [ ] Reuse a single `httpx.AsyncClient` across all uploads within a run
-      (connection pooling)
-- [ ] Support mTLS: load client certificate and key from config and/or
-      tmpfs secrets at startup
-- [ ] Support configurable base URL, timeout, and retry policy via
-      `ApiClientConfig`
+- [ ] Log success or failure per investigation after each call
+- [ ] Reuse the same `ApiClient` instance across all uploads within a run
 
-## Scope
+## Configuration
 
-The `ApiClient` is a shared library (`middleware/api_client`), not owned
-by this component. This spec covers the *usage contract* from the converter's
-perspective, not the client implementation.
+The converter passes an `ApiClientConfig` (from `config.api_client`) to the
+`ApiClient` constructor, which includes base URL, timeout, and credentials.
+The converter does not interpret these values itself.
 
 ## Edge Cases
 
-API returns non-2xx → treat as `ApiClientError`, mark investigation failed.
+`ApiClientError` (any non-success response) → mark investigation failed,
+continue.
 
 API is unreachable at startup → first upload attempt fails; the converter
-does not pre-check connectivity (fail per-investigation, not globally).
+does not pre-check connectivity.
 
 `arc_json` is `None` (build returned nothing) → log error, mark failed,
 skip upload entirely.
-
-Upload timeout (configurable) → mark failed, continue.
