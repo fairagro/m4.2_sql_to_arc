@@ -2,10 +2,10 @@
 
 import concurrent.futures
 from dataclasses import dataclass
-from typing import Any
 
 from middleware.api_client import ApiClient
 from middleware.sql_to_arc.models import (
+    AnnotationTableRow,
     AssayRow,
     ContactRow,
     InvestigationRow,
@@ -23,7 +23,7 @@ class ArcBuildData:
     assays: list[AssayRow]
     contacts: list[ContactRow]
     publications: list[PublicationRow]
-    annotations: list[dict[str, Any]]
+    annotations: list[AnnotationTableRow]
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +36,7 @@ class WorkerContext:
     assays_by_inv: dict[str, list[AssayRow]]
     contacts_by_inv: dict[str, list[ContactRow]]
     pubs_by_inv: dict[str, list[PublicationRow]]
-    anns_by_inv: dict[str, list[dict[str, Any]]]
+    anns_by_inv: dict[str, list[AnnotationTableRow]]
     worker_id: int
     total_workers: int
     executor: concurrent.futures.Executor
@@ -51,6 +51,6 @@ class RelatedDataBatch:
     assays_by_inv: dict[str, list[AssayRow]]
     contacts_by_inv: dict[str, list[ContactRow]]
     pubs_by_inv: dict[str, list[PublicationRow]]
-    anns_by_inv: dict[str, list[dict[str, Any]]]
+    anns_by_inv: dict[str, list[AnnotationTableRow]]
     study_count: int
     assay_count: int

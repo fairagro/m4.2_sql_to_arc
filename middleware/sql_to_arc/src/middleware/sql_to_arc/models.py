@@ -163,3 +163,39 @@ class ContactRow(BaseRow):
     affiliation: str | None = spec_field(default=None)
     roles: Json[JsonList] | None = spec_field(default=None)
     target_ref: str | None = spec_field(default=None)
+
+
+class AnnotationTableRow(BaseRow):
+    """Pydantic model for annotation table cell rows (vAnnotationTable).
+
+    Each row represents a single cell, together with the column and table it belongs to.
+    """
+
+    __view_name__: ClassVar[str] = "vAnnotationTable"
+
+    investigation_ref: str = spec_field()
+    target_type: str = spec_field()
+    target_ref: str = spec_field()
+    table_name: str = spec_field()
+    column_type: str = spec_field()
+    row_index: int = spec_field()
+    column_io_type: str | None = spec_field(default=None)
+    column_value: str | None = spec_field(default=None)
+    column_annotation_term: str | None = spec_field(default=None)
+    column_annotation_uri: str | None = spec_field(default=None)
+    column_annotation_version: str | None = spec_field(default=None)
+    column_name: str | None = spec_field(default=None)
+    cell_value: str | None = spec_field(default=None)
+    cell_annotation_term: str | None = spec_field(default=None)
+    cell_annotation_uri: str | None = spec_field(default=None)
+    cell_annotation_version: str | None = spec_field(default=None)
+
+    @model_validator(mode="after")
+    def validate_column_io_type(self) -> "AnnotationTableRow":
+        """Warn when column_io_type is absent for input/output columns."""
+        if self.column_type in {"input", "output"} and not self.column_io_type:
+            logger.warning(
+                "column_io_type is required when column_type is '%s' but was not provided",
+                self.column_type,
+            )
+        return self

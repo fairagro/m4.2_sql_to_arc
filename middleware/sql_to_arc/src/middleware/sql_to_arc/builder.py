@@ -4,7 +4,7 @@ import gc
 import json
 import logging
 from collections import defaultdict
-from typing import Any, cast
+from typing import Any
 
 from arctrl import (
     ARC,
@@ -26,6 +26,7 @@ from middleware.sql_to_arc.mapper import (
     map_study,
 )
 from middleware.sql_to_arc.models import (
+    AnnotationTableRow,
     AssayRow,
     ContactRow,
     PublicationRow,
@@ -150,16 +151,16 @@ def _add_publications_to_arc(
             study.Publications.append(map_publication(p_row))
 
 
-def _get_column_key(r: dict[str, Any]) -> tuple[Any, ...]:
+def _get_column_key(r: AnnotationTableRow) -> tuple[Any, ...]:
     """Extract a unique key for a column definition."""
     return (
-        r.get("column_type"),
-        r.get("column_io_type"),
-        r.get("column_value"),
-        r.get("column_annotation_term"),
-        r.get("column_annotation_uri"),
-        r.get("column_annotation_version"),
-        r.get("column_name"),  # Fallback for simple tests
+        r.column_type,
+        r.column_io_type,
+        r.column_value,
+        r.column_annotation_term,
+        r.column_annotation_uri,
+        r.column_annotation_version,
+        r.column_name,  # Fallback for simple tests
     )
 
 
@@ -193,13 +194,12 @@ def _build_header(key: tuple[Any, ...]) -> CompositeHeader | None:
     return None
 
 
-def _build_single_cell(cell_row: dict[str, Any], header: CompositeHeader) -> CompositeCell:
+def _build_single_cell(cell_row: AnnotationTableRow, header: CompositeHeader) -> CompositeCell:
     """Build a single CompositeCell from a database row."""
-    cv = cell_row.get("cell_value")
-    cat = cell_row.get("cell_annotation_term")
-    cau = cell_row.get("cell_annotation_uri") or ""
-    cav = cell_row.get("cell_annotation_version") or ""
-    v = cell_row.get("value")  # Fallback for old/simple tests
+    cv = cell_row.cell_value
+    cat = cell_row.cell_annotation_term
+    cau = cell_row.cell_annotation_uri or ""
+    cav = cell_row.cell_annotation_version or ""
 
     # Unitized cell (value + ontology term)
     if cv is not None and cat is not None:
@@ -210,7 +210,7 @@ def _build_single_cell(cell_row: dict[str, Any], header: CompositeHeader) -> Com
         return CompositeCell.term(OntologyAnnotation(cat, cau, cav))
 
     # Text value? (either from new schema 'cell_value' or fallback 'value')
-    val_to_use = cv if cv is not None else v
+    val_to_use = cv
     if val_to_use is not None:
         if header.IsTermColumn:
             # If the column expects a term, wrap the text in an annotation
@@ -221,7 +221,7 @@ def _build_single_cell(cell_row: dict[str, Any], header: CompositeHeader) -> Com
 
 
 def _build_column_cells(
-    rows_map: dict[int, dict[str, Any]], max_row_idx: int, header: CompositeHeader
+    rows_map: dict[int, AnnotationTableRow], max_row_idx: int, header: CompositeHeader
 ) -> list[CompositeCell]:
     """Build a list of CompositeCell objects for a column."""
     col_cells = []
@@ -234,7 +234,7 @@ def _build_column_cells(
     return col_cells
 
 
-def _build_arc_table(t_name: str, rows: list[dict[str, Any]]) -> ArcTable | None:
+def _build_arc_table(t_name: str, rows: list[AnnotationTableRow]) -> ArcTable | None:
     """Build an ArcTable from flat database rows."""
     if not rows:
         return None
@@ -242,20 +242,20 @@ def _build_arc_table(t_name: str, rows: list[dict[str, Any]]) -> ArcTable | None
     table = ArcTable.init(t_name)
 
     # Determine max row index
-    max_row_idx = max((cast(int, r.get("row_index", 0)) for r in rows), default=-1)
+    max_row_idx = max((r.row_index for r in rows), default=-1)
     if max_row_idx < 0:
         return None
 
     col_keys: list[tuple[Any, ...]] = []
     seen_keys = set()
-    col_to_rows: dict[tuple[Any, ...], dict[int, dict[str, Any]]] = defaultdict(dict)
+    col_to_rows: dict[tuple[Any, ...], dict[int, AnnotationTableRow]] = defaultdict(dict)
 
     for r in rows:
         key = _get_column_key(r)
         if key not in seen_keys:
             col_keys.append(key)
             seen_keys.add(key)
-        col_to_rows[key][cast(int, r.get("row_index", 0))] = r
+        col_to_rows[key][r.row_index] = r
 
     for key in col_keys:
         header = _build_header(key)
@@ -270,13 +270,13 @@ def _build_arc_table(t_name: str, rows: list[dict[str, Any]]) -> ArcTable | None
 
 
 def _process_annotation_tables(
-    inv_id: str, annotations: list[dict[str, Any]], study_map: dict[str, Any], assay_map: dict[str, Any]
+    inv_id: str, annotations: list[AnnotationTableRow], study_map: dict[str, Any], assay_map: dict[str, Any]
 ) -> None:
     """Process and add annotation tables."""
-    tables_groups = defaultdict(list)
+    tables_groups: dict[tuple[Any, ...], list[AnnotationTableRow]] = defaultdict(list)
     for ann in annotations:
-        if ann.get("investigation_ref") == inv_id:
-            key = (ann.get("target_type"), ann.get("target_ref"), ann.get("table_name"))
+        if ann.investigation_ref == inv_id:
+            key = (ann.target_type, ann.target_ref, ann.table_name)
             tables_groups[key].append(ann)
 
     for (t_type, t_ref, t_name), rows in tables_groups.items():

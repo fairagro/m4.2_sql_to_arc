@@ -133,8 +133,3 @@ def map_contact(row: ContactRow) -> Person:
         affiliation=row.affiliation,
         roles=roles,
     )
-
-
-def map_annotation(row: dict[str, Any]) -> dict[str, Any]:
-    """Return raw dict for annotation processing."""
-    return row

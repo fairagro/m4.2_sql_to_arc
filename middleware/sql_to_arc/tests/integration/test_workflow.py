@@ -17,6 +17,7 @@ from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import WorkerContext
 from middleware.sql_to_arc.main import main
 from middleware.sql_to_arc.models import (
+    AnnotationTableRow,
     AssayRow,
     ContactRow,
     InvestigationRow,
@@ -215,7 +216,7 @@ class WorkflowTester:
         )
         self.db.stream_annotation_tables = MagicMock(
             side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
-                annotations or []
+                _prepare_data(annotations, AnnotationTableRow), AnnotationTableRow
             )
         )
 
@@ -654,36 +655,40 @@ async def test_assay_with_annotations(workflow_tester: WorkflowTester) -> None:
             "target_type": "assay",
             "target_ref": assay_id,
             "table_name": "Sample Metadata",
+            "column_type": "input",
+            "column_io_type": "source_name",
             "row_index": 0,
-            "column_name": "Source Name",
-            "value": "Sample 1",
+            "cell_value": "Sample 1",
         },
         {
             "investigation_ref": inv_id,
             "target_type": "assay",
             "target_ref": assay_id,
             "table_name": "Sample Metadata",
+            "column_type": "characteristic",
+            "column_annotation_term": "Species",
             "row_index": 0,
-            "column_name": "Characteristics [Species]",
-            "value": "Homo sapiens",
+            "cell_value": "Homo sapiens",
         },
         {
             "investigation_ref": inv_id,
             "target_type": "assay",
             "target_ref": assay_id,
             "table_name": "Sample Metadata",
+            "column_type": "input",
+            "column_io_type": "source_name",
             "row_index": 1,
-            "column_name": "Source Name",
-            "value": "Sample 2",
+            "cell_value": "Sample 2",
         },
         {
             "investigation_ref": inv_id,
             "target_type": "assay",
             "target_ref": assay_id,
             "table_name": "Sample Metadata",
+            "column_type": "characteristic",
+            "column_annotation_term": "Species",
             "row_index": 1,
-            "column_name": "Characteristics [Species]",
-            "value": "Mus musculus",
+            "cell_value": "Mus musculus",
         },
     ]
 
@@ -693,8 +698,6 @@ async def test_assay_with_annotations(workflow_tester: WorkflowTester) -> None:
         annotations=annotations,
     )
 
-    # Currently, _process_annotation_tables in main.py is a placeholder.
-    # The test verifies that the pipeline handles the data gracefully.
     arcs = await workflow_tester.run()
 
     assert len(arcs) == 1

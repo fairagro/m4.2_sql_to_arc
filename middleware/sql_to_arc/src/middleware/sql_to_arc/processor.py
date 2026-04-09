@@ -178,9 +178,7 @@ async def _fetch_and_group_related_data(db: Database, investigation_ids: list[st
         m = defaultdict(list)
         count = 0
         async for r in gen:
-            # All models and the annotation dict have investigation_ref.
-            # We handle both Pydantic models (obj.field) and raw dicts (obj[field]).
-            inv_ref = r["investigation_ref"] if isinstance(r, dict) else r.investigation_ref
+            inv_ref = r.investigation_ref
             m[str(inv_ref)].append(r)
             count += 1
         return dict(m), count
