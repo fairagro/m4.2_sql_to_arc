@@ -56,8 +56,16 @@ view (not fatal for optional views; fatal for required ones).
 Row fails Pydantic validation → skip row, log warning with field errors,
 increment `failed_ids`.
 
-Connection string uses legacy `postgresql://` prefix → automatically
-rewritten to `postgresql+psycopg://`.
+Connection strings without an explicit async driver suffix → automatically
+rewritten:
+
+| Standard prefix | Rewritten to aync driver prefix |
+| --- | --- |
+| `postgresql://` | `postgresql+psycopg://` |
+| `mysql://` | `mysql+aiomysql://` |
+| `mariadb://` | `mysql+aiomysql://` |
+| `oracle://` | `oracle+oracledb://` |
+| `mssql://` | `mssql+aioodbc://` |
 
 Empty investigation list passed to `_stream_by_investigation` → returns
 immediately without a query.

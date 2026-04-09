@@ -11,7 +11,7 @@ Database
   ├── stream_assays()
   ├── stream_contacts()
   ├── stream_publications()
-  └── stream_annotation_tables()  (yields raw dicts)
+  └── stream_annotation_tables()
 
 SchemaValidator
   ├── validate_models()            (iterates all registered models)
@@ -65,11 +65,3 @@ validate_schema()
         _check_null_values()     → NULLs in required field → raise
                                  → NULLs + spec_override  → warn
 ```
-
-## Annotation Tables
-
-Annotation rows are streamed as raw `dict` objects keyed by column name.
-The dict contains both column metadata (`column_type`, `column_io_type`,
-`column_value`, etc.) and cell data (`cell_value`, `cell_annotation_term`,
-…) plus routing keys (`target_type`, `target_ref`, `table_name`).
-`builder.py` groups and processes them after the stream is consumed.
