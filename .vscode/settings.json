@@ -21,10 +21,7 @@
       "source.fixAll.ruff": "explicit"
     }
   },
-  "[markdown]": {
-    "editor.defaultFormatter": "charliermarsh.ruff",
-    "editor.formatOnSave": true
-  },
+
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
 
   "sops-edit.onlyUseButtons": false,
@@ -37,10 +34,11 @@
     "${workspaceFolder}/pyproject.toml"
   ],
 
-  // Ruff Extension Settings - ensure consistency with script
+  // Ruff Extension Settings - ensure consistency with pyproject.toml
   "ruff.configuration": "./pyproject.toml",
   "ruff.path": ["uv", "run", "ruff"],
   "ruff.importStrategy": "fromEnvironment",
+  "ruff.lint.preview": true,
 
   // Pylint Extension Settings
   "pylint.args": [

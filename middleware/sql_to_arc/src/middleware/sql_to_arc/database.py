@@ -18,6 +18,7 @@ from sqlalchemy.exc import NoSuchTableError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from middleware.sql_to_arc.models import (
+    AnnotationTableRow,
     AssayRow,
     BaseRow,
     ContactRow,
@@ -173,6 +174,7 @@ class Database:
             AssayRow,
             ContactRow,
             PublicationRow,
+            AnnotationTableRow,
         ]
         # Cast to satisfying the Iterable[type[BaseRow]] requirement
         await self.validator.validate_models(cast(Iterable[type[BaseRow]], models))
@@ -284,30 +286,10 @@ class Database:
         async for r in self._stream_by_investigation(PublicationRow, investigation_ids, "publication"):
             yield r
 
-    async def stream_annotation_tables(self, investigation_ids: list[str]) -> AsyncGenerator[dict[str, Any], None]:
-        """Stream annotation tables for given investigations."""
-        if not investigation_ids:
-            return
-        view_name = "vAnnotationTable"
-        try:
-            async with self.engine.connect() as conn:
-                # Use literal_column("*") to select all columns
-                c_inv_ref: sqlalchemy.ColumnElement[Any] = column("investigation_ref")
-                stmt: sqlalchemy.Select[Any] = (
-                    select(sqlalchemy.literal_column("*"))
-                    .select_from(table(view_name))
-                    .where(c_inv_ref.in_(investigation_ids))
-                    .execution_options(stream_results=True)
-                )
-
-                result = await conn.stream(stmt)
-                async for row in result.mappings():
-                    yield dict(row)
-        except ProgrammingError as e:
-            if f'relation "{view_name.lower()}" does not exist' in str(e).lower():
-                logger.warning('Table or view "%s" does not exist. Treating as empty.', view_name)
-            else:
-                raise
+    async def stream_annotation_tables(self, investigation_ids: list[str]) -> AsyncGenerator[AnnotationTableRow, None]:
+        """Stream annotation table rows for given investigations."""
+        async for r in self._stream_by_investigation(AnnotationTableRow, investigation_ids, "annotation_table"):
+            yield r
 
     @asynccontextmanager
     async def connect(self) -> AsyncGenerator[AsyncConnection, None]:

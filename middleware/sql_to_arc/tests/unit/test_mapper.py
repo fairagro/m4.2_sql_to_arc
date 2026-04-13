@@ -13,7 +13,6 @@ from arctrl import (
 from pydantic import ValidationError
 
 from middleware.sql_to_arc.mapper import (
-    map_annotation,
     map_assay,
     map_contact,
     map_investigation,
@@ -197,9 +196,3 @@ def test_map_contact_invalid_roles() -> None:
             last_name="Smith",
             roles="{invalid-json}",  # type: ignore[arg-type]
         )
-
-
-def test_map_annotation() -> None:
-    """Test the map_annotation helper function."""
-    row = {"data": "test_value"}
-    assert map_annotation(row) == row

@@ -4,7 +4,7 @@ import gc
 import json
 import logging
 from collections import defaultdict
-from typing import Any, cast
+from typing import Any
 
 from arctrl import (
     ARC,
@@ -16,6 +16,7 @@ from arctrl import (
     IOType,
     OntologyAnnotation,
 )
+from arctrl.py.Core.Table.composite_cell import Data
 
 from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.mapper import (
@@ -26,6 +27,7 @@ from middleware.sql_to_arc.mapper import (
     map_study,
 )
 from middleware.sql_to_arc.models import (
+    AnnotationTableRow,
     AssayRow,
     ContactRow,
     PublicationRow,
@@ -48,6 +50,11 @@ def _add_studies_to_arc(arc: ARC, study_rows: list[StudyRow]) -> dict[str, ArcSt
 def _add_assays_to_arc(arc: ARC, assay_rows: list[AssayRow], study_map: dict[str, ArcStudy]) -> dict[str, ArcAssay]:
     """Add assays to ARC, link to studies, and return assay map."""
     assay_map: dict[str, ArcAssay] = {}
+    if assay_rows and not study_map:
+        logger.warning(
+            "Investigation has %d assay(s) but no studies — assays will not be linked to any study.",
+            len(assay_rows),
+        )
     for a_row in assay_rows:
         assay = map_assay(a_row)
         arc.AddAssay(assay)
@@ -150,16 +157,26 @@ def _add_publications_to_arc(
             study.Publications.append(map_publication(p_row))
 
 
-def _get_column_key(r: dict[str, Any]) -> tuple[Any, ...]:
+# Maps DB schema column_io_type values (snake_case DB contract) to the canonical
+# strings recognised by IOType.of_string() (ARCitect display names).
+_IO_TYPE_MAP: dict[str, str] = {
+    "source_name": "Source Name",
+    "sample_name": "Sample Name",
+    "data": "Data",
+    "material_name": "Material",
+}
+
+
+def _get_column_key(r: AnnotationTableRow) -> tuple[Any, ...]:
     """Extract a unique key for a column definition."""
     return (
-        r.get("column_type"),
-        r.get("column_io_type"),
-        r.get("column_value"),
-        r.get("column_annotation_term"),
-        r.get("column_annotation_uri"),
-        r.get("column_annotation_version"),
-        r.get("column_name"),  # Fallback for simple tests
+        r.column_type,
+        r.column_io_type,
+        r.column_value,
+        r.column_annotation_term,
+        r.column_annotation_uri,
+        r.column_annotation_version,
+        r.column_name,  # Fallback for simple tests
     )
 
 
@@ -169,10 +186,22 @@ def _build_header(key: tuple[Any, ...]) -> CompositeHeader | None:
     try:
         oa = OntologyAnnotation(c_ann_term or "", c_ann_uri or "", c_ann_ver or "")
 
+        if c_type in {"input", "output"} and not c_io:
+            default_io = "Source Name" if c_type == "input" else "Sample Name"
+            logger.warning(
+                "column_io_type missing for column_type '%s'; defaulting to '%s'",
+                c_type,
+                default_io,
+            )
+
         # Dispatch table for different header types
         handlers = {
-            "input": lambda: CompositeHeader.input(IOType.of_string(c_io or "source_name")),
-            "output": lambda: CompositeHeader.output(IOType.of_string(c_io or "sample_name")),
+            "input": lambda: CompositeHeader.input(
+                IOType.of_string(_IO_TYPE_MAP.get(c_io or "", c_io or "Source Name"))
+            ),
+            "output": lambda: CompositeHeader.output(
+                IOType.of_string(_IO_TYPE_MAP.get(c_io or "", c_io or "Sample Name"))
+            ),
             "characteristic": lambda: CompositeHeader.characteristic(oa),
             "factor": lambda: CompositeHeader.factor(oa),
             "parameter": lambda: CompositeHeader.parameter(oa),
@@ -193,13 +222,12 @@ def _build_header(key: tuple[Any, ...]) -> CompositeHeader | None:
     return None
 
 
-def _build_single_cell(cell_row: dict[str, Any], header: CompositeHeader) -> CompositeCell:
+def _build_single_cell(cell_row: AnnotationTableRow, header: CompositeHeader) -> CompositeCell:
     """Build a single CompositeCell from a database row."""
-    cv = cell_row.get("cell_value")
-    cat = cell_row.get("cell_annotation_term")
-    cau = cell_row.get("cell_annotation_uri") or ""
-    cav = cell_row.get("cell_annotation_version") or ""
-    v = cell_row.get("value")  # Fallback for old/simple tests
+    cv = cell_row.cell_value
+    cat = cell_row.cell_annotation_term
+    cau = cell_row.cell_annotation_uri or ""
+    cav = cell_row.cell_annotation_version or ""
 
     # Unitized cell (value + ontology term)
     if cv is not None and cat is not None:
@@ -209,8 +237,12 @@ def _build_single_cell(cell_row: dict[str, Any], header: CompositeHeader) -> Com
     if cat is not None:
         return CompositeCell.term(OntologyAnnotation(cat, cau, cav))
 
+    # Data cell (file path) — required when header is a Data-type IO column
+    if header.IsDataColumn:
+        return CompositeCell.data(Data(name=str(cv)) if cv is not None else Data())
+
     # Text value? (either from new schema 'cell_value' or fallback 'value')
-    val_to_use = cv if cv is not None else v
+    val_to_use = cv
     if val_to_use is not None:
         if header.IsTermColumn:
             # If the column expects a term, wrap the text in an annotation
@@ -221,7 +253,7 @@ def _build_single_cell(cell_row: dict[str, Any], header: CompositeHeader) -> Com
 
 
 def _build_column_cells(
-    rows_map: dict[int, dict[str, Any]], max_row_idx: int, header: CompositeHeader
+    rows_map: dict[int, AnnotationTableRow], max_row_idx: int, header: CompositeHeader
 ) -> list[CompositeCell]:
     """Build a list of CompositeCell objects for a column."""
     col_cells = []
@@ -234,7 +266,7 @@ def _build_column_cells(
     return col_cells
 
 
-def _build_arc_table(t_name: str, rows: list[dict[str, Any]]) -> ArcTable | None:
+def _build_arc_table(t_name: str, rows: list[AnnotationTableRow]) -> ArcTable | None:
     """Build an ArcTable from flat database rows."""
     if not rows:
         return None
@@ -242,20 +274,20 @@ def _build_arc_table(t_name: str, rows: list[dict[str, Any]]) -> ArcTable | None
     table = ArcTable.init(t_name)
 
     # Determine max row index
-    max_row_idx = max((cast(int, r.get("row_index", 0)) for r in rows), default=-1)
+    max_row_idx = max((r.row_index for r in rows), default=-1)
     if max_row_idx < 0:
         return None
 
     col_keys: list[tuple[Any, ...]] = []
     seen_keys = set()
-    col_to_rows: dict[tuple[Any, ...], dict[int, dict[str, Any]]] = defaultdict(dict)
+    col_to_rows: dict[tuple[Any, ...], dict[int, AnnotationTableRow]] = defaultdict(dict)
 
     for r in rows:
         key = _get_column_key(r)
         if key not in seen_keys:
             col_keys.append(key)
             seen_keys.add(key)
-        col_to_rows[key][cast(int, r.get("row_index", 0))] = r
+        col_to_rows[key][r.row_index] = r
 
     for key in col_keys:
         header = _build_header(key)
@@ -270,13 +302,13 @@ def _build_arc_table(t_name: str, rows: list[dict[str, Any]]) -> ArcTable | None
 
 
 def _process_annotation_tables(
-    inv_id: str, annotations: list[dict[str, Any]], study_map: dict[str, Any], assay_map: dict[str, Any]
+    inv_id: str, annotations: list[AnnotationTableRow], study_map: dict[str, Any], assay_map: dict[str, Any]
 ) -> None:
     """Process and add annotation tables."""
-    tables_groups = defaultdict(list)
+    tables_groups: dict[tuple[Any, ...], list[AnnotationTableRow]] = defaultdict(list)
     for ann in annotations:
-        if ann.get("investigation_ref") == inv_id:
-            key = (ann.get("target_type"), ann.get("target_ref"), ann.get("table_name"))
+        if ann.investigation_ref == inv_id:
+            key = (ann.target_type, ann.target_ref, ann.table_name)
             tables_groups[key].append(ann)
 
     for (t_type, t_ref, t_name), rows in tables_groups.items():
@@ -293,6 +325,13 @@ def _process_annotation_tables(
             table = _build_arc_table(t_name, rows)
             if table:
                 target.AddTable(table)
+        else:
+            logger.warning(
+                "Annotation table '%s' targets %s '%s' which does not exist in this investigation; skipping.",
+                t_name,
+                t_type,
+                t_ref,
+            )
 
 
 def build_single_arc_task(data: ArcBuildData) -> str:

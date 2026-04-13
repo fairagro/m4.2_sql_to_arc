@@ -131,16 +131,10 @@ exclude = [
   ".ruff_cache",
 ]
 
-# [[tool.mypy.overrides]]
-# module = [
-#     "middleware.api_client.*",
-#     "middleware.shared.*",
-# ]
-# ignore_missing_imports = true
-
-# arctrl has no type stubs and no py.typed marker — suppress the resulting noise
+# arctrl has no type stubs and no py.typed marker — suppress the resulting noise.
+# The Fable-transpiled internals live under arctrl.py.* so both patterns are needed.
 [[tool.mypy.overrides]]
-module = ["arctrl"]
+module = ["arctrl", "arctrl.*"]
 ignore_missing_imports = true
 
 # Docstring-Regeln aktivieren, damit es wie pylint C0114/15/16 meckert

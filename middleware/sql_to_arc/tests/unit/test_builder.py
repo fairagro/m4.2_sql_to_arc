@@ -4,10 +4,12 @@ import json
 from typing import Any
 
 import pytest
+from arctrl import CompositeHeader, IOType
 
-from middleware.sql_to_arc.builder import build_single_arc_task
+from middleware.sql_to_arc.builder import _IO_TYPE_MAP, _build_header, _build_single_cell, build_single_arc_task
 from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.models import (
+    AnnotationTableRow,
     AssayRow,
     ContactRow,
     InvestigationRow,
@@ -197,3 +199,155 @@ def test_build_ignores_irrelevant_data(sample_investigation: dict[str, Any]) -> 
     # Check that styX is NOT in the graph
     sty_x = next((item for item in graph if item.get("@id") == "styX" or item.get("identifier") == "styX"), None)
     assert sty_x is None
+
+
+# ---------------------------------------------------------------------------
+# Helpers to build minimal AnnotationTableRow dicts
+# ---------------------------------------------------------------------------
+
+
+def _ann_row(**overrides: Any) -> dict[str, Any]:
+    """Return a minimal AnnotationTableRow dict, optionally overriding any field."""
+    base: dict[str, Any] = {
+        "investigation_ref": "inv1",
+        "target_type": "study",
+        "target_ref": "sty1",
+        "table_name": "T",
+        "column_type": "input",
+        "row_index": 0,
+        "column_io_type": None,
+        "cell_value": None,
+        "cell_annotation_term": None,
+        "cell_annotation_uri": None,
+        "cell_annotation_version": None,
+        "column_annotation_term": None,
+        "column_annotation_uri": None,
+        "column_annotation_version": None,
+        "column_value": None,
+    }
+    base.update(overrides)
+    return base
+
+
+def _row(data: dict[str, Any]) -> AnnotationTableRow:
+    """Validate a dict into an AnnotationTableRow."""
+    return AnnotationTableRow.model_validate(data)
+
+
+# ---------------------------------------------------------------------------
+# IOType mapping tests
+# ---------------------------------------------------------------------------
+
+
+class TestIOTypeMapping:
+    """_IO_TYPE_MAP translates snake_case DB values to canonical ARCitect strings."""
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        ("db_value", "canonical"),
+        [
+            ("source_name", "Source Name"),
+            ("sample_name", "Sample Name"),
+            ("data", "Data"),
+            ("material_name", "Material"),
+        ],
+    )
+    def test_map_covers_all_db_values(db_value: str, canonical: str) -> None:
+        """Each DB snake_case value maps to the expected canonical ARCitect string."""
+        assert _IO_TYPE_MAP[db_value] == canonical
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        ("db_value", "expected_tag"),
+        [
+            ("source_name", 0),  # IOType.Source
+            ("sample_name", 1),  # IOType.Sample
+            ("data", 2),  # IOType.Data
+            ("material_name", 3),  # IOType.Material
+        ],
+    )
+    def test_build_header_input_uses_named_iotype(db_value: str, expected_tag: int) -> None:
+        """DB values must produce a named IOType (tag 0–3), never FreeType (tag 4)."""
+        key = ("input", db_value, None, None, None, None, None)
+        header = _build_header(key)
+        assert header is not None
+        assert header.is_input
+        assert header.fields[0].tag == expected_tag
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        ("db_value", "expected_tag"),
+        [
+            ("sample_name", 1),
+            ("data", 2),
+            ("material_name", 3),
+        ],
+    )
+    def test_build_header_output_uses_named_iotype(db_value: str, expected_tag: int) -> None:
+        """DB output values must also produce a named IOType, never FreeType."""
+        key = ("output", db_value, None, None, None, None, None)
+        header = _build_header(key)
+        assert header is not None
+        assert header.is_output
+        assert header.fields[0].tag == expected_tag
+
+    @staticmethod
+    def test_missing_io_type_defaults_to_source_name_for_input() -> None:
+        """Missing column_io_type falls back to 'Source Name' (tag 0) for input."""
+        key = ("input", None, None, None, None, None, None)
+        header = _build_header(key)
+        assert header is not None
+        assert header.is_input
+        assert header.fields[0].tag == 0
+
+    @staticmethod
+    def test_missing_io_type_defaults_to_sample_name_for_output() -> None:
+        """Missing column_io_type falls back to 'Sample Name' (tag 1) for output."""
+        key = ("output", None, None, None, None, None, None)
+        header = _build_header(key)
+        assert header is not None
+        assert header.is_output
+        assert header.fields[0].tag == 1
+
+
+# ---------------------------------------------------------------------------
+# Data cell tests
+# ---------------------------------------------------------------------------
+
+
+class TestDataCellBuilding:
+    """_build_single_cell must emit CompositeCell.data() for data-typed IO columns."""
+
+    @staticmethod
+    def test_data_cell_has_correct_file_path() -> None:
+        """A data-typed output column must produce a DataCell with the file path set."""
+        header = CompositeHeader.output(IOType.of_string("Data"))
+        row = _row(_ann_row(column_type="output", column_io_type="data", cell_value="raw.fastq.gz"))
+        cell = _build_single_cell(row, header)
+        assert cell.is_data
+        assert cell.AsData.FilePath == "raw.fastq.gz"
+
+    @staticmethod
+    def test_data_cell_empty_when_no_cell_value() -> None:
+        """A data-typed column with no cell_value must produce an empty DataCell, not a crash."""
+        header = CompositeHeader.output(IOType.of_string("Data"))
+        row = _row(_ann_row(column_type="output", column_io_type="data", cell_value=None))
+        cell = _build_single_cell(row, header)
+        assert cell.is_data
+        assert cell.AsData.FilePath is None
+
+    @staticmethod
+    def test_source_name_column_emits_free_text() -> None:
+        """A source_name input column must produce a free-text cell, not a DataCell."""
+        header = CompositeHeader.input(IOType.of_string("Source Name"))
+        row = _row(_ann_row(column_type="input", column_io_type="source_name", cell_value="SourceA"))
+        cell = _build_single_cell(row, header)
+        assert cell.is_free_text
+
+    @staticmethod
+    def test_sample_name_column_emits_free_text() -> None:
+        """A sample_name output column must produce a free-text cell, not a DataCell."""
+        header = CompositeHeader.output(IOType.of_string("Sample Name"))
+        row = _row(_ann_row(column_type="output", column_io_type="sample_name", cell_value="SampleB"))
+        cell = _build_single_cell(row, header)
+        assert cell.is_free_text
