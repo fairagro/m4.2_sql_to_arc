@@ -115,6 +115,7 @@ Before generating or modifying code, read the relevant spec folders.
 - **[`spec/principles.md`](spec/principles.md)** — Project principles and foundation contract (start here).
 - **[`spec/configuration/`](spec/configuration/)** — Config loading, env overrides, secrets, extension rules.
 - **[`spec/demo-environment/`](spec/demo-environment/)** — Local demo / deployment setup.
+- **[`spec/tooling-consistency/`](spec/tooling-consistency/)** — VS Code, pre-commit, and CI must report identical results from a shared config.
 
 **Component-level** (`middleware/sql_to_arc/spec/`) — sql_to_arc internals:
 
