@@ -22,6 +22,10 @@ This file contains critical context about the FAIRagro SQL-to-ARC Converter proj
     ├── config-wrapper/    # ConfigWrapper / ConfigBase pattern
     └── create-specifica-feature/  # How to create a new Specifica feature
 
+.github/
+└── agents/                # VS Code custom agents
+    └── spec-to-code.agent.md  # Implements code changes from spec updates
+
 docs/
 ├── ai_workflow.md         # AI agent workflow documentation
 └── sql_to_arc_database_views.md  # Authoritative DB view / schema contract
