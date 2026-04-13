@@ -1,13 +1,10 @@
 """Data models for the SQL-to-ARC conversion process."""
 
-import logging
 from datetime import datetime
 from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, Json, model_validator
 from pydantic_core import PydanticUndefined
-
-logger = logging.getLogger(__name__)
 
 # JSON types representing the expected structure after parsing
 type JsonList = list[Any]
@@ -189,13 +186,3 @@ class AnnotationTableRow(BaseRow):
     cell_annotation_term: str | None = spec_field(default=None)
     cell_annotation_uri: str | None = spec_field(default=None)
     cell_annotation_version: str | None = spec_field(default=None)
-
-    @model_validator(mode="after")
-    def validate_column_io_type(self) -> "AnnotationTableRow":
-        """Warn when column_io_type is absent for input/output columns."""
-        if self.column_type in {"input", "output"} and not self.column_io_type:
-            logger.warning(
-                "column_io_type is required when column_type is '%s' but was not provided",
-                self.column_type,
-            )
-        return self

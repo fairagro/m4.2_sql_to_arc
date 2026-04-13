@@ -175,6 +175,14 @@ def _build_header(key: tuple[Any, ...]) -> CompositeHeader | None:
     try:
         oa = OntologyAnnotation(c_ann_term or "", c_ann_uri or "", c_ann_ver or "")
 
+        if c_type in {"input", "output"} and not c_io:
+            default_io = "source_name" if c_type == "input" else "sample_name"
+            logger.warning(
+                "column_io_type missing for column_type '%s'; defaulting to '%s'",
+                c_type,
+                default_io,
+            )
+
         # Dispatch table for different header types
         handlers = {
             "input": lambda: CompositeHeader.input(IOType.of_string(c_io or "source_name")),
