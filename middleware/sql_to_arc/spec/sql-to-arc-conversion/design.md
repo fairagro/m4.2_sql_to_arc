@@ -72,4 +72,3 @@ Main process (async event loop)
    — `processor.py` and `main.py` instrument each investigation span and
    the overall run span. This allows identifying bottlenecks in the process
    pool (CPU-bound) versus the API upload (I/O-bound) in production.
-

@@ -7,10 +7,6 @@ The converter calls `ApiClient.create_or_update_arc(rdi, arc_dict)` from
 authentication are fully encapsulated in the `middleware.api_client` shared
 library and are **not a concern of this component**.
 
-> **Note:** Migration to the harvest-based workflow
-> (`create_harvest` / `submit_arc_in_harvest`) is tracked in
-> [GitHub Issue #34](https://github.com/fairagro/m4.2_sql_to_arc/issues/34).
-
 ## Lifecycle in the Converter
 
 ```text

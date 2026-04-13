@@ -20,16 +20,14 @@ from middleware.sql_to_arc.models import (
     StudyRow,
 )
 
-# name=term, tan=uri (TermAccessionNumber), tsr="" (TermSourceREF - we don't have it, maybe version?)
-# Spec says version is used. If we don't have TSR, we can leave it empty.
-
 
 def _make_oa(term: str | None, uri: str | None, _version: str | None) -> OntologyAnnotation:
+    # _version is deliberately ignored: the DB version field belongs to
+    # OntologySourceReference.Version, not OntologyAnnotation. Mapping it
+    # correctly would require registering OntologySourceReference objects on
+    # the investigation and is out of scope. See arc-building/design.md.
     if not term:
         return OntologyAnnotation()
-
-    # name=term, tan=uri (TermAccessionNumber), tsr="" (TermSourceREF - we don't have it, maybe version?)
-    # Spec says version is used. If we don't have TSR, we can leave it empty.
     return OntologyAnnotation(name=term, tan=uri or "", tsr="")
 
 

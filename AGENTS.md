@@ -16,8 +16,28 @@ This file contains critical context about the FAIRagro SQL-to-ARC Converter proj
 ## 📁 Project Structure
 
 ```text
+.agents/
+└── skills/                # Agent Skills (agentskills.io standard)
+    ├── arctrl/            # arctrl Python library reference
+    ├── config-wrapper/    # ConfigWrapper / ConfigBase pattern
+    └── create-specifica-feature/  # How to create a new Specifica feature
+
+docs/
+├── ai_workflow.md         # AI agent workflow documentation
+└── sql_to_arc_database_views.md  # Authoritative DB view / schema contract
+
+spec/                      # Project-level architecture & design
+├── principles.md          # Project principles and foundation contract
+├── configuration/         # Config loading, env overrides, secrets
+└── demo-environment/      # Local demo / deployment setup
+
 middleware/
 └── sql_to_arc/            # SQL to ARC converter (Core logic)
+    ├── spec/              # Component-level architecture & design
+    │   ├── sql-to-arc-conversion/ # Top-level workflow feature
+    │   ├── arc-building/          # ARC object construction
+    │   ├── database-access/       # DB queries and row models
+    │   └── api-upload/            # ARC upload to the Middleware API
     ├── src/middleware/sql_to_arc/
     │   ├── main.py        # Entry point
     │   ├── mapper.py      # Database to ARC mapping logic
@@ -38,8 +58,10 @@ scripts/
     └── post-merge
 
 dev_environment/
-├── start-dev.sh          # Start Docker Compose (Postgres + Converter)
-├── compose.dev.yaml      # Docker services definition
+├── start-demo.sh         # Start full local demo (DB + Converter + Mock API)
+├── start-dev.sh          # Start with local DB, external API (needs sops)
+├── compose.demo.yaml     # Docker services for demo
+├── compose.dev.yaml      # Docker services for dev
 └── config.dev.yaml       # Development configuration for the converter
 ```
 
@@ -51,8 +73,12 @@ dev_environment/
 # Run tests for the converter
 uv run pytest middleware/sql_to_arc/tests/ -v
 
-# Run quality checks
-./scripts/quality-check.sh
+# Run individual quality tools (never run quality-check.sh — it runs everything and is too slow)
+uv run ruff check .
+uv run ruff format .
+uv run mypy middleware/sql_to_arc/
+uv run pylint middleware/sql_to_arc/
+uv run bandit -r middleware/sql_to_arc/src/
 
 # Install all dependencies (including external shared/api_client via git)
 uv sync --dev --all-packages
@@ -76,37 +102,30 @@ docker compose logs -f
 docker compose down
 ```
 
-## Architecture Rules
+## Architecture & Design
 
-Before generating or modifying code, read **[docs/ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md)**.
+Before generating or modifying code, read the relevant spec folders.
 
-It defines binding constraints that MUST be followed:
+**Project-level** (`spec/`) — cross-cutting concerns:
 
-- **Module Dependency Graph**: Which module may import from which (no circular imports).
-- **Extension Points**: How to add new DB entities, mapper functions, or config values.
-- **Concurrency Rules**: IPC contract for worker processes, Semaphore scope.
-- **Error Handling**: Per-investigation failure isolation, stats update pattern.
-- **Config**: NEVER use `os.environ` directly — always extend `Config` in `config.py`.
-- **Database Access**: All SQL goes through `Database`; always use server-side cursors and bulk fetches.
+- **[`spec/principles.md`](spec/principles.md)** — Project principles and foundation contract (start here).
+- **[`spec/configuration/`](spec/configuration/)** — Config loading, env overrides, secrets, extension rules.
+- **[`spec/demo-environment/`](spec/demo-environment/)** — Local demo / deployment setup.
+
+**Component-level** (`middleware/sql_to_arc/spec/`) — sql_to_arc internals:
+
+- **[`middleware/sql_to_arc/spec/sql-to-arc-conversion/`](middleware/sql_to_arc/spec/sql-to-arc-conversion/)** — Top-level workflow: workers, stats, CLI.
+- **[`middleware/sql_to_arc/spec/arc-building/`](middleware/sql_to_arc/spec/arc-building/)** — ARC object construction (`mapper.py` + `builder.py`).
+- **[`middleware/sql_to_arc/spec/database-access/`](middleware/sql_to_arc/spec/database-access/)** — DB access patterns, row models, SQL views.
+- **[`middleware/sql_to_arc/spec/api-upload/`](middleware/sql_to_arc/spec/api-upload/)** — Upload to the Middleware API.
 
 ---
 
-## �📝 Key Implementation Details
+## 📝 Key Implementation Details
 
 ### External Dependencies
 
 This project depends on `shared` and `api_client` libraries, which are hosted in a separate repository (`m4.2_advanced_middleware_api`). They are included via `uv` workspace sources pointing to Git.
-
-### SQL-to-ARC Mapping (`middleware/sql_to_arc/src/middleware/sql_to_arc/mapper.py`)
-
-**Purpose**: Transforms relational database rows into standardized Annotated Research Context (ARC) objects using the `arctrl` library.
-
-**Features**:
-
-- Mapping of Persons (Contacts) with JSON-encoded roles.
-- Mapping of Publications.
-- Metadata extraction for ISA (Investigation, Study, Assay) structures.
-- CLI support: `--version` provides the current package version (via `importlib.metadata`).
 
 ### Git LFS Integration
 
@@ -118,38 +137,7 @@ This project depends on `shared` and `api_client` libraries, which are hosted in
 
 **Files Tracked by LFS**: `*.sql` (configured in `.gitattributes`).
 
-## 🐳 Docker Compose Services
-
-```yaml
-services:
-  postgres:           # PostgreSQL database serving Edaphobase data
-  db-init:            # Downloads and imports the Edaphobase SQL dump
-  sql_to_arc:         # The converter component (this repo)
-```
-
-**Configuration**: `dev_environment/config.dev.yaml`
-
-- Connects to `postgres` service on port 5432.
-- Uses `api_url` pointing to an external Middleware API if needed.
-
-## 🧪 Testing Strategy
-
-### Test Locations
-
-- `middleware/sql_to_arc/tests/unit/` - Isolated logic tests.
-- `middleware/sql_to_arc/tests/integration/` - End-to-end workflow tests.
-
-### Running Tests with uv
-
-```bash
-# Run all tests
-uv run pytest middleware/sql_to_arc/
-
-# Run with coverage
-uv run pytest --cov=middleware/sql_to_arc middleware/sql_to_arc/tests/
-```
-
-## 🔐 Security Notes
+## Security Notes
 
 - DB passwords and API secrets should be managed via environment variables or `.env`.
 - `client.key` is dynamically handled in container secrets (`tmpfs`).
@@ -168,12 +156,12 @@ Agents are expected to maintain high code quality by addressing issues reported 
 When editing files:
 
 1. **Always check current state** - Use `read_file` to see current content.
-2. **Review for quality** - Run `./scripts/quality-check.sh` before committing.
+2. **Review for quality** - Check the VS Code **Problems** tab (Pylance, Mypy, Ruff run continuously in the background). Only run individual tools (`uv run ruff check .`, `uv run mypy ...`) if the Problems tab is not available. Never run `./scripts/quality-check.sh` — it is too slow.
 3. **Never modify `.git/` directly** - Use scripts instead.
-4. **Test after changes** - Always run `uv run pytest`.
+4. **Format and test after changes** - Run `uv run ruff format .` to auto-format, then `uv run pytest` to verify.
 
 ---
 
-**Last Updated**: 2026-02-03
+**Last Updated**: 2026-04-13
 **Current Branch**: feature/workflow_fixes
 **Maintainer Notes**: This repository is now decoupled from the main Middleware API. High-level architecture involves converting SQL views into ARC files.

@@ -43,10 +43,11 @@ build_single_arc_task(data)
    contacts) is the responsibility of `builder.py`. This keeps mappers
    unit-testable without a full ARC context.
 
-2. **Annotation table rows are flat and grouped in `builder.py`**
-   — The DB view exposes one row per cell (table × column × row). `builder.py`
-   groups by `(target_type, target_ref, table_name)` and then by column key
-   before building `ArcTable`. This avoids any windowing logic in SQL.
+2. **Two-pass grouping for annotation tables**
+   — `vAnnotationTable` delivers one row per cell (see database-access design).
+   `builder.py` first groups by `(target_type, target_ref, table_name)` to
+   identify each table, then by column key to reconstruct columns before
+   calling `ArcTable.AddColumn()`.
 
 3. **Column key is a 7-tuple derived from metadata columns**
    — `(column_type, column_io_type, column_value, column_annotation_term,
@@ -54,27 +55,27 @@ build_single_arc_task(data)
    Stable across row iterations; used as a dict key to build per-column
    cell lists without a second pass.
 
-4. **`CompositeCell` dispatch order**
-   — `unitized` (value + term) → `term` (term only) → `free_text`
-   (value or empty). This mirrors ISA-Tab semantics: ontology-annotated
-   values are preferred over plain text.
-
-5. **Worker process: explicit GC after serialization**
+4. **Worker process: explicit GC after serialization**
    — `arctrl` objects hold .NET interop memory that the Python GC may not
    collect promptly. `del arc` + `gc.collect()` immediately after
    `ToROCrateJsonString()` prevents worker processes from accumulating
    memory across many investigations.
 
-6. **Roles encoded as JSON in the DB**
-   — `ContactRow.roles` is a `Json[list[dict]]`. Pydantic deserialises the
-   JSON string transparently. Each role dict has `term`, `uri`, `version`
-   keys and is mapped to an `OntologyAnnotation`.
+5. **No `OntologySourceReference` objects are created**
+   — `xxx_version` from the DB views belongs to `OntologySourceReference.version`
+   in ARCtrl, not to `OntologyAnnotation`. Populating it correctly requires
+   registering one `OntologySourceReference` per ontology source on the
+   investigation — complexity not justified by the benefit. `tsr` is always `""`
+   and `_version` is silently dropped. ARCs serialize with
+   `"ontologySourceReferences": []` — valid JSON-LD, but ontology version
+   provenance is lost.
 
 ## OntologyAnnotation Mapping Convention
 
 ```text
-DB field        → OntologyAnnotation argument
-term            → name
-uri             → tan (TermAccessionNumber)
-version/None    → tsr (TermSourceREF, left empty if unavailable)
+DB field    → OntologyAnnotation argument
+xxx_term    → name
+xxx_uri     → tan  (TermAccessionNumber)
+xxx_version → (ignored, see Key Decision 5)
+              tsr  (TermSourceREF) is always ""
 ```

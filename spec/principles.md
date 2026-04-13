@@ -1,5 +1,16 @@
 # FAIRagro SQL-to-ARC — Principles
 
+## Foundation Contract
+
+The authoritative schema contract for this project is
+[docs/sql_to_arc_database_views.md](../docs/sql_to_arc_database_views.md).
+It defines every database view, its columns, data types, required/optional
+semantics, and cross-field constraints. **All features assume this document
+as given.** Feature specs do not restate view definitions; they reference
+this document when they need to cite a column or constraint.
+
+The converter never queries raw tables — only the views defined there.
+
 ## Purpose
 
 Convert metadata from a relational SQL database into the
