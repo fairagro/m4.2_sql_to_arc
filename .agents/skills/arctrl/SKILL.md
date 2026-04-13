@@ -18,6 +18,33 @@ but some internals are Fable runtime types.
 
 ## Package & Imports
 
+arctrl ships no type stubs and no `py.typed` marker. Mypy will report
+`[import-untyped]` for every `arctrl.*` import unless you suppress it.
+
+**Preferred: project-level override in `pyproject.toml`** (no per-import
+comments needed, covers all submodules):
+
+```toml
+[[tool.mypy.overrides]]
+module = ["arctrl", "arctrl.*"]
+ignore_missing_imports = true
+```
+
+The `arctrl.*` glob is required because the Fable-transpiled internals are
+exposed under `arctrl.py.*` subpackages (e.g.
+`arctrl.py.Core.Table.composite_cell`), which are a different dotted path
+from the bare `arctrl` package.
+
+**Alternative: per-import suppression** (only needed when the project-level
+override is not in place):
+
+```python
+from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
+from arctrl.py.Core.Table.composite_cell import Data  # type: ignore[import-untyped]
+```
+
+---
+
 ```python
 from arctrl import (
     ARC,
@@ -33,7 +60,7 @@ from arctrl import (
     Publication,
 )
 
-# Async write helper (Fable internal — untyped, needs type: ignore)
+# Async write helper lives in the Fable internals:
 from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
 ```
 
@@ -194,9 +221,13 @@ header_date = CompositeHeader.date  # property, not callable
 # Fallback for unknown/simple header names:
 header_any = CompositeHeader.OfHeaderString("SomeColumnName")
 
-# IOType known strings (IOType.of_string):
-# "source_name", "sample_name", "raw_data_file", "derived_data_file",
-# "image_file", "material"
+# IOType canonical strings recognised by IOType.of_string() (maps to named tags 0-3):
+# "Source Name" / "Source"  → tag 0 (Source)
+# "Sample Name" / "Sample"  → tag 1 (Sample)
+# "Data" / "RawDataFile" / "Raw Data File" / "DerivedDataFile" /
+# "Derived Data File" / "ImageFile" / "Image File"  → tag 2 (Data)
+# "Material"                → tag 3 (Material)
+# Any other string          → tag 4 (FreeType — avoid for ISA compliance)
 
 # Build cells
 cell_text = CompositeCell.free_text("some value")

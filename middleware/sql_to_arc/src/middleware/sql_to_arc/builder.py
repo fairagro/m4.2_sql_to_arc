@@ -16,6 +16,7 @@ from arctrl import (
     IOType,
     OntologyAnnotation,
 )
+from arctrl.py.Core.Table.composite_cell import Data
 
 from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.mapper import (
@@ -156,6 +157,16 @@ def _add_publications_to_arc(
             study.Publications.append(map_publication(p_row))
 
 
+# Maps DB schema column_io_type values (snake_case DB contract) to the canonical
+# strings recognised by IOType.of_string() (ARCitect display names).
+_IO_TYPE_MAP: dict[str, str] = {
+    "source_name": "Source Name",
+    "sample_name": "Sample Name",
+    "data": "Data",
+    "material_name": "Material",
+}
+
+
 def _get_column_key(r: AnnotationTableRow) -> tuple[Any, ...]:
     """Extract a unique key for a column definition."""
     return (
@@ -176,7 +187,7 @@ def _build_header(key: tuple[Any, ...]) -> CompositeHeader | None:
         oa = OntologyAnnotation(c_ann_term or "", c_ann_uri or "", c_ann_ver or "")
 
         if c_type in {"input", "output"} and not c_io:
-            default_io = "source_name" if c_type == "input" else "sample_name"
+            default_io = "Source Name" if c_type == "input" else "Sample Name"
             logger.warning(
                 "column_io_type missing for column_type '%s'; defaulting to '%s'",
                 c_type,
@@ -185,8 +196,12 @@ def _build_header(key: tuple[Any, ...]) -> CompositeHeader | None:
 
         # Dispatch table for different header types
         handlers = {
-            "input": lambda: CompositeHeader.input(IOType.of_string(c_io or "source_name")),
-            "output": lambda: CompositeHeader.output(IOType.of_string(c_io or "sample_name")),
+            "input": lambda: CompositeHeader.input(
+                IOType.of_string(_IO_TYPE_MAP.get(c_io or "", c_io or "Source Name"))
+            ),
+            "output": lambda: CompositeHeader.output(
+                IOType.of_string(_IO_TYPE_MAP.get(c_io or "", c_io or "Sample Name"))
+            ),
             "characteristic": lambda: CompositeHeader.characteristic(oa),
             "factor": lambda: CompositeHeader.factor(oa),
             "parameter": lambda: CompositeHeader.parameter(oa),
@@ -221,6 +236,10 @@ def _build_single_cell(cell_row: AnnotationTableRow, header: CompositeHeader) ->
     # Term cell (ontology term only)
     if cat is not None:
         return CompositeCell.term(OntologyAnnotation(cat, cau, cav))
+
+    # Data cell (file path) — required when header is a Data-type IO column
+    if header.IsDataColumn:
+        return CompositeCell.data(Data(name=str(cv)) if cv is not None else Data())
 
     # Text value? (either from new schema 'cell_value' or fallback 'value')
     val_to_use = cv
