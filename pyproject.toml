@@ -22,7 +22,7 @@ dev = [
   "ruff>=0.15.10",
   "pre-commit>=4.0.0",
   "respx>=0.20.0",
-  "fastapi>=0.135.3",
+  "fastapi>=0.136.0",
   "uvicorn>=0.42.0",
 ]
 
