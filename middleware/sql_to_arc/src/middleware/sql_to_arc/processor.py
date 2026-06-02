@@ -158,7 +158,7 @@ async def _build_and_upload_single_arc(
                 e,
                 exc_info=True,
             )
-            ctx.pool_holder.recreate()
+            ctx.pool_holder.recreate(executor)
             stats.failed_datasets += 1
             stats.failed_ids.append(inv_id)
         except (ValueError, RuntimeError) as e:
