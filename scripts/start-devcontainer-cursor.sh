@@ -25,7 +25,18 @@ for arg in "$@"; do
             extra_args+=("$arg")
             ;;
         -h | --help)
-            sed -n '2,14p' "$0" | sed 's/^# \?//'
+            cat << 'EOF'
+Open this repository in a Dev Container via DevPod + Cursor.
+
+Cursor has no built-in "Reopen in Container" (unlike VS Code). DevPod builds
+the devcontainer and connects Cursor over SSH — equivalent to VS Code's flow,
+where load-env.sh runs inside the container after it starts (via postCreateCommand).
+
+Usage:
+  ./scripts/start-devcontainer-cursor.sh
+  ./scripts/start-devcontainer-cursor.sh --recreate
+  ./scripts/start-devcontainer-cursor.sh --reset
+EOF
             exit 0
             ;;
         *)
@@ -45,9 +56,6 @@ if ! docker info &>/dev/null; then
     echo "ERROR: Docker is not running or not reachable." >&2
     exit 1
 fi
-
-echo "==> Configuring DevPod IDE: cursor"
-devpod ide use cursor
 
 echo "==> Starting DevPod workspace (devcontainer: ${devcontainer_path})"
 devpod up "${repo_root}" \
