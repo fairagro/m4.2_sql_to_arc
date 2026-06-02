@@ -53,6 +53,7 @@ echo "==> Starting DevPod workspace (devcontainer: ${devcontainer_path})"
 devpod up "${repo_root}" \
     --devcontainer-path "${devcontainer_path}" \
     --ide cursor \
+    --gpg-agent-forwarding \
     "${extra_args[@]}"
 
 echo ""
