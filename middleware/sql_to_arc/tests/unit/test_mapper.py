@@ -176,6 +176,37 @@ def test_map_publication() -> None:
     assert pub.Status.Name == "Published"
 
 
+def test_contact_row_accepts_parsed_roles_list() -> None:
+    """Edaphobase may return roles as native JSON instead of a JSON string."""
+    roles_list = [
+        {
+            "term": "Autor, Author",
+            "uri": "http://purl.obolibrary.org/obo/NCIT_C42781",
+            "version": "",
+        }
+    ]
+    row = ContactRow(
+        investigation_ref="inv1",
+        target_type="investigation",
+        last_name="Müller",
+        roles=roles_list,
+    )
+    assert row.roles == roles_list
+    assert row.roles_native_json_coerced is True
+
+
+def test_map_contact_without_first_name_uses_empty_given_name() -> None:
+    """Edaphobase contacts may omit first_name; ARCtrl rejects None but accepts empty string."""
+    row = ContactRow(
+        investigation_ref="inv1",
+        target_type="investigation",
+        last_name="Müller",
+    )
+    person = map_contact(row)
+    assert person.FirstName == ""
+    assert row.given_name_missing_coerced is True
+
+
 def test_map_contact() -> None:
     """Test mapping of contact data."""
     row = ContactRow(

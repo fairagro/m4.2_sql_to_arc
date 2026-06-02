@@ -19,6 +19,13 @@ def _is_plain_study_ref_string(value: Any) -> bool:
     return bool(stripped) and stripped[0] not in "[{"
 
 
+def _coerce_parsed_json_to_string(value: Any) -> Any:
+    """Serialize native JSON (list/dict) from DB drivers for Json[T] fields."""
+    if isinstance(value, (list, dict)):
+        return json.dumps(value)
+    return value
+
+
 def _coerce_json_array_string(value: Any) -> Any:
     """Wrap a plain identifier as a JSON array string for Json[JsonList] fields."""
     if value is None or not isinstance(value, str):
@@ -151,9 +158,11 @@ class AssayRow(BaseRow):
         """Accept JSON array strings or a single study identifier (Edaphobase export)."""
         if isinstance(data, dict) and "study_ref" in data:
             raw_study_ref = data.get("study_ref")
-            if _is_plain_study_ref_string(raw_study_ref):
+            if isinstance(raw_study_ref, (list, dict)):
+                data["study_ref"] = _coerce_parsed_json_to_string(raw_study_ref)
+            elif _is_plain_study_ref_string(raw_study_ref):
                 data["study_ref_plain_coerced"] = True
-            data["study_ref"] = _coerce_json_array_string(raw_study_ref)
+                data["study_ref"] = _coerce_json_array_string(raw_study_ref)
         return data
 
 
@@ -190,7 +199,30 @@ class ContactRow(BaseRow):
     postal_address: str | None = spec_field(default=None)
     affiliation: str | None = spec_field(default=None)
     roles: Json[JsonList] | None = spec_field(default=None)
+    roles_native_json_coerced: bool = Field(default=False, exclude=True, repr=False)
+    given_name_missing_coerced: bool = Field(default=False, exclude=True, repr=False)
     target_ref: str | None = spec_field(default=None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def flag_missing_given_name(cls, data: Any) -> Any:
+        """Mark contacts without first_name; mapper supplies empty given name for ARCtrl."""
+        if isinstance(data, dict):
+            first_name = data.get("first_name")
+            if first_name is None or (isinstance(first_name, str) and not first_name.strip()):
+                data["given_name_missing_coerced"] = True
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_roles(cls, data: Any) -> Any:
+        """Accept JSON string or native JSON list from drivers (e.g. Edaphobase)."""
+        if isinstance(data, dict) and "roles" in data:
+            raw_roles = data.get("roles")
+            if isinstance(raw_roles, (list, dict)):
+                data["roles_native_json_coerced"] = True
+            data["roles"] = _coerce_parsed_json_to_string(raw_roles)
+        return data
 
 
 class AnnotationTableRow(BaseRow):

@@ -183,6 +183,80 @@ def test_build_arc_deduplicates_assay_rows_per_study_link(
     assert "inv1" in warning_records[0].message
 
 
+def test_build_arc_warns_on_missing_first_name(
+    sample_investigation: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Contacts without first_name must serialize with an aggregated warning."""
+    contacts = [
+        ContactRow.model_validate({
+            "investigation_ref": "inv1",
+            "target_type": "investigation",
+            "last_name": "Müller",
+        }),
+        ContactRow.model_validate({
+            "investigation_ref": "inv1",
+            "target_type": "investigation",
+            "first_name": "Anna",
+            "last_name": "Schmidt",
+        }),
+    ]
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[],
+        assays=[],
+        contacts=contacts,
+        publications=[],
+        annotations=[],
+    )
+    with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
+        build_single_arc_task(arc_data)
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 1
+    assert "no first_name" in warning_records[0].message
+    assert "1 contact" in warning_records[0].message
+    assert "inv1" in warning_records[0].message
+
+
+def test_build_arc_warns_on_native_json_roles(
+    sample_investigation: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Native JSON roles from Edaphobase must be coerced with one aggregated warning."""
+    roles_list = [{"term": "Author", "uri": "http://example.org/obo/NCIT_C42781", "version": ""}]
+    contacts = [
+        ContactRow.model_validate({
+            "investigation_ref": "inv1",
+            "target_type": "investigation",
+            "first_name": "Anna",
+            "last_name": "Müller",
+            "roles": roles_list,
+        }),
+        ContactRow.model_validate({
+            "investigation_ref": "inv1",
+            "target_type": "investigation",
+            "first_name": "Bob",
+            "last_name": "Schmidt",
+            "roles": json.dumps([{"term": "Curator", "uri": "http://example.org", "version": ""}]),
+        }),
+    ]
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[],
+        assays=[],
+        contacts=contacts,
+        publications=[],
+        annotations=[],
+    )
+    with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
+        build_single_arc_task(arc_data)
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 1
+    assert "native JSON roles" in warning_records[0].message
+    assert "1 contact" in warning_records[0].message
+    assert "inv1" in warning_records[0].message
+
+
 def test_build_arc_raises_on_conflicting_duplicate_assay_rows(
     sample_investigation: dict[str, Any],
 ) -> None:

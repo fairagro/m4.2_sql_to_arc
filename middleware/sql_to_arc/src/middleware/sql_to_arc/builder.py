@@ -70,6 +70,29 @@ def _add_studies_to_arc(arc: ARC, study_rows: list[StudyRow]) -> dict[str, ArcSt
     return study_map
 
 
+def _log_edaphobase_contact_warnings(
+    investigation_id: str,
+    *,
+    native_roles_count: int,
+    missing_given_name_count: int,
+) -> None:
+    """Emit aggregated warnings per investigation for non-spec Edaphobase contact shapes."""
+    if native_roles_count:
+        logger.warning(
+            'Investigation "%s": %d contact(s) use native JSON roles (list) instead of '
+            "a JSON string per SQL-to-ARC view spec; coerced automatically (common in Edaphobase exports).",
+            investigation_id,
+            native_roles_count,
+        )
+    if missing_given_name_count:
+        logger.warning(
+            'Investigation "%s": %d contact(s) have no first_name in vContact; using an empty '
+            "given name for ARCtrl serialization (common in Edaphobase exports).",
+            investigation_id,
+            missing_given_name_count,
+        )
+
+
 def _log_edaphobase_study_ref_warnings(
     investigation_id: str,
     *,
@@ -195,6 +218,13 @@ def _add_contacts_to_arc(
         ]
         for c_row in ass_contacts:
             assay.Performers.append(map_contact(c_row))
+
+    inv_contacts_for_warnings = [c for c in contacts if str(c.investigation_ref) == inv_id]
+    _log_edaphobase_contact_warnings(
+        inv_id,
+        native_roles_count=sum(1 for c in inv_contacts_for_warnings if c.roles_native_json_coerced),
+        missing_given_name_count=sum(1 for c in inv_contacts_for_warnings if c.given_name_missing_coerced),
+    )
 
 
 def _add_publications_to_arc(

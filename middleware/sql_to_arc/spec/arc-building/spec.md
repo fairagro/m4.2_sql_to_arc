@@ -37,6 +37,14 @@ warning per investigation (with row count).
 Plain-text `study_ref` (single study ID, not a JSON array) → coerce to a
 one-element array; log one aggregated warning per investigation (with assay count).
 
+Native JSON `roles` on `vContact` (parsed list from the DB driver, not a JSON
+string) → coerce to a JSON string; log one aggregated warning per investigation
+(with contact count).
+
+Missing `first_name` on `vContact` (ARCtrl requires a given name string) → use
+an empty given name at serialization; log one aggregated warning per
+investigation (with contact count).
+
 Duplicate `identifier` with conflicting metadata (any field other than
 `study_ref` / `investigation_ref`) → raise `DuplicateAssayRowError`; the
 investigation build fails.
