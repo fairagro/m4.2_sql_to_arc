@@ -119,8 +119,9 @@ async def _build_and_upload_single_arc(
         try:
             # Replaced direct ARC transfer with JSON transfer from worker
             # Note: build_single_arc_task now returns a JSON string
+            executor = ctx.pool_holder.get_executor()
             arc_json = await asyncio.wait_for(
-                loop.run_in_executor(ctx.pool_holder.get_executor(), build_single_arc_task, build_data),
+                loop.run_in_executor(executor, build_single_arc_task, build_data),
                 timeout=getattr(ctx, "arc_generation_timeout_minutes", 30) * 60,
             )
 
@@ -158,7 +159,7 @@ async def _build_and_upload_single_arc(
                 e,
                 exc_info=True,
             )
-            ctx.pool_holder.recreate(ctx.pool_holder.get_executor())
+            ctx.pool_holder.recreate(executor)
             stats.failed_datasets += 1
             stats.failed_ids.append(inv_id)
         except (ValueError, RuntimeError) as e:
