@@ -31,15 +31,15 @@ class ProcessPoolHolder:
             self._executor = self._new_pool()
         return self._executor
 
-    def recreate(self) -> None:
+    def recreate(self, broken_executor: concurrent.futures.Executor) -> None:
         """Replace a broken process pool so later investigation builds can continue."""
         if self._inject_executor is not None:
             return
-        if self._executor is not None:
-            self._executor.shutdown(wait=False, cancel_futures=True)
-            self._executor = None
-        self._executor = self._new_pool()
-        logger.warning("Recreated process pool after worker failure; subsequent builds can continue.")
+        if self._executor is broken_executor:
+            if self._executor is not None:
+                self._executor.shutdown(wait=False, cancel_futures=True)
+            self._executor = self._new_pool()
+            logger.warning("Recreated process pool after worker failure; subsequent builds can continue.")
 
     def shutdown(self) -> None:
         """Shut down the process pool at the end of a conversion run."""
