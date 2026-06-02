@@ -23,6 +23,7 @@ from middleware.sql_to_arc.context import (
 )
 from middleware.sql_to_arc.database import Database
 from middleware.sql_to_arc.models import InvestigationRow
+from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 from middleware.sql_to_arc.stats import ProcessingStats
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,7 @@ async def _build_and_upload_single_arc(
             # Replaced direct ARC transfer with JSON transfer from worker
             # Note: build_single_arc_task now returns a JSON string
             arc_json = await asyncio.wait_for(
-                loop.run_in_executor(ctx.executor, build_single_arc_task, build_data),
+                loop.run_in_executor(ctx.pool_holder.get_executor(), build_single_arc_task, build_data),
                 timeout=getattr(ctx, "arc_generation_timeout_minutes", 30) * 60,
             )
 
@@ -128,6 +129,18 @@ async def _build_and_upload_single_arc(
 
         except TimeoutError:
             logger.error("%s: ARC generation timed out for investigation %s", inv_info, inv_id)
+            stats.failed_datasets += 1
+            stats.failed_ids.append(inv_id)
+        except concurrent.futures.BrokenExecutor as e:
+            logger.error(
+                "%s: Worker process died while building investigation %s "
+                "(likely OOM or crash in arctrl; process pool was reset): %s",
+                inv_info,
+                inv_id,
+                e,
+                exc_info=True,
+            )
+            ctx.pool_holder.recreate()
             stats.failed_datasets += 1
             stats.failed_ids.append(inv_id)
         except (ValueError, RuntimeError) as e:
@@ -207,7 +220,7 @@ class WorkerResources:
     client: ApiClient
     config: Config
     stats: ProcessingStats
-    executor: concurrent.futures.Executor
+    pool_holder: ProcessPoolHolder
     semaphore: asyncio.Semaphore
 
 
@@ -238,7 +251,7 @@ def _spawn_investigation_task(
         anns_by_inv=batch_data.anns_by_inv,
         worker_id=idx % res.config.max_concurrent_arc_builds,
         total_workers=res.config.max_concurrent_arc_builds,
-        executor=res.executor,
+        pool_holder=res.pool_holder,
         arc_generation_timeout_minutes=res.config.arc_generation_timeout_minutes,
     )
 
@@ -274,15 +287,12 @@ async def process_investigations(
         config.db_batch_size,
     )
 
-    # 2. Parallelization: Setup a Process Pool to handle CPU-intensive ARC generation.
-    # We use "spawn" as the start method for better isolation and cross-platform compatibility.
-    with (
-        concurrent.futures.ProcessPoolExecutor(
-            max_workers=config.max_concurrent_arc_builds,
-            mp_context=multiprocessing.get_context("spawn"),
-        ) as executor,
-        trace.get_tracer(__name__).start_as_current_span("process_investigations"),
-    ):
+    # 2. Parallelization: Process pool for CPU-intensive ARC generation (recreatable on worker crash).
+    pool_holder = ProcessPoolHolder(
+        max_workers=config.max_concurrent_arc_builds,
+        mp_context=multiprocessing.get_context("spawn"),
+    )
+    with trace.get_tracer(__name__).start_as_current_span("process_investigations"):
         running_tasks: set[asyncio.Task[None]] = set()
         inv_idx = 0
         # Initialize the streaming generator for investigations
@@ -327,7 +337,7 @@ async def process_investigations(
                 client=client,
                 config=config,
                 stats=stats,
-                executor=executor,
+                pool_holder=pool_holder,
                 semaphore=semaphore,
             )
 
@@ -349,5 +359,7 @@ async def process_investigations(
         if running_tasks:
             logger.info("Waiting for %d remaining tasks to complete...", len(running_tasks))
             await asyncio.gather(*running_tasks)
+
+        pool_holder.shutdown()
 
     return stats

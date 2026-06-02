@@ -1,5 +1,7 @@
 log_level: INFO
 
+connection_string: "postgresql+psycopg://postgres:postgres@postgres:5432/rdi"
+
 rdi: edaphobase
 rdi_url: https://edaphobase.org
 max_concurrent_arc_builds: 12

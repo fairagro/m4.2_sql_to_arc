@@ -1,5 +1,6 @@
 """Data models for the SQL-to-ARC conversion process."""
 
+import json
 from datetime import datetime
 from typing import Any, ClassVar, Literal
 
@@ -8,6 +9,24 @@ from pydantic_core import PydanticUndefined
 
 # JSON types representing the expected structure after parsing
 type JsonList = list[Any]
+
+
+def _is_plain_study_ref_string(value: Any) -> bool:
+    """Return whether study_ref is a single ID string, not a JSON array per view spec."""
+    if value is None or not isinstance(value, str):
+        return False
+    stripped = value.strip()
+    return bool(stripped) and stripped[0] not in "[{"
+
+
+def _coerce_json_array_string(value: Any) -> Any:
+    """Wrap a plain identifier as a JSON array string for Json[JsonList] fields."""
+    if value is None or not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped or stripped[0] in "[{":
+        return value
+    return json.dumps([stripped])
 
 
 def spec_field(
@@ -115,6 +134,7 @@ class AssayRow(BaseRow):
     identifier: str = spec_field()
     investigation_ref: str = spec_field()
     study_ref: Json[JsonList] | None = spec_field(default=None)
+    study_ref_plain_coerced: bool = Field(default=False, exclude=True, repr=False)
     title: str | None = spec_field(default=None)
     description_text: str | None = spec_field(default=None)
     measurement_type_term: str | None = spec_field(default=None)
@@ -124,6 +144,17 @@ class AssayRow(BaseRow):
     technology_type_uri: str | None = spec_field(default=None)
     technology_type_version: str | None = spec_field(default=None)
     technology_platform: str | None = spec_field(default=None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_study_ref(cls, data: Any) -> Any:
+        """Accept JSON array strings or a single study identifier (Edaphobase export)."""
+        if isinstance(data, dict) and "study_ref" in data:
+            raw_study_ref = data.get("study_ref")
+            if _is_plain_study_ref_string(raw_study_ref):
+                data["study_ref_plain_coerced"] = True
+            data["study_ref"] = _coerce_json_array_string(raw_study_ref)
+        return data
 
 
 class PublicationRow(BaseRow):

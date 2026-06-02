@@ -18,7 +18,7 @@ PostgreSQL 15 database server with:
 One-time initialization container that:
 
 - Waits for PostgreSQL to be healthy
-- Drops and recreates `edaphobase` database
+- Drops and recreates the `rdi` database (PostgreSQL name; `rdi: edaphobase` in config is the RDI identifier for ARC metadata, not the DB name)
 - Downloads and imports the Edaphobase dump from <https://repo.edaphobase.org/rep/dumps/FAIRagro.sql>
 - Exits after completion
 

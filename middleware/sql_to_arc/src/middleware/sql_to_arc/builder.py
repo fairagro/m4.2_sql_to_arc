@@ -36,6 +36,29 @@ from middleware.sql_to_arc.models import (
 
 logger = logging.getLogger(__name__)
 
+# Fields ignored when comparing duplicate vAssay rows (same identifier).
+_ASSAY_ROW_COMPARE_EXCLUDE = {"identifier", "investigation_ref", "study_ref"}
+
+
+class DuplicateAssayRowError(ValueError):
+    """Duplicate assay identifier with conflicting metadata (not just study_ref)."""
+
+    def __init__(self, assay_id: str, fields: list[str]) -> None:
+        """Initialize with the duplicate assay id and conflicting field names."""
+        self.assay_id = assay_id
+        self.fields = fields
+        field_list = ", ".join(fields)
+        super().__init__(f'Duplicate assay identifier "{assay_id}" with conflicting fields: {field_list}')
+
+
+def _conflicting_assay_fields(first: AssayRow, second: AssayRow) -> list[str]:
+    """Return field names that differ between two rows excluding link-only columns."""
+    first_payload = first.model_dump(exclude=_ASSAY_ROW_COMPARE_EXCLUDE)
+    second_payload = second.model_dump(exclude=_ASSAY_ROW_COMPARE_EXCLUDE)
+    return sorted(
+        key for key in first_payload.keys() | second_payload.keys() if first_payload.get(key) != second_payload.get(key)
+    )
+
 
 def _add_studies_to_arc(arc: ARC, study_rows: list[StudyRow]) -> dict[str, ArcStudy]:
     """Add studies to ARC and return study map."""
@@ -47,21 +70,66 @@ def _add_studies_to_arc(arc: ARC, study_rows: list[StudyRow]) -> dict[str, ArcSt
     return study_map
 
 
-def _add_assays_to_arc(arc: ARC, assay_rows: list[AssayRow], study_map: dict[str, ArcStudy]) -> dict[str, ArcAssay]:
+def _log_edaphobase_study_ref_warnings(
+    investigation_id: str,
+    *,
+    plain_study_ref_count: int,
+    duplicate_row_merge_count: int,
+) -> None:
+    """Emit at most two warnings per investigation for non-spec Edaphobase study_ref shapes."""
+    if plain_study_ref_count:
+        logger.warning(
+            'Investigation "%s": %d assay(s) use plain-text study_ref (single study ID) instead of '
+            "a JSON array per SQL-to-ARC view spec; coerced automatically (common in Edaphobase exports).",
+            investigation_id,
+            plain_study_ref_count,
+        )
+    if duplicate_row_merge_count:
+        logger.warning(
+            'Investigation "%s": merged %d duplicate vAssay row(s) with the same assay identifier '
+            "(Edaphobase export format). Spec expects one row with study_ref as a JSON array.",
+            investigation_id,
+            duplicate_row_merge_count,
+        )
+
+
+def _add_assays_to_arc(
+    arc: ARC,
+    investigation_id: str,
+    assay_rows: list[AssayRow],
+    study_map: dict[str, ArcStudy],
+) -> dict[str, ArcAssay]:
     """Add assays to ARC, link to studies, and return assay map."""
     assay_map: dict[str, ArcAssay] = {}
+    assay_row_by_id: dict[str, AssayRow] = {}
+    duplicate_row_merge_count = 0
     if assay_rows and not study_map:
         logger.warning(
             "Investigation has %d assay(s) but no studies — assays will not be linked to any study.",
             len(assay_rows),
         )
     for a_row in assay_rows:
+        assay_id = str(a_row.identifier)
+        if assay_id in assay_map:
+            conflicting = _conflicting_assay_fields(assay_row_by_id[assay_id], a_row)
+            if conflicting:
+                raise DuplicateAssayRowError(assay_id, conflicting)
+            duplicate_row_merge_count += 1
+            _link_assay_to_studies(assay_map[assay_id], a_row.study_ref, study_map)
+            continue
+
         assay = map_assay(a_row)
         arc.AddAssay(assay)
-        assay_map[str(a_row.identifier)] = assay
-
-        # Link Assay to Studies
+        assay_map[assay_id] = assay
+        assay_row_by_id[assay_id] = a_row
         _link_assay_to_studies(assay, a_row.study_ref, study_map)
+
+    plain_study_ref_count = sum(1 for row in assay_rows if row.study_ref_plain_coerced)
+    _log_edaphobase_study_ref_warnings(
+        investigation_id,
+        plain_study_ref_count=plain_study_ref_count,
+        duplicate_row_merge_count=duplicate_row_merge_count,
+    )
 
     return assay_map
 
@@ -71,21 +139,22 @@ def _link_assay_to_studies(assay: ArcAssay, study_ref_val: Any, study_map: dict[
     if not study_ref_val:
         return
 
-    if isinstance(study_ref_val, str):
+    study_refs: list[Any]
+    if isinstance(study_ref_val, list):
+        study_refs = study_ref_val
+    elif isinstance(study_ref_val, str):
         try:
-            study_refs = json.loads(study_ref_val)
-            if isinstance(study_refs, list):
-                for s_ref in study_refs:
-                    if str(s_ref) in study_map:
-                        study_map[str(s_ref)].RegisterAssay(assay.Identifier)
-                return
+            parsed = json.loads(study_ref_val)
+            study_refs = parsed if isinstance(parsed, list) else [study_ref_val]
         except json.JSONDecodeError:
-            # Handle single ID if it's not JSON (fall through)
-            pass
+            study_refs = [study_ref_val]
+    else:
+        study_refs = [study_ref_val]
 
-    # Handle single ID (string or int)
-    if str(study_ref_val) in study_map:
-        study_map[str(study_ref_val)].RegisterAssay(assay.Identifier)
+    for s_ref in study_refs:
+        s_key = str(s_ref)
+        if s_key in study_map:
+            study_map[s_key].RegisterAssay(assay.Identifier)
 
 
 def _add_contacts_to_arc(
@@ -353,7 +422,7 @@ def build_single_arc_task(data: ArcBuildData) -> str:
 
         # Add studies and assays
         study_map = _add_studies_to_arc(arc, relevant_studies)
-        assay_map = _add_assays_to_arc(arc, relevant_assays, study_map)
+        assay_map = _add_assays_to_arc(arc, inv_id, relevant_assays, study_map)
 
         # Add contacts and publications
         _add_contacts_to_arc(arc, inv_id, data.contacts, study_map, assay_map)

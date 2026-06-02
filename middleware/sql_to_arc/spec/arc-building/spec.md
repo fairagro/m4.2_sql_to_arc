@@ -29,6 +29,18 @@ must be stateless and side-effect-free.
 `study_ref` is a JSON array string → parse and register the assay with
 every referenced study.
 
+Duplicate `vAssay` rows with the same `identifier` within one investigation
+(e.g. one row per study link in Edaphobase) → add the assay once; merge
+study links from subsequent rows when all other fields match; log one aggregated
+warning per investigation (with row count).
+
+Plain-text `study_ref` (single study ID, not a JSON array) → coerce to a
+one-element array; log one aggregated warning per investigation (with assay count).
+
+Duplicate `identifier` with conflicting metadata (any field other than
+`study_ref` / `investigation_ref`) → raise `DuplicateAssayRowError`; the
+investigation build fails.
+
 Investigation has assays but no studies → log warning.
 
 Unknown column type → skip that column, log warning.

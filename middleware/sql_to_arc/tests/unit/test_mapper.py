@@ -141,6 +141,18 @@ def test_map_assay_with_platform() -> None:
     assert assay.TechnologyPlatform.Name == "Orbitrap"
 
 
+def test_assay_row_accepts_plain_study_identifier() -> None:
+    """Edaphobase stores study_ref as a single identifier, not a JSON array string."""
+    study_id = "dc5f4b5fe59878af4daef6f170adac54"
+    row = AssayRow(
+        identifier="asy1",
+        investigation_ref="inv1",
+        study_ref=study_id,  # type: ignore[arg-type]
+    )
+    assert row.study_ref == [study_id]
+    assert row.study_ref_plain_coerced is True
+
+
 def test_map_publication() -> None:
     """Test mapping of publication data."""
     row = PublicationRow(
