@@ -10,7 +10,7 @@ def test_process_pool_holder_recreate_replaces_executor() -> None:
     holder = ProcessPoolHolder(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
     try:
         first = holder.get_executor()
-        holder.recreate()
+        holder.recreate(first)
         second = holder.get_executor()
         assert first is not second
     finally:
