@@ -381,6 +381,4 @@ async def process_investigations(
             logger.info("Waiting for %d remaining tasks to complete...", len(running_tasks))
             await asyncio.gather(*running_tasks)
 
-        pool_holder.shutdown()
-
     return stats

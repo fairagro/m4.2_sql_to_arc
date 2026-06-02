@@ -50,9 +50,16 @@ class ProcessPoolHolder:
             self._executor = None
 
     def __enter__(self) -> "ProcessPoolHolder":
+        """Return the holder for use as a context manager."""
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
+        """Shut down the process pool when leaving the context."""
         self.shutdown()
 
     def _new_pool(self) -> concurrent.futures.ProcessPoolExecutor:
