@@ -307,11 +307,13 @@ async def process_investigations(
     )
 
     # 2. Parallelization: Process pool for CPU-intensive ARC generation (recreatable on worker crash).
-    pool_holder = ProcessPoolHolder(
-        max_workers=config.max_concurrent_arc_builds,
-        mp_context=multiprocessing.get_context("spawn"),
-    )
-    with trace.get_tracer(__name__).start_as_current_span("process_investigations"):
+    with (
+        ProcessPoolHolder(
+            max_workers=config.max_concurrent_arc_builds,
+            mp_context=multiprocessing.get_context("spawn"),
+        ) as pool_holder,
+        trace.get_tracer(__name__).start_as_current_span("process_investigations"),
+    ):
         running_tasks: set[asyncio.Task[None]] = set()
         inv_idx = 0
         # Initialize the streaming generator for investigations
