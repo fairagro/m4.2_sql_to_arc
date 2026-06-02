@@ -2,7 +2,11 @@ connection_string: "postgresql+psycopg://postgres:postgres@postgres:5432/rdi"
 rdi: "demo"
 rdi_url: "https://example.org"
 
+# Demo API deserializes and writes each ARC with arctrl; large payloads need a long HTTP timeout.
+max_concurrent_arc_builds: 4
+
 api_client:
   api_url: "http://middleware-api:8000/"
   verify_ssl: false
+  timeout: 600
 

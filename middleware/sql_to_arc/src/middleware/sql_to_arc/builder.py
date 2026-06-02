@@ -50,6 +50,10 @@ class DuplicateAssayRowError(ValueError):
         field_list = ", ".join(fields)
         super().__init__(f'Duplicate assay identifier "{assay_id}" with conflicting fields: {field_list}')
 
+    def __reduce__(self) -> tuple[type["DuplicateAssayRowError"], tuple[str, list[str]]]:
+        """Preserve assay_id and fields when the exception crosses a process pool boundary."""
+        return (self.__class__, (self.assay_id, self.fields))
+
 
 def _conflicting_assay_fields(first: AssayRow, second: AssayRow) -> list[str]:
     """Return field names that differ between two rows excluding link-only columns."""

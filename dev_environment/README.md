@@ -55,6 +55,12 @@ This starts:
 3. **middleware-api**: A local mock API.
 4. **sql-to-arc**: The converter, pointing to the local mock.
 
+`config.demo.yaml` sets `api_client.timeout: 600` because the mock API parses
+each ARC with arctrl and writes files to disk; the default 30 s client timeout
+is too short for large investigations. If uploads still fail with
+`httpx.ReadTimeout`, increase `api_client.timeout` further or lower
+`max_concurrent_arc_builds` so the mock API is not overloaded.
+
 ## Quick Start (Standard/External Mode)
 
 ### Prerequisites

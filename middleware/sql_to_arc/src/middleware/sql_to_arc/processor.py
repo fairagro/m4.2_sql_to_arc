@@ -14,7 +14,7 @@ from opentelemetry import trace
 from pydantic import BaseModel
 
 from middleware.api_client import ApiClient, ApiClientError
-from middleware.sql_to_arc.builder import build_single_arc_task
+from middleware.sql_to_arc.builder import DuplicateAssayRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import (
     ArcBuildData,
@@ -56,7 +56,15 @@ async def _upload_and_update_stats(
         logger.info("%s: Upload request finished. API reported success for ARC %s.", inv_info, investigation_id)
 
     except (ConnectionError, TimeoutError, ApiClientError) as e:
-        logger.error("%s: Failed to upload ARC %s: %s", inv_info, investigation_id, e, exc_info=True)
+        size_kb = len(arc_json.encode("utf-8")) / 1024
+        logger.error(
+            "%s: Failed to upload ARC %s (%.2f KB). Check api_client.timeout if this is httpx.ReadTimeout: %s",
+            inv_info,
+            investigation_id,
+            size_kb,
+            e,
+            exc_info=True,
+        )
         stats.failed_datasets += 1
         stats.failed_ids.append(investigation_id)
 
@@ -129,6 +137,16 @@ async def _build_and_upload_single_arc(
 
         except TimeoutError:
             logger.error("%s: ARC generation timed out for investigation %s", inv_info, inv_id)
+            stats.failed_datasets += 1
+            stats.failed_ids.append(inv_id)
+        except DuplicateAssayRowError as e:
+            logger.error(
+                "%s: Conflicting duplicate vAssay rows for assay %s (fields: %s) in investigation %s",
+                inv_info,
+                e.assay_id,
+                ", ".join(e.fields),
+                inv_id,
+            )
             stats.failed_datasets += 1
             stats.failed_ids.append(inv_id)
         except concurrent.futures.BrokenExecutor as e:

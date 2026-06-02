@@ -2,6 +2,7 @@
 
 import json
 import logging
+import pickle
 from typing import Any
 
 import pytest
@@ -255,6 +256,16 @@ def test_build_arc_warns_on_native_json_roles(
     assert "native JSON roles" in warning_records[0].message
     assert "1 contact" in warning_records[0].message
     assert "inv1" in warning_records[0].message
+
+
+def test_duplicate_assay_row_error_pickle_roundtrip() -> None:
+    """Exception must unpickle across process pool workers with assay_id and fields intact."""
+    err = DuplicateAssayRowError("assay-1", ["title", "description_text"])
+    restored = pickle.loads(pickle.dumps(err))
+    assert isinstance(restored, DuplicateAssayRowError)
+    assert restored.assay_id == "assay-1"
+    assert restored.fields == ["title", "description_text"]
+    assert "assay-1" in str(restored)
 
 
 def test_build_arc_raises_on_conflicting_duplicate_assay_rows(
