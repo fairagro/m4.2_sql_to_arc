@@ -46,9 +46,6 @@ if ! docker info &>/dev/null; then
     exit 1
 fi
 
-echo "==> Configuring DevPod IDE: cursor"
-devpod ide use cursor
-
 echo "==> Starting DevPod workspace (devcontainer: ${devcontainer_path})"
 devpod up "${repo_root}" \
     --devcontainer-path "${devcontainer_path}" \
