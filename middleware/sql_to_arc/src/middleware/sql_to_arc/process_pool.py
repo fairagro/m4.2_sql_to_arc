@@ -49,6 +49,12 @@ class ProcessPoolHolder:
             self._executor.shutdown(wait=True, cancel_futures=True)
             self._executor = None
 
+    def __enter__(self) -> "ProcessPoolHolder":
+        return self
+
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
+        self.shutdown()
+
     def _new_pool(self) -> concurrent.futures.ProcessPoolExecutor:
         return concurrent.futures.ProcessPoolExecutor(
             max_workers=self._max_workers,
