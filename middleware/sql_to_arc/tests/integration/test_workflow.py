@@ -24,6 +24,7 @@ from middleware.sql_to_arc.models import (
     PublicationRow,
     StudyRow,
 )
+from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 from middleware.sql_to_arc.processor import process_investigation
 from middleware.sql_to_arc.stats import ProcessingStats
 
@@ -264,7 +265,9 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
         "2": [StudyRow.model_validate(study) for study in list[dict[str, Any]]()],
     }
     assays_by_study: dict[str, list[dict[str, Any]]] = {}
+
     with ThreadPoolExecutor(max_workers=5) as executor:
+        pool_holder = ProcessPoolHolder(5, inject_executor=executor)
         ctx = WorkerContext(
             client=mock_api_client,
             rdi="edaphobase",
@@ -280,7 +283,7 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
             anns_by_inv={},
             worker_id=1,
             total_workers=1,
-            executor=executor,
+            pool_holder=pool_holder,
         )
         semaphore = asyncio.Semaphore(1)
         stats = ProcessingStats()

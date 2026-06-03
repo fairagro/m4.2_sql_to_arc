@@ -9,15 +9,17 @@ import concurrent.futures
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
 from middleware.api_client import ApiClient
+from middleware.sql_to_arc.builder import build_single_arc_task
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
 from middleware.sql_to_arc.main import parse_args
 from middleware.sql_to_arc.models import InvestigationRow
+from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 from middleware.sql_to_arc.processor import (
     process_investigation,
     process_investigations,
@@ -61,7 +63,8 @@ async def test_process_investigation_builds_and_uploads(monkeypatch: pytest.Monk
     loop_mock.run_in_executor.return_value = loop_future
     monkeypatch.setattr("asyncio.get_event_loop", MagicMock(return_value=loop_mock))
 
-    executor = MagicMock(spec=concurrent.futures.ProcessPoolExecutor)
+    injected_executor = MagicMock(spec=concurrent.futures.ProcessPoolExecutor)
+    pool_holder = ProcessPoolHolder(1, inject_executor=injected_executor)
 
     ctx = WorkerContext(
         client=mock_client,
@@ -73,13 +76,13 @@ async def test_process_investigation_builds_and_uploads(monkeypatch: pytest.Monk
         anns_by_inv={},
         worker_id=1,
         total_workers=1,
-        executor=executor,
+        pool_holder=pool_holder,
         arc_generation_timeout_minutes=1,
     )
 
     await process_investigation(ctx, investigation, stats, "Inv 1", semaphore)
 
-    loop_mock.run_in_executor.assert_called_once()
+    loop_mock.run_in_executor.assert_called_once_with(injected_executor, build_single_arc_task, ANY)
     mock_client.create_or_update_arc.assert_called_once()
 
 

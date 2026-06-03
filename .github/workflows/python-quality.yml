@@ -52,8 +52,8 @@ jobs:
       run: |
         # Run bandit, but don't fail the job immediately.
         # We will check the output in the next step.
-        # We exclude tests and skip B101 (assert_used) to align with pre-commit.
-        uv run bandit -r middleware/ --exclude middleware/tests/ --skip B101 -f json -o bandit-report.json || true
+        # Use .bandit (exclude_dirs: tests, skips: B101) to align with pre-commit.
+        uv run bandit -r middleware/ --configfile .bandit -f json -o bandit-report.json || true
       continue-on-error: false
 
     - name: Review bandit results

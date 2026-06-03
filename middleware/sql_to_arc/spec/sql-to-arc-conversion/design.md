@@ -72,3 +72,9 @@ Main process (async event loop)
    — `processor.py` and `main.py` instrument each investigation span and
    the overall run span. This allows identifying bottlenecks in the process
    pool (CPU-bound) versus the API upload (I/O-bound) in production.
+
+8. **Process pool recreation after worker crash**
+   — If a worker dies (OOM, native crash), `ProcessPoolExecutor` becomes
+   broken and all pending builds would fail. `ProcessPoolHolder.recreate()`
+   replaces the pool so later investigations can still be processed; the
+   investigation that triggered the crash is marked failed.

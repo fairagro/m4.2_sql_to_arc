@@ -109,6 +109,13 @@ def map_publication(row: PublicationRow) -> Publication:
     )
 
 
+def _contact_given_name(first_name: str | None) -> str:
+    """Return a given name suitable for ARCtrl (None is rejected at serialization)."""
+    if first_name and first_name.strip():
+        return first_name.strip()
+    return ""
+
+
 def map_contact(row: ContactRow) -> Person:
     """Map a database row to a Person object."""
     # Person(lastName, firstName, midInitials, email, phone, fax, address, affiliation, roles)
@@ -122,7 +129,7 @@ def map_contact(row: ContactRow) -> Person:
 
     return Person(
         last_name=row.last_name,
-        first_name=row.first_name,
+        first_name=_contact_given_name(row.first_name),
         mid_initials=row.mid_initials,
         email=row.email,
         phone=row.phone,
