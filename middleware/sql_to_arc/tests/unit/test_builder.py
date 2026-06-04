@@ -1,12 +1,20 @@
 """Unit tests for the ARC builder module."""
 
 import json
+import logging
+import pickle
 from typing import Any
 
 import pytest
 from arctrl import CompositeHeader, IOType
 
-from middleware.sql_to_arc.builder import _IO_TYPE_MAP, _build_header, _build_single_cell, build_single_arc_task
+from middleware.sql_to_arc.builder import (
+    _IO_TYPE_MAP,
+    DuplicateAssayRowError,
+    _build_header,
+    _build_single_cell,
+    build_single_arc_task,
+)
 from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.models import (
     AnnotationTableRow,
@@ -122,6 +130,174 @@ def test_build_simple_arc(sample_investigation: dict[str, Any]) -> None:
     # Find the investigation (Dataset with identifier or specific type)
     inv = next((item for item in graph if item.get("@id") == "inv1" or item.get("identifier") == "inv1"), None)
     assert inv is not None
+
+
+def test_build_arc_deduplicates_assay_rows_per_study_link(
+    sample_investigation: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Duplicate vAssay rows (same identifier, different study_ref) must not call AddAssay twice."""
+    studies = [
+        StudyRow.model_validate({
+            "identifier": "sty1",
+            "investigation_ref": "inv1",
+            "title": "Study 1",
+        }),
+        StudyRow.model_validate({
+            "identifier": "sty2",
+            "investigation_ref": "inv1",
+            "title": "Study 2",
+        }),
+    ]
+    shared_assay_id = "4740ff3d0c615791c7e794c18d64d9a3"
+    assays = [
+        AssayRow.model_validate({
+            "identifier": shared_assay_id,
+            "investigation_ref": "inv1",
+            "study_ref": '["sty1"]',
+        }),
+        AssayRow.model_validate({
+            "identifier": shared_assay_id,
+            "investigation_ref": "inv1",
+            "study_ref": '["sty2"]',
+        }),
+    ]
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=studies,
+        assays=assays,
+        contacts=[],
+        publications=[],
+        annotations=[],
+    )
+    with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
+        arc_json = build_single_arc_task(arc_data)
+    res = json.loads(arc_json)
+    graph = res.get("@graph", [])
+    assay_nodes = [
+        item for item in graph if item.get("@id") == shared_assay_id or item.get("identifier") == shared_assay_id
+    ]
+    assert len(assay_nodes) == 1
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 1
+    assert "merged 1 duplicate vAssay row" in warning_records[0].message
+    assert "inv1" in warning_records[0].message
+
+
+def test_build_arc_warns_on_missing_first_name(
+    sample_investigation: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Contacts without first_name must serialize with an aggregated warning."""
+    contacts = [
+        ContactRow.model_validate({
+            "investigation_ref": "inv1",
+            "target_type": "investigation",
+            "last_name": "Müller",
+        }),
+        ContactRow.model_validate({
+            "investigation_ref": "inv1",
+            "target_type": "investigation",
+            "first_name": "Anna",
+            "last_name": "Schmidt",
+        }),
+    ]
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[],
+        assays=[],
+        contacts=contacts,
+        publications=[],
+        annotations=[],
+    )
+    with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
+        build_single_arc_task(arc_data)
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 1
+    assert "no first_name" in warning_records[0].message
+    assert "1 contact" in warning_records[0].message
+    assert "inv1" in warning_records[0].message
+
+
+def test_build_arc_warns_on_native_json_roles(
+    sample_investigation: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Native JSON roles from Edaphobase must be coerced with one aggregated warning."""
+    roles_list = [{"term": "Author", "uri": "http://example.org/obo/NCIT_C42781", "version": ""}]
+    contacts = [
+        ContactRow.model_validate({
+            "investigation_ref": "inv1",
+            "target_type": "investigation",
+            "first_name": "Anna",
+            "last_name": "Müller",
+            "roles": roles_list,
+        }),
+        ContactRow.model_validate({
+            "investigation_ref": "inv1",
+            "target_type": "investigation",
+            "first_name": "Bob",
+            "last_name": "Schmidt",
+            "roles": json.dumps([{"term": "Curator", "uri": "http://example.org", "version": ""}]),
+        }),
+    ]
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[],
+        assays=[],
+        contacts=contacts,
+        publications=[],
+        annotations=[],
+    )
+    with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
+        build_single_arc_task(arc_data)
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 1
+    assert "native JSON roles" in warning_records[0].message
+    assert "1 contact" in warning_records[0].message
+    assert "inv1" in warning_records[0].message
+
+
+def test_duplicate_assay_row_error_pickle_roundtrip() -> None:
+    """Exception must unpickle across process pool workers with assay_id and fields intact."""
+    err = DuplicateAssayRowError("assay-1", ["title", "description_text"])
+    restored = pickle.loads(pickle.dumps(err))
+    assert isinstance(restored, DuplicateAssayRowError)
+    assert restored.assay_id == "assay-1"
+    assert restored.fields == ["title", "description_text"]
+    assert "assay-1" in str(restored)
+
+
+def test_build_arc_raises_on_conflicting_duplicate_assay_rows(
+    sample_investigation: dict[str, Any],
+) -> None:
+    """Duplicate identifier with differing metadata must fail the investigation build."""
+    shared_assay_id = "assay-conflict"
+    assays = [
+        AssayRow.model_validate({
+            "identifier": shared_assay_id,
+            "investigation_ref": "inv1",
+            "study_ref": "sty1",
+            "title": "First title",
+        }),
+        AssayRow.model_validate({
+            "identifier": shared_assay_id,
+            "investigation_ref": "inv1",
+            "study_ref": "sty2",
+            "title": "Second title",
+        }),
+    ]
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[],
+        assays=assays,
+        contacts=[],
+        publications=[],
+        annotations=[],
+    )
+    with pytest.raises(DuplicateAssayRowError, match=shared_assay_id) as exc_info:
+        build_single_arc_task(arc_data)
+    assert "title" in exc_info.value.fields
 
 
 def test_build_arc_with_study_and_assay(

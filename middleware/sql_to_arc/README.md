@@ -164,9 +164,12 @@ docker run --rm \
 3. **Watch RAM** — memory scales linearly with `max_concurrent_tasks` ×
    average investigation size. Reduce `db_batch_size` for very large
    investigations if the main process grows too large.
-4. **Timeout errors** — increase `arc_generation_timeout_minutes` only if
-   logs show timeouts on legitimately large datasets (e.g. thousands of
-   assays).
+4. **Build timeouts** — increase `arc_generation_timeout_minutes` only if
+   logs show timeouts during ARC generation in the worker pool (not upload).
+5. **Upload `httpx.ReadTimeout`** — the ARC was built but the Middleware API
+   did not respond in time. Raise `api_client.timeout` (seconds; demo/dev often
+   need `600` for large ARCs). Note: the API client does not retry read/write
+   timeouts, only transient 5xx errors.
 
 ---
 

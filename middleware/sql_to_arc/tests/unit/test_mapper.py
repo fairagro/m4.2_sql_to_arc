@@ -141,6 +141,18 @@ def test_map_assay_with_platform() -> None:
     assert assay.TechnologyPlatform.Name == "Orbitrap"
 
 
+def test_assay_row_accepts_plain_study_identifier() -> None:
+    """Edaphobase stores study_ref as a single identifier, not a JSON array string."""
+    study_id = "dc5f4b5fe59878af4daef6f170adac54"
+    row = AssayRow(
+        identifier="asy1",
+        investigation_ref="inv1",
+        study_ref=study_id,  # type: ignore[arg-type]
+    )
+    assert row.study_ref == [study_id]
+    assert row.study_ref_plain_coerced is True
+
+
 def test_map_publication() -> None:
     """Test mapping of publication data."""
     row = PublicationRow(
@@ -162,6 +174,37 @@ def test_map_publication() -> None:
     assert pub.Title == "A Great Paper"
     assert pub.Status is not None
     assert pub.Status.Name == "Published"
+
+
+def test_contact_row_accepts_parsed_roles_list() -> None:
+    """Edaphobase may return roles as native JSON instead of a JSON string."""
+    roles_list = [
+        {
+            "term": "Autor, Author",
+            "uri": "http://purl.obolibrary.org/obo/NCIT_C42781",
+            "version": "",
+        }
+    ]
+    row = ContactRow(
+        investigation_ref="inv1",
+        target_type="investigation",
+        last_name="Müller",
+        roles=roles_list,
+    )
+    assert row.roles == roles_list
+    assert row.roles_native_json_coerced is True
+
+
+def test_map_contact_without_first_name_uses_empty_given_name() -> None:
+    """Edaphobase contacts may omit first_name; ARCtrl rejects None but accepts empty string."""
+    row = ContactRow(
+        investigation_ref="inv1",
+        target_type="investigation",
+        last_name="Müller",
+    )
+    person = map_contact(row)
+    assert person.FirstName == ""
+    assert row.given_name_missing_coerced is True
 
 
 def test_map_contact() -> None:

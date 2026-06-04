@@ -20,7 +20,7 @@ dev = [
   "mypy>=1.19.0",
   "bandit>=1.7.0",
   "ruff>=0.15.10",
-  "pre-commit>=4.0.0",
+  "pre-commit>=4.6.0",
   "respx>=0.20.0",
   "fastapi>=0.135.3",
   "uvicorn>=0.42.0",
@@ -28,8 +28,6 @@ dev = [
 
 [tool.uv.sources]
 sql_to_arc = { workspace = true }
-api_client = { git = "https://github.com/fairagro/m4.2_advanced_middleware_api.git", branch = "main", subdirectory = "middleware/api_client" }
-shared = { git = "https://github.com/fairagro/m4.2_advanced_middleware_api.git", branch = "main", subdirectory = "middleware/shared" }
 
 [tool.uv.workspace]
 members = [

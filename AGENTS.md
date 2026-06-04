@@ -51,8 +51,9 @@ middleware/
         └── integration/   # Integration tests with database
 
 scripts/
-├── load-env.sh           # Environment setup (MAIN ENTRY POINT for hooks)
-├── setup-git-lfs.sh      # Git LFS installation
+├── load-env.sh                    # Environment setup inside dev container (sourced from bashrc)
+├── start-devcontainer-cursor.sh   # Cursor: open project via DevPod (host only)
+├── setup-git-lfs.sh               # Git LFS installation
 ├── quality-check.sh      # Run all quality checks (ruff, mypy, pylint, bandit)
 ├── quality-fix.sh        # Run auto-formatters (ruff)
 └── git-hooks/            # Version-controlled hooks
@@ -87,6 +88,16 @@ uv run bandit -r middleware/sql_to_arc/src/
 # Install all dependencies (including external shared/api_client via git)
 uv sync --dev --all-packages
 ```
+
+### Dev Container (Cursor + DevPod)
+
+Cursor has no built-in Dev Containers. On the host, run:
+
+```bash
+./scripts/start-devcontainer-cursor.sh
+```
+
+This is the Cursor equivalent of VS Code **“Reopen in Container”**. Inside the container, `scripts/load-env.sh` runs automatically (see `postCreateCommand` in `.devcontainer/cursor/devcontainer.json`).
 
 ### Development Environment
 

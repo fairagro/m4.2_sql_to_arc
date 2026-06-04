@@ -1,6 +1,5 @@
 """Internal context models for the SQL-to-ARC processing workflow."""
 
-import concurrent.futures
 from dataclasses import dataclass
 
 from middleware.api_client import ApiClient
@@ -12,6 +11,7 @@ from middleware.sql_to_arc.models import (
     PublicationRow,
     StudyRow,
 )
+from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +39,7 @@ class WorkerContext:
     anns_by_inv: dict[str, list[AnnotationTableRow]]
     worker_id: int
     total_workers: int
-    executor: concurrent.futures.Executor
+    pool_holder: ProcessPoolHolder
     arc_generation_timeout_minutes: int = 30
 
 
