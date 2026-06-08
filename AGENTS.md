@@ -51,12 +51,16 @@ middleware/
         └── integration/   # Integration tests with database
 
 scripts/
-├── load-env.sh                    # Environment setup inside dev container (sourced from bashrc)
+├── load-env.sh                    # Per-shell env (PATH, aliases, SOPS); sourced from bashrc
 ├── start-devcontainer-cursor.sh   # Cursor: open project via DevPod (host only)
-├── setup-git-lfs.sh               # Git LFS installation
-├── quality-check.sh      # Run all quality checks (ruff, mypy, pylint, bandit)
-├── quality-fix.sh        # Run auto-formatters (ruff)
-└── git-hooks/            # Version-controlled hooks
+├── uv-sync-dev.sh                 # One-time uv sync (devcontainer postCreate)
+├── install-dev-hooks.sh           # One-time pre-commit + Git LFS hooks
+├── setup-container-gpg.sh         # One-time GPG agent/trustdb (Cursor devcontainer)
+├── import-public-gpg-keys.sh      # Import public_gpg_keys/*.asc (Antigravity / local)
+├── setup-git-lfs.sh               # Git LFS hook installation
+├── quality-check.sh               # Run all quality checks (pre-commit push stage)
+├── quality-fix.sh                 # Run auto-formatters (ruff)
+└── git-hooks/                     # Version-controlled hooks
     ├── pre-push          # Combined: Git LFS + pre-commit
     ├── post-checkout
     ├── post-commit
@@ -89,15 +93,15 @@ uv run bandit -r middleware/sql_to_arc/src/
 uv sync --dev --all-packages
 ```
 
-### Dev Container (Cursor + DevPod)
+### Dev Container
 
-Cursor has no built-in Dev Containers. On the host, run:
+| IDE | How to open |
+| --- | --- |
+| **VS Code** | **Reopen in Container** → `.devcontainer/vscode/devcontainer.json` |
+| **Cursor** | `./scripts/start-devcontainer-cursor.sh` (DevPod; see `.devcontainer/cursor/README.md`) |
+| **Antigravity** | `.devcontainer/antigravity/devcontainer.json` (feature-based image) |
 
-```bash
-./scripts/start-devcontainer-cursor.sh
-```
-
-This is the Cursor equivalent of VS Code **“Reopen in Container”**. Inside the container, `scripts/load-env.sh` runs automatically (see `postCreateCommand` in `.devcontainer/cursor/devcontainer.json`).
+VS Code and Cursor share `.devcontainer/Dockerfile` (pinned tools) + DinD feature. One-time setup runs in `postCreateCommand` (`uv-sync-dev.sh`, `install-dev-hooks.sh`, `setup-container-gpg.sh` for Cursor). Per-shell: `scripts/load-env.sh` (sourced from `~/.bashrc`).
 
 ### Development Environment
 
