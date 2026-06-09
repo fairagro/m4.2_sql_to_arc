@@ -1,0 +1,124 @@
+@startuml SqlToArc_DatabaseViews
+' SQL-to-ARC view contract — presentation diagram (overview level).
+' Source of truth: docs/sql_to_arc_database_views.md
+' Render: PlantUML extension or docker run plantuml/plantuml
+
+title SQL-to-ARC: Database View Contract\n<size:12><i>One investigation row → one ARC · six views · no extra index columns</i></size>
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 8
+skinparam class {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  ArrowColor #64748B
+  FontSize 11
+  AttributeFontSize 10
+}
+skinparam note {
+  BackgroundColor #FFFBEB
+  BorderColor #D97706
+  FontSize 10
+}
+skinparam legend {
+  BackgroundColor #FFFFFF
+  FontSize 10
+}
+
+skinparam class<<hub>> {
+  BackgroundColor #DBEAFE
+  BorderColor #1D4ED8
+  FontSize 12
+}
+skinparam class<<isa>> {
+  BackgroundColor #E0F2FE
+  BorderColor #0284C7
+}
+skinparam class<<attached>> {
+  BackgroundColor #F1F5F9
+  BorderColor #64748B
+}
+skinparam class<<cells>> {
+  BackgroundColor #ECFDF5
+  BorderColor #059669
+}
+
+hide stereotype
+
+class "vInvestigation" as inv <<hub>> {
+  **identifier**
+  **title**
+  **description_text**
+  --
+  <i>submission_date</i>
+  <i>public_release_date</i>
+}
+
+class "vStudy" as study <<isa>> {
+  **identifier**
+  **title**
+  **investigation_ref**
+  --
+  <i>description_text</i>
+  <i>dates</i>
+}
+
+class "vAssay" as assay <<isa>> {
+  **identifier**
+  **investigation_ref**
+  **study_ref** «JSON»
+  --
+  <i>title, description</i>
+  <i>measurement_type «OA»</i>
+  <i>technology_type «OA»</i>
+  <i>technology_platform</i>
+}
+
+class "vPublication" as pub <<attached>> {
+  **investigation_ref**
+  **target_type**
+  **target_ref**
+  --
+  <i>pubmed_id, doi, authors, title</i>
+  <i>status «OA»</i>
+}
+
+class "vContact" as contact <<attached>> {
+  **investigation_ref**
+  **target_type**
+  **target_ref**
+  --
+  <i>name, email, affiliation, …</i>
+  <i>roles «JSON»</i>
+}
+
+class "vAnnotationTable" as ann <<cells>> {
+  **investigation_ref**
+  **target_type**
+  **target_ref**
+  **table_name**
+  **column_type**
+  **row_index**
+  --
+  <i>column metadata «OA»</i>
+  <i>cell value / «OA»</i>
+}
+
+' ── ISA core (structural) ──────────────────────────────────────
+inv "1" -down-> "0..*" study
+inv "1" -down-> "0..*" assay
+study "0..*" -right-> "0..*" assay
+
+' ── Attached metadata (polymorphic via target_*) ─────────────
+pub -up-> inv
+pub .> study
+
+contact -up-> inv
+contact .> study
+contact .> assay
+
+ann -up-> inv
+ann .> study
+ann .> assay
+
+@enduml
