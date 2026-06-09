@@ -33,12 +33,10 @@ package "RDI Provider" as rdi {
     database "PostgreSQL\nSQL views contract" as rdb
 
     rectangle "sql_to_arc\n(batch converter)" as sql2arcBox <<dashedRect>> {
-        node "Config" as config <<internal>>
         node "Orchestrator" as orchestrator <<internal>>
-        node "Report" as report <<internal>>
         node "Database\n(stream + validate)" as database <<internal>>
 
-        rectangle "Parallel worker processes\n(ProcessPoolExecutor)" as workerPool <<poolRect>> {
+        rectangle "Parallel worker processes" as workerPool <<poolRect>> {
             node "Builder + Mapper\n(arctrl)" as worker <<internal-dashed>>
         }
 
@@ -48,13 +46,11 @@ package "RDI Provider" as rdi {
 
 node "FAIRagro\nMiddleware API" as api <<external>>
 
-config --> orchestrator : start run
 orchestrator -left-> database : batch fetch
 database -left-> rdb : async stream
 orchestrator --> workerPool : instantiate
 worker --> orchestrator : RO-Crate\nJSON-LD
 orchestrator -right-> apiclient : RO-Crate\nJSON-LD
-orchestrator -down-> report
 apiclient -right-> api : POST /v3/arcs\n(mTLS)
 
 @enduml
