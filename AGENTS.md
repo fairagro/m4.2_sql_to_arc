@@ -101,7 +101,7 @@ uv sync --dev --all-packages
 | **Cursor** | `./scripts/start-devcontainer-cursor.sh` (DevPod; see `.devcontainer/cursor/README.md`) |
 | **Antigravity** | `.devcontainer/antigravity/devcontainer.json` (feature-based image) |
 
-VS Code and Cursor share `.devcontainer/Dockerfile` (pinned tools, **linux/amd64 only**) + DinD feature. `devcontainer.json` sets `--platform=linux/amd64`. One-time setup runs in `postCreateCommand` (`uv-sync-dev.sh`, `install-dev-hooks.sh`, `setup-container-gpg.sh` for Cursor). Per-shell: `scripts/load-env.sh` (sourced from `~/.bashrc`).
+VS Code and Cursor share `.devcontainer/Dockerfile` (pinned tools, **linux/amd64 only**) + DinD feature. `devcontainer.json` sets `--platform=linux/amd64`. One-time setup runs in `postCreateCommand` (`uv-sync-dev.sh`, `install-dev-hooks.sh`; Cursor also runs `setup-container-gpg.sh`, VS Code runs `import-public-gpg-keys.sh` only). Per-shell: `scripts/load-env.sh` (sourced from `~/.bashrc`).
 
 ### Development Environment
 
