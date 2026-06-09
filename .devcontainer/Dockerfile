@@ -54,7 +54,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # ── kubectl (Kubernetes APT repo) ────────────────────────────────────────────
-RUN KUBECTL_MINOR=$(echo "${KUBECTL_VERSION}" | grep -oP 'v\d+\.\d+') && \
+RUN KUBECTL_MINOR=$(echo "${KUBECTL_VERSION}" | cut -d. -f1,2) && \
     curl -fsSL "https://pkgs.k8s.io/core:/stable:/${KUBECTL_MINOR}/deb/Release.key" \
         | gpg --batch --yes --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${KUBECTL_MINOR}/deb/ /" \
