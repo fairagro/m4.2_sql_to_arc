@@ -2,8 +2,8 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 #
-# All hooks use 'uv run' to execute tools defined in pyproject.toml
-# This ensures consistency with the quality-check.sh script and uv.lock
+# All hooks use 'uv run --no-sync' to execute tools defined in pyproject.toml.
+# --no-sync avoids lockfile checks / network sync during commits (offline-safe).
 
 repos:
   # Built-in hooks (no dependencies needed)
@@ -21,25 +21,27 @@ repos:
       - id: check-toml
       - id: debug-statements
 
-  - repo: https://github.com/gitguardian/ggshield
-    rev: v1.44.1
-    hooks:
-      - id: ggshield
-
   # All Python quality checks using uv run (local hooks)
   - repo: local
     hooks:
+      # ggshield - secret scan (version from pyproject.toml / uv.lock)
+      - id: ggshield
+        name: ggshield secret scan
+        entry: uv run --no-sync ggshield secret scan pre-commit
+        language: system
+        pass_filenames: false
+
       # Ruff - Linting
       - id: ruff
         name: ruff lint
-        entry: uv run ruff check --no-fix
+        entry: uv run --no-sync ruff check --no-fix
         language: system
         types: [python]
 
       # Ruff - Formatting
       - id: ruff-format
         name: ruff format
-        entry: uv run ruff format
+        entry: uv run --no-sync ruff format
         language: system
         types: [python]
         args: [--check]
@@ -47,7 +49,7 @@ repos:
       # mypy - Type checking
       - id: mypy
         name: mypy type check
-        entry: uv run mypy
+        entry: uv run --no-sync mypy
         language: system
         types: [python]
         files: ^middleware/
@@ -56,7 +58,7 @@ repos:
       # bandit - Security linting
       - id: bandit
         name: bandit security scan
-        entry: uv run bandit -r
+        entry: uv run --no-sync bandit -r
         language: system
         types: [python]
         files: ^middleware/
@@ -65,7 +67,7 @@ repos:
       # pylint - Code quality
       - id: pylint
         name: pylint
-        entry: uv run pylint
+        entry: uv run --no-sync pylint
         language: system
         types: [python]
         files: ^middleware/
@@ -73,7 +75,7 @@ repos:
       # pytest - Unit tests only (runs on pre-push to keep commits fast)
       - id: pytest-unit
         name: pytest unit tests
-        entry: bash -c "uv run pytest middleware/*/tests/unit/"
+        entry: bash -c "uv run --no-sync pytest middleware/*/tests/unit/"
         language: system
         types: [python]
         pass_filenames: false
