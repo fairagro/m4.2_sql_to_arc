@@ -112,18 +112,25 @@ jobs:
 
       - name: Execute GitVersion
         if: inputs.run_checks
-        id: gitversion
+        id: gitversion-exec
         uses: gittools/actions/gitversion/execute@v4
 
-      - name: Set placeholder version (checks skipped)
-        if: inputs.run_checks == false
+      - name: Publish version outputs
         id: gitversion
         run: |
-          echo "semVer=0.0.0-skipped" >> $GITHUB_OUTPUT
-          echo "majorMinorPatch=0.0.0" >> $GITHUB_OUTPUT
-          echo "major=0" >> $GITHUB_OUTPUT
-          echo "minor=0" >> $GITHUB_OUTPUT
-          echo "patch=0" >> $GITHUB_OUTPUT
+          if [ "${{ inputs.run_checks }}" = "true" ]; then
+            echo "semVer=${{ steps.gitversion-exec.outputs.semVer }}" >> $GITHUB_OUTPUT
+            echo "majorMinorPatch=${{ steps.gitversion-exec.outputs.majorMinorPatch }}" >> $GITHUB_OUTPUT
+            echo "major=${{ steps.gitversion-exec.outputs.major }}" >> $GITHUB_OUTPUT
+            echo "minor=${{ steps.gitversion-exec.outputs.minor }}" >> $GITHUB_OUTPUT
+            echo "patch=${{ steps.gitversion-exec.outputs.patch }}" >> $GITHUB_OUTPUT
+          else
+            echo "semVer=0.0.0-skipped" >> $GITHUB_OUTPUT
+            echo "majorMinorPatch=0.0.0" >> $GITHUB_OUTPUT
+            echo "major=0" >> $GITHUB_OUTPUT
+            echo "minor=0" >> $GITHUB_OUTPUT
+            echo "patch=0" >> $GITHUB_OUTPUT
+          fi
 
       - name: Debug version info
         if: inputs.run_checks
