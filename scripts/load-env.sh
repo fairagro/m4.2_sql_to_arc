@@ -5,7 +5,7 @@ if [ $sourced -eq 0 ]; then
 fi
 
 # Load Environment Script
-# Decrypts .env.integration.enc and generates .env for tests
+# Decrypts .env.integration.enc and generates .env (Docker) and .env.shell (shell cache).
 
 # figure out some paths
 mydir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
@@ -46,58 +46,76 @@ fi
 
 ENCRYPTED_FILE="${mydir}/../.env.integration.enc"
 DECRYPTED_FILE="${mydir}/../.env"
+SHELL_ENV_FILE="${DECRYPTED_FILE}.shell"
 
-# Check if .env file already exists and is not empty
-if [ -f "$DECRYPTED_FILE" ] && [ -s "$DECRYPTED_FILE" ]; then
-    echo "✅ $DECRYPTED_FILE already exists and is not empty - skipping decryption"
+_load_shell_env() {
+    if [ -n "${GITLAB_API_TOKEN:-}" ]; then
+        echo "✅ Environment variables already loaded"
+        return 0
+    fi
 
-    # Still load for current shell if not already loaded
-    if [ -z "$GITLAB_API_TOKEN" ]; then
-        echo "🔄 Loading existing environment variables..."
+    if [ -f "$SHELL_ENV_FILE" ] && { [ ! -f "$ENCRYPTED_FILE" ] || [ ! "$ENCRYPTED_FILE" -nt "$SHELL_ENV_FILE" ]; }; then
+        echo "🔄 Loading environment variables from $SHELL_ENV_FILE..."
         set -a
+        # shellcheck source=/dev/null
+        source "$SHELL_ENV_FILE"
+        set +a
+        echo "✅ Environment variables loaded from $SHELL_ENV_FILE"
+        return 0
+    fi
+
+    if [ -f "$DECRYPTED_FILE" ] && [ -s "$DECRYPTED_FILE" ]; then
+        echo "🔄 Loading environment variables from $DECRYPTED_FILE..."
+        set -a
+        # shellcheck source=/dev/null
         source "$DECRYPTED_FILE"
         set +a
-        echo "✅ Environment variables loaded from existing $DECRYPTED_FILE"
-    else
-        echo "✅ Environment variables already loaded"
+        echo "✅ Environment variables loaded from $DECRYPTED_FILE"
+        return 0
     fi
-    return 0
-fi
+
+    return 1
+}
 
 # Check if SOPS is available
 if ! command -v sops &> /dev/null; then
     echo "⚠️ SOPS not available - skipping secrets loading"
+    _load_shell_env || true
     return 0
 fi
 
 # Check if encrypted file exists
 if [ ! -f "$ENCRYPTED_FILE" ]; then
     echo "⚠️ $ENCRYPTED_FILE not found - skipping secrets loading"
+    _load_shell_env || true
     return 0
 fi
 
-# Decrypt the encrypted file and write to .env
+# Decrypt the encrypted file when cache is missing or stale
 if grep -q '"sops"' "$ENCRYPTED_FILE" 2>/dev/null; then
-    # CLIENT_KEY breaks Docker's --env-file parser; omit it from the on-disk .env only.
-    if decrypted_secrets=$(sops -d "$ENCRYPTED_FILE" 2>/dev/null); then
-        printf '%s\n' "$decrypted_secrets" | perl -0777 -pe 's/CLIENT_KEY=".*?"\n?//gs' > "$DECRYPTED_FILE"
-        echo "✅ Encrypted secrets decrypted to $DECRYPTED_FILE (CLIENT_KEY omitted for Docker compatibility)"
-
-        # Load full secrets (including CLIENT_KEY) into the current shell
-        set -a
-        source <(printf '%s\n' "$decrypted_secrets")
-        set +a
-    else
-        echo "❌ Error decrypting $ENCRYPTED_FILE"
-        echo "💡 Possible causes:"
-        echo "   - Wrong GPG password"
-        echo "   - GPG key not available"
-        echo "   - SOPS configuration error"
-        echo "📝 Tests may fail without valid GITLAB_API_TOKEN"
-        return 0  # Graceful return so sourcing continues
+    if [ ! -f "$DECRYPTED_FILE" ] || [ "$ENCRYPTED_FILE" -nt "$DECRYPTED_FILE" ]; then
+        if decrypted_secrets=$(sops -d "$ENCRYPTED_FILE" 2>/dev/null); then
+            # CLIENT_KEY breaks Docker's --env-file parser; omit it from the on-disk .env only.
+            printf '%s\n' "$decrypted_secrets" | perl -0777 -pe 's/CLIENT_KEY=".*?"\n?//gs' > "$DECRYPTED_FILE"
+            printf '%s\n' "$decrypted_secrets" > "$SHELL_ENV_FILE"
+            chmod 600 "$DECRYPTED_FILE" "$SHELL_ENV_FILE"
+            echo "✅ Encrypted secrets decrypted to $DECRYPTED_FILE (CLIENT_KEY omitted for Docker compatibility)"
+        else
+            echo "❌ Error decrypting $ENCRYPTED_FILE"
+            echo "💡 Possible causes:"
+            echo "   - Wrong GPG password"
+            echo "   - GPG key not available"
+            echo "   - SOPS configuration error"
+            echo "📝 Tests may fail without valid GITLAB_API_TOKEN"
+            _load_shell_env || true
+            return 0  # Graceful return so sourcing continues
+        fi
     fi
+
+    _load_shell_env || true
 else
     echo "⚠️ $ENCRYPTED_FILE is not encrypted or not in SOPS format"
     echo "📝 Tests may fail without valid GITLAB_API_TOKEN"
+    _load_shell_env || true
     return 0  # Graceful return so sourcing continues
 fi

@@ -71,7 +71,7 @@ This devcontainer variant does not support host GPG agent forwarding. Options:
    sops -d .env.integration.enc > .env
    ```
 
-   `scripts/load-env.sh` skips SOPS decryption when `.env` already exists.
+   `scripts/load-env.sh` skips SOPS decryption when `.env` / `.env.shell` are up to date.
 
 2. **Remove the GPG-related `mounts` entries** from `devcontainer.json` (and rely on
    option 1 or on `public_gpg_keys/` for encrypt-only workflows).
