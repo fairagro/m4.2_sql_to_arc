@@ -11,6 +11,11 @@ if [ -d "${repo_root}/.venv/bin" ]; then
     export PATH="${repo_root}/.venv/bin:${PATH}"
 fi
 
+if [ ! -d "${repo_root}/.git" ]; then
+    echo "⚠️ .git directory not found — skipping dev hooks installation" >&2
+    exit 0
+fi
+
 if ! command -v pre-commit &>/dev/null; then
     echo "⚠️ pre-commit not available — run: uv sync --dev --all-packages" >&2
     exit 1
