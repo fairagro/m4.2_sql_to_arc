@@ -1,7 +1,13 @@
 name: Python Code Quality (Reusable)
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      run_checks:
+        description: 'Run quality checks; if false, skip with success'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -17,20 +23,30 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Skip - no relevant code changes
+      if: inputs.run_checks == false
+      run: |
+        echo "## ⏭️ Python Code Quality Skipped" >> $GITHUB_STEP_SUMMARY
+        echo "No code changes detected in this PR — checks skipped." >> $GITHUB_STEP_SUMMARY
+
     - name: Install uv
+      if: inputs.run_checks
       uses: astral-sh/setup-uv@v4
       with:
         version: "latest"
 
     - name: Set up Python ${{ matrix.python-version }}
+      if: inputs.run_checks
       run: uv python install ${{ matrix.python-version }}
 
     - name: Install dependencies
+      if: inputs.run_checks
       run: |
         # Install all dependencies including dev dependencies
         uv sync --dev --all-packages
 
     - name: Code formatting and linting check with Ruff
+      if: inputs.run_checks
       run: |
         # Check formatting (do not auto-format), then check linting
         uv run ruff format --check --diff middleware/
@@ -38,16 +54,19 @@ jobs:
       continue-on-error: false
 
     - name: Linting with pylint
+      if: inputs.run_checks
       run: |
         uv run pylint middleware/ --fail-under=8.0 --output-format=colorized
       continue-on-error: false
 
     - name: Type checking with mypy
+      if: inputs.run_checks
       run: |
         uv run mypy middleware/
       continue-on-error: false
 
     - name: Security check with bandit
+      if: inputs.run_checks
       id: bandit
       run: |
         # Run bandit, but don't fail the job immediately.
@@ -57,7 +76,7 @@ jobs:
       continue-on-error: false
 
     - name: Review bandit results
-      if: always() && steps.bandit.outcome == 'success'
+      if: inputs.run_checks && always() && steps.bandit.outcome == 'success'
       id: bandit-review
       shell: bash
       run: |
@@ -96,12 +115,13 @@ jobs:
         fi
 
     - name: Fail job on critical findings
-      if: steps.bandit-review.outputs.FAIL_JOB == 'true'
+      if: inputs.run_checks && steps.bandit-review.outputs.FAIL_JOB == 'true'
       run: |
         echo "❌ Failing workflow due to HIGH or MEDIUM severity security issues found by bandit."
         exit 1
 
     - name: Run tests (Unit & Integration)
+      if: inputs.run_checks
       run: |
         uv run pytest \
           middleware/*/tests/unit/ \
@@ -113,6 +133,7 @@ jobs:
           --junitxml=pytest-report.xml
 
     - name: Upload coverage to Codecov
+      if: inputs.run_checks
       uses: codecov/codecov-action@v4
       with:
         file: ./coverage.xml
@@ -122,7 +143,7 @@ jobs:
 
     - name: Upload test results
       uses: actions/upload-artifact@v4
-      if: always()
+      if: inputs.run_checks && always()
       with:
         name: test-reports-${{ matrix.python-version }}
         path: |
@@ -132,7 +153,7 @@ jobs:
           bandit-report.json
 
     - name: Create quality summary
-      if: always()
+      if: inputs.run_checks && always()
       run: |
         echo "## 📊 Code Quality Summary" >> $GITHUB_STEP_SUMMARY
         echo "| Tool | Status | Details |" >> $GITHUB_STEP_SUMMARY

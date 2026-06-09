@@ -3,6 +3,11 @@ name: Docker Build and Test (Reusable)
 on:
   workflow_call:
     inputs:
+      run_checks:
+        description: 'Run build and container tests; if false, skip with success'
+        required: false
+        type: boolean
+        default: true
       push_to_registry:
         description: 'Whether to push to DockerHub registry'
         required: false
@@ -74,11 +79,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Skip - no relevant code changes
+        if: inputs.run_checks == false
+        run: |
+          echo "## ⏭️ Docker Build Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "No code changes detected in this PR — version calculation skipped." >> $GITHUB_STEP_SUMMARY
+
       - uses: gittools/actions/gitversion/setup@v4
+        if: inputs.run_checks
         with:
           versionSpec: '6.4.x'
 
       - name: Create GitVersion config
+        if: inputs.run_checks
         uses: DamianReeves/write-file-action@master
         with:
           path: GitVersion.yml
@@ -98,10 +111,22 @@ jobs:
                 track-merge-target: false
 
       - name: Execute GitVersion
+        if: inputs.run_checks
         id: gitversion
         uses: gittools/actions/gitversion/execute@v4
 
+      - name: Set placeholder version (checks skipped)
+        if: inputs.run_checks == false
+        id: gitversion
+        run: |
+          echo "semVer=0.0.0-skipped" >> $GITHUB_OUTPUT
+          echo "majorMinorPatch=0.0.0" >> $GITHUB_OUTPUT
+          echo "major=0" >> $GITHUB_OUTPUT
+          echo "minor=0" >> $GITHUB_OUTPUT
+          echo "patch=0" >> $GITHUB_OUTPUT
+
       - name: Debug version info
+        if: inputs.run_checks
         run: |
           echo "🔧 Version Bump Configuration:"
           echo "  - Input version_bump: ${{ inputs.version_bump }}"
@@ -132,17 +157,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Skip - no relevant code changes
+        if: inputs.run_checks == false
+        run: |
+          echo "## ⏭️ Docker Image Build Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "No code changes detected in this PR — image build skipped." >> $GITHUB_STEP_SUMMARY
+
       - name: Set up Docker Buildx
+        if: inputs.run_checks
         uses: docker/setup-buildx-action@v3
 
       - name: Login to DockerHub
-        if: env.DOCKERHUB_AVAILABLE == 'true' && inputs.push_to_registry
+        if: inputs.run_checks && env.DOCKERHUB_AVAILABLE == 'true' && inputs.push_to_registry
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set component-specific metadata
+        if: inputs.run_checks
         id: component-meta
         run: |
           case "${{ matrix.component }}" in
@@ -157,6 +190,7 @@ jobs:
           esac
 
       - name: Extract metadata
+        if: inputs.run_checks
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -178,6 +212,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build Docker image
+        if: inputs.run_checks
         id: build
         uses: docker/build-push-action@v6
         with:
@@ -194,6 +229,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Save Docker image as artifact
+        if: inputs.run_checks
         run: |
           # Use the DockerHub tag if pushed, otherwise local tag
           if [[ "${{ env.DOCKERHUB_AVAILABLE }}" == "true" && "${{ inputs.push_to_registry }}" == "true" ]]; then
@@ -205,6 +241,7 @@ jobs:
           docker save "$IMAGE_TAG" | gzip > docker-image-${{ matrix.component }}.tar.gz
 
       - name: Upload Docker image artifact
+        if: inputs.run_checks
         uses: actions/upload-artifact@v4
         with:
           name: docker-image-${{ matrix.component }}-${{ needs.calculate-version.outputs.version }}
@@ -212,6 +249,7 @@ jobs:
           retention-days: 1
 
       - name: Log push status
+        if: inputs.run_checks
         run: |
           if [[ "${{ env.DOCKERHUB_AVAILABLE }}" == "true" && "${{ inputs.push_to_registry }}" == "true" ]]; then
             echo "✅ Image pushed to DockerHub"
@@ -227,18 +265,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    if: needs.build-docker-image.result == 'success'
+    if: always() && needs.build-docker-image.result == 'success'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Skip - no relevant code changes
+        if: inputs.run_checks == false
+        run: |
+          echo "## ⏭️ Container Structure Test Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "No code changes detected in this PR — container tests skipped." >> $GITHUB_STEP_SUMMARY
+
       - name: Download Docker image artifact
+        if: inputs.run_checks
         uses: actions/download-artifact@v4
         with:
           name: docker-image-${{ matrix.component }}-${{ needs.calculate-version.outputs.version }}
 
       - name: Load Docker image
+        if: inputs.run_checks
         run: |
           echo "📦 Loading Docker image from artifact..."
           docker load < docker-image-${{ matrix.component }}.tar.gz
@@ -248,6 +294,7 @@ jobs:
           docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
 
       - name: Determine image tag for tests
+        if: inputs.run_checks
         id: image-tag
         run: |
           DOCKERHUB_AVAILABLE="${{ secrets.DOCKERHUB_USER != '' && secrets.DOCKERHUB_TOKEN != '' }}"
@@ -275,6 +322,7 @@ jobs:
           fi
 
       - name: Run Container Structure Tests
+        if: inputs.run_checks
         uses: plexsystems/container-structure-test-action@v0.3.0
         with:
           image: ${{ steps.image-tag.outputs.image-tag }}
@@ -285,11 +333,15 @@ jobs:
         run: |
           echo "## 🐳 Container Structure Test Summary" >> $GITHUB_STEP_SUMMARY
           echo "**Component**: ${{ matrix.component }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Version**: v${{ needs.calculate-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Config**: docker/container-structure-tests/${{ matrix.component }}.yaml" >> $GITHUB_STEP_SUMMARY
-          echo "**Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ job.status }}" == "success" ]]; then
-            echo "✅ **All container structure tests passed!**" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ inputs.run_checks }}" != "true" ]]; then
+            echo "**Status**: ⏭️ Skipped (docs/metadata only)" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Container structure tests failed!**" >> $GITHUB_STEP_SUMMARY
+            echo "**Version**: v${{ needs.calculate-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Config**: docker/container-structure-tests/${{ matrix.component }}.yaml" >> $GITHUB_STEP_SUMMARY
+            echo "**Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+            if [[ "${{ job.status }}" == "success" ]]; then
+              echo "✅ **All container structure tests passed!**" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **Container structure tests failed!**" >> $GITHUB_STEP_SUMMARY
+            fi
           fi
