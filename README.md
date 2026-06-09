@@ -25,7 +25,12 @@ For the best **out-of-the-box experience**, you can run a complete local demonst
 
 ## 🚀 Getting Started (Development)
 
-The preferred method for working with this repository is using the **Dev Container** (VS Code).
+The preferred method for working with this repository is using a **Dev Container**:
+
+| IDE | Entry point |
+| --- | --- |
+| **VS Code** | **Reopen in Container** (`.devcontainer/vscode/`) |
+| **Cursor** | `./scripts/start-devcontainer-cursor.sh` (DevPod; see `.devcontainer/cursor/README.md`) |
 
 While it is possible to develop without the Dev Container (see next steps below), this approach is not tested and is therefore neither documented nor officially supported.
 

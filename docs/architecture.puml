@@ -1,0 +1,56 @@
+@startuml SqlToArcArchitecture
+' FAIRagro SQL-to-ARC converter — context and internal structure.
+' Styling aligned with the Middleware API architecture diagram:
+' https://github.com/fairagro/m4.2_advanced_middleware_api/blob/main/docs/architecture.puml
+
+skinparam packageStyle rectangle
+skinparam rectangle<<dashedRect>> {
+    BorderStyle dashed
+}
+skinparam rectangle<<poolRect>> {
+    BorderStyle dashed
+    BackgroundColor #E8F4FC
+}
+skinparam node<<internal>> {
+    BackgroundColor LightSkyBlue
+    BorderColor DarkBlue
+    FontColor Black
+}
+skinparam node<<internal-dashed>> {
+    BackgroundColor LightSkyBlue
+    BorderColor DarkBlue
+    FontColor Black
+    BorderStyle dashed
+}
+skinparam node<<external>> {
+    BackgroundColor White
+    BorderColor Gray
+    FontColor Black
+}
+hide stereotype
+
+package "RDI Provider" as rdi {
+    database "PostgreSQL\nSQL views contract" as rdb
+
+    rectangle "sql_to_arc\n(batch converter)" as sql2arcBox <<dashedRect>> {
+        node "Orchestrator" as orchestrator <<internal>>
+        node "Database\n(stream + validate)" as database <<internal>>
+
+        rectangle "Parallel worker processes" as workerPool <<poolRect>> {
+            node "Builder + Mapper\n(arctrl)" as worker <<internal-dashed>>
+        }
+
+        node "ApiClient\n(shared lib)" as apiclient <<internal>>
+    }
+}
+
+node "FAIRagro\nMiddleware API" as api <<external>>
+
+orchestrator -left-> database : batch fetch
+database -left-> rdb : async stream
+orchestrator --> workerPool : instantiate
+worker --> orchestrator : RO-Crate\nJSON-LD
+orchestrator -right-> apiclient : RO-Crate\nJSON-LD
+apiclient -right-> api : POST /v3/arcs\n(mTLS)
+
+@enduml

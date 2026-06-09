@@ -11,6 +11,9 @@
 #   ./scripts/start-devcontainer-cursor.sh --recreate
 #   ./scripts/start-devcontainer-cursor.sh --reset
 #
+# Platform notes:
+#   Host GPG agent bind-mount (SOPS in container) requires Linux and XDG_RUNTIME_DIR.
+#   On macOS/Windows, see .devcontainer/cursor/README.md (decrypt .env on the host).
 
 set -euo pipefail
 
@@ -25,7 +28,7 @@ for arg in "$@"; do
             extra_args+=("$arg")
             ;;
         -h | --help)
-            cat << 'EOF'
+            cat << 'EOF_HELP'
 Open this repository in a Dev Container via DevPod + Cursor.
 
 Cursor has no built-in "Reopen in Container" (unlike VS Code). DevPod builds
@@ -36,7 +39,11 @@ Usage:
   ./scripts/start-devcontainer-cursor.sh
   ./scripts/start-devcontainer-cursor.sh --recreate
   ./scripts/start-devcontainer-cursor.sh --reset
-EOF
+
+Platform notes:
+  Host GPG agent bind-mount (SOPS in container) requires Linux and XDG_RUNTIME_DIR.
+  On macOS/Windows, see .devcontainer/cursor/README.md (decrypt .env on the host).
+EOF_HELP
             exit 0
             ;;
         *)
@@ -53,17 +60,17 @@ if ! command -v devpod &>/dev/null; then
 fi
 
 if ! docker info &>/dev/null; then
-    echo "ERROR: Docker is not running or not reachable." >&2
-    exit 1
+    echo "WARNING: Local Docker daemon is not running or not reachable. If you are using a remote DevPod provider, you can ignore this." >&2
 fi
 
 echo "==> Starting DevPod workspace (devcontainer: ${devcontainer_path})"
 devpod up "${repo_root}" \
     --devcontainer-path "${devcontainer_path}" \
     --ide cursor \
-    --gpg-agent-forwarding \
     "${extra_args[@]}"
 
 echo ""
 echo "==> Done. Cursor should open the workspace in the Dev Container."
-echo "    Environment setup (hooks, uv sync, secrets) runs via scripts/load-env.sh inside the container."
+echo "    One-time setup (uv sync, hooks) runs via postCreateCommand; load-env.sh loads env vars per shell."
+echo "    Host ~/.gitconfig is bind-mounted; GPG agent forwarding is Linux-only."
+echo "    See .devcontainer/cursor/README.md for mounts and macOS/Windows workarounds."
