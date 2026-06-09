@@ -79,13 +79,13 @@ fi
 # Decrypt the encrypted file and write to .env
 if grep -q '"sops"' "$ENCRYPTED_FILE" 2>/dev/null; then
     # CLIENT_KEY breaks Docker's --env-file parser; omit it from the on-disk .env only.
-    sops -d "$ENCRYPTED_FILE" 2>/dev/null | perl -0777 -pe 's/CLIENT_KEY=".*?"\n?//gs' > "$DECRYPTED_FILE"
-    if [ $? -eq 0 ]; then
+    if decrypted_secrets=$(sops -d "$ENCRYPTED_FILE" 2>/dev/null); then
+        printf '%s\n' "$decrypted_secrets" | perl -0777 -pe 's/CLIENT_KEY=".*?"\n?//gs' > "$DECRYPTED_FILE"
         echo "✅ Encrypted secrets decrypted to $DECRYPTED_FILE (CLIENT_KEY omitted for Docker compatibility)"
 
         # Load full secrets (including CLIENT_KEY) into the current shell
         set -a
-        source <(sops -d "$ENCRYPTED_FILE" 2>/dev/null)
+        source <(printf '%s\n' "$decrypted_secrets")
         set +a
     else
         echo "❌ Error decrypting $ENCRYPTED_FILE"
