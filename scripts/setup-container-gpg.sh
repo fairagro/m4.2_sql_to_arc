@@ -5,8 +5,6 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "${script_dir}/.." && pwd)"
-public_key_path="${repo_root}/public_gpg_keys"
 
 mkdir -p ~/.gnupg
 chmod 700 ~/.gnupg
@@ -25,10 +23,4 @@ if [ -f /host-gpg/trustdb.gpg ]; then
     cp /host-gpg/trustdb.gpg ~/.gnupg/trustdb.gpg
 fi
 
-shopt -s nullglob
-keys=( "${public_key_path}"/*.asc )
-if [ ${#keys[@]} -gt 0 ]; then
-    for file in "${keys[@]}"; do
-        gpg --batch --import "$file"
-    done
-fi
+bash "${script_dir}/import-public-gpg-keys.sh"
