@@ -1,0 +1,27 @@
+@startuml SqlToArc_Workflow
+title SQL-to-ARC Converter Workflow
+' Activity diagram aligned with the Middleware Harvester workflow:
+' https://github.com/fairagro/m4.2_middleware_harvester/blob/feature/additional_docs/docs/harvester_workflow.puml
+
+start
+:Validate database schema\n(required views and columns);
+
+partition "Per investigation batch" {
+  :Fetch next investigation batch\n(server-side cursor);
+  :Fetch related data in bulk\n(studies, assays, contacts,\npublications, annotation tables);
+
+  partition "Per investigation (concurrent)" {
+    partition "parallel processes" {
+      :Map SQL view rows to ARCtrl objects;
+      :Serialize to RO-Crate JSON-LD;
+    }
+
+    :Upload to Middleware API (api_client);
+  }
+}
+
+:Output Report\n(JSON-LD provenance to stdout);
+
+stop
+
+@enduml
