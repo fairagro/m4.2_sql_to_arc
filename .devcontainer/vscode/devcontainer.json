@@ -2,7 +2,8 @@
 	"name": "Debian (VS Code - DinD)",
 	"build": {
 		"dockerfile": "../Dockerfile",
-		"context": ".."
+		"context": "..",
+		"options": ["--platform=linux/amd64"]
 	},
 	"features": {
 		"ghcr.io/devcontainers/features/docker-in-docker:3": {

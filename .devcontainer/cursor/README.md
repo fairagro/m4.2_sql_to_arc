@@ -2,6 +2,9 @@
 
 Used by `scripts/start-devcontainer-cursor.sh` with DevPod + Cursor.
 
+The image is built for **linux/amd64** only (see `.devcontainer/Dockerfile`). On ARM
+hosts (e.g. Apple Silicon), Docker runs the container via amd64 emulation.
+
 ## Host bind mounts
 
 | Mount | Source | Platforms |

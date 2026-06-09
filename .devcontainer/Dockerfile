@@ -2,6 +2,11 @@
 # Replaces devcontainer feature-based installation with a reproducible Dockerfile.
 #
 # All tool versions are pinned for reproducibility.
+#
+# Platform: linux/amd64 only. Pre-built binaries (helm, uv, minikube, sops, …) are
+# downloaded for amd64/x86_64. devcontainer.json sets --platform=linux/amd64 so
+# Apple Silicon hosts use emulation. Native ARM support would require multi-arch
+# downloads for every pinned tool (out of scope unless explicitly requested).
 
 FROM mcr.microsoft.com/devcontainers/base:2.1.9-trixie
 
