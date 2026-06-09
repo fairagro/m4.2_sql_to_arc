@@ -12,6 +12,11 @@ if [ ${#keys[@]} -eq 0 ]; then
     exit 0
 fi
 
+if ! command -v gpg &>/dev/null; then
+    echo "❌ gpg command not found. Please install GnuPG to import public keys." >&2
+    exit 1
+fi
+
 for file in "${keys[@]}"; do
     gpg --batch --import "$file"
 done
