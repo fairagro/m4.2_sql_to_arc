@@ -46,6 +46,10 @@ Any view may be empty, if the corresponding data is not available. If a view con
 
 ## Views
 
+![SQL-to-ARC Database Views Diagram](diagrams/SqlToArc_DatabaseViews.svg)
+
+Presentation overview (PlantUML): [sql_to_arc_database_views.puml](sql_to_arc_database_views.puml)
+
 The described views are based on the [ARC ISA XLSX specification](https://github.com/nfdi4plants/ARC-specification/blob/release/ISA-XLSX.md) and are adapted to match the features of ARCtrl. Currently we opt to make use of the greatest common divisor between the ISA XLSX features and those offered by ARCtrl. An additional design objective of the views is not to introduce additional indices and not to define complex relationships between the views. To achieve this goal some relationships are modeled in terms of JSON strings instead of SQL construct. Creating JSON strings is possible in all popular SQL dialects and should simplify view generation a lot.
 
 SQL-to-ARC is designed to work with PostgreSQL, MySQL, MariaDB, MSSQL and OracleDB. Each DB defines its own set of datatypes. But those we use in our views can be mapped to the same python types. The view definitions below make use of PostgreSQL types. Refer to the following table to map the PostgreSQL types to other database engines.
