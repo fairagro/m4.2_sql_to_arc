@@ -5,27 +5,21 @@ if [ $sourced -eq 0 ]; then
 fi
 
 # Load Environment Script
-# Decrypts .env.integration.enc and generates .env for tests
+# Decrypts .env.integration.enc and generates .env (Docker) and .env.shell (shell cache).
 
 # figure out some paths
 mydir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+repo_root="${mydir}/.."
 
-# import all public keyfiles into gpg keyring so sops can find them
-public_key_path="${mydir}/../public_gpg_keys"
-for file in "$public_key_path"/*.asc; do
-    [ -e "$file" ] || continue
-    gpg --import "$file"
-done
+# pre-commit and other dev tools live in the uv venv (not on PATH by default)
+if [ -d "${repo_root}/.venv/bin" ]; then
+    case ":${PATH}:" in
+        *:"${repo_root}/.venv/bin":*) ;;
+        *) export PATH="${repo_root}/.venv/bin:${PATH}" ;;
+    esac
+fi
 
-# Create Bash autocompletion for installed tools
-[ -f /etc/bash_completion ] && . /etc/bash_completion || true
-command -v kubectl &>/dev/null && . <(kubectl completion bash) || true
-command -v helm &>/dev/null && . <(helm completion bash) || true
-command -v docker &>/dev/null && . <(docker completion bash) || true
-command -v minikube &>/dev/null && . <(minikube completion bash) || true
-command -v sops &>/dev/null && . <(sops completion bash) || true
-
-# Setup aliases
+# Setup aliases (completions: static files in image + bash-completion lazy-load)
 alias k=kubectl
 alias d=docker
 alias kda="kubectl delete all,pdb,configmap,secret,pvc,ingress,serviceaccount,endpoints --all"
@@ -36,117 +30,92 @@ alias ksn="kubectl config set-context --current --namespace"
 declare -F __start_kubectl &>/dev/null && complete -o default -F __start_kubectl k
 declare -F __start_docker &>/dev/null && complete -o default -F __start_docker d
 
-# Install pre-commit and Git LFS hooks if not already installed
-if command -v pre-commit &> /dev/null; then
-    install_status=0
-    # Install pre-commit hook
-    if [ ! -f "${mydir}/../.git/hooks/pre-commit" ]; then
-        echo "🔧 Installing pre-commit hooks..."
-        (cd "${mydir}/.." && pre-commit install --hook-type pre-commit) || install_status=$?
-    fi
-
-    # Install Git LFS hooks (this includes a combined pre-push hook)
-    echo "🔧 Setting up Git LFS hooks..."
-    bash "${mydir}/setup-git-lfs.sh" || install_status=$?
-
-    if [ $install_status -eq 0 ]; then
-        echo "✅ Pre-commit and pre-push hooks are installed."
+# ggshield (dev dependency in .venv; same PATH as pre-commit above)
+if command -v ggshield &> /dev/null; then
+    if [ -n "${GITGUARDIAN_API_KEY:-}" ]; then
+        echo "✅ ggshield: using GITGUARDIAN_API_KEY from environment"
+    elif [ -f ~/.config/ggshield/auth_config.yaml ] && grep -q "token:" ~/.config/ggshield/auth_config.yaml 2>/dev/null; then
+        echo "✅ ggshield: authenticated (~/.config/ggshield/auth_config.yaml)"
     else
-        echo "⚠️ Failed to install some hooks"
-    fi
-
-    # Check if ggshield is authenticated
-    if command -v ggshield &> /dev/null; then
-        if [ ! -f ~/.config/ggshield/auth_config.yaml ] || ! grep -q "token:" ~/.config/ggshield/auth_config.yaml 2>/dev/null; then
-            echo ""
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "⚠️  Concerning ggshield Authentication"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            echo "We're about to request a ggshield (aka GitGuardian) authentication token,"
-            echo "that is used to prevent committing secrets (API keys, passwords, tokens, "
-            echo "etc.) into the repository by mistake."
-            echo ""
-            echo "ℹ️  The token is stored locally in ~/.config/ggshield/auth_config.yaml"
-            echo "and is NOT checked into the repository."
-            echo ""
-            echo "💡 GitGuardian allows to create up to 5 personal API tokens per user."
-            echo "If you already have 5 tokens, you need to revoke one of them first, using"
-            echo "the GitGuardian web interface (https://dashboard.gitguardian.com)"
-            echo ""
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            ggshield auth login || echo "⚠️ ggshield authentication failed or was cancelled."
-        fi
+        echo "🔐 ggshield not authenticated — run: ggshield auth login --method token"
+        echo "   Or set GITGUARDIAN_API_KEY (non-interactive / DevPod-friendly)"
     fi
 else
-    echo "⚠️ pre-commit not available - skipping hook installation"
-fi
-
-# Sync python dependencies with uv
-if command -v uv &> /dev/null; then
-    echo "🔧 Syncing Python dependencies..."
-    (cd "${mydir}/.." && uv sync --dev --all-packages)
-else
-    echo "⚠️ uv not available - skipping dependency sync"
+    echo "⚠️ ggshield not available - run: uv sync --dev --all-packages"
 fi
 
 ENCRYPTED_FILE="${mydir}/../.env.integration.enc"
 DECRYPTED_FILE="${mydir}/../.env"
+SHELL_ENV_FILE="${DECRYPTED_FILE}.shell"
 
-# Check if .env file already exists and is not empty
-if [ -f "$DECRYPTED_FILE" ] && [ -s "$DECRYPTED_FILE" ]; then
-    echo "✅ $DECRYPTED_FILE already exists and is not empty - skipping decryption"
+_load_shell_env() {
+    if [ -n "${GITLAB_API_TOKEN:-}" ]; then
+        echo "✅ Environment variables already loaded"
+        return 0
+    fi
 
-    # Still load for current shell if not already loaded
-    if [ -z "$GITLAB_API_TOKEN" ]; then
-        echo "🔄 Loading existing environment variables..."
+    if [ -f "$SHELL_ENV_FILE" ] && { [ ! -f "$ENCRYPTED_FILE" ] || [ ! "$ENCRYPTED_FILE" -nt "$SHELL_ENV_FILE" ]; }; then
+        echo "🔄 Loading environment variables from $SHELL_ENV_FILE..."
         set -a
+        # shellcheck source=/dev/null
+        source "$SHELL_ENV_FILE"
+        set +a
+        echo "✅ Environment variables loaded from $SHELL_ENV_FILE"
+        return 0
+    fi
+
+    if [ -f "$DECRYPTED_FILE" ] && [ -s "$DECRYPTED_FILE" ]; then
+        echo "🔄 Loading environment variables from $DECRYPTED_FILE..."
+        set -a
+        # shellcheck source=/dev/null
         source "$DECRYPTED_FILE"
         set +a
-        echo "✅ Environment variables loaded from existing $DECRYPTED_FILE"
-    else
-        echo "✅ Environment variables already loaded"
+        echo "✅ Environment variables loaded from $DECRYPTED_FILE"
+        return 0
     fi
-    return 0
-fi
+
+    return 1
+}
 
 # Check if SOPS is available
 if ! command -v sops &> /dev/null; then
     echo "⚠️ SOPS not available - skipping secrets loading"
+    _load_shell_env || true
     return 0
 fi
 
 # Check if encrypted file exists
 if [ ! -f "$ENCRYPTED_FILE" ]; then
     echo "⚠️ $ENCRYPTED_FILE not found - skipping secrets loading"
+    _load_shell_env || true
     return 0
 fi
 
-# Decrypt the encrypted file and write to .env
+# Decrypt the encrypted file when cache is missing or stale
 if grep -q '"sops"' "$ENCRYPTED_FILE" 2>/dev/null; then
-    # Decrypt encrypted file and write to .env
-    # We remove the CLIENT_KEY for the .env file because it breaks Docker's --env-file parser.
-    # We use a perl regex to find the CLIENT_KEY="..." multiline block and delete it entirely.
-    sops -d "$ENCRYPTED_FILE" 2>/dev/null | perl -0777 -pe 's/CLIENT_KEY=".*?"\n?//gs' > "$DECRYPTED_FILE"
-    if [ $? -eq 0 ]; then
-        echo "✅ Encrypted secrets decrypted to $DECRYPTED_FILE (CLIENT_KEY omitted for Docker compatibility)"
-
-        # Also load for current shell (the shell CAN handle the full file, so we re-decrypt for memory)
-        set -a
-        source <(sops -d "$ENCRYPTED_FILE" 2>/dev/null)
-        set +a
-    else
-        echo "❌ Error decrypting $ENCRYPTED_FILE"
-        echo "💡 Possible causes:"
-        echo "   - Wrong GPG password"
-        echo "   - GPG key not available"
-        echo "   - SOPS configuration error"
-        echo "📝 Tests may fail without valid GITLAB_API_TOKEN"
-        return 0  # Graceful return so sourcing continues
+    if [ ! -f "$DECRYPTED_FILE" ] || [ "$ENCRYPTED_FILE" -nt "$DECRYPTED_FILE" ]; then
+        if decrypted_secrets=$(sops -d "$ENCRYPTED_FILE" 2>/dev/null); then
+            # CLIENT_KEY breaks Docker's --env-file parser; omit it from the on-disk .env only.
+            printf '%s\n' "$decrypted_secrets" | perl -0777 -pe 's/CLIENT_KEY=".*?"\n?//gs' > "$DECRYPTED_FILE"
+            printf '%s\n' "$decrypted_secrets" > "$SHELL_ENV_FILE"
+            chmod 600 "$DECRYPTED_FILE" "$SHELL_ENV_FILE"
+            echo "✅ Encrypted secrets decrypted to $DECRYPTED_FILE (CLIENT_KEY omitted for Docker compatibility)"
+        else
+            echo "❌ Error decrypting $ENCRYPTED_FILE"
+            echo "💡 Possible causes:"
+            echo "   - Wrong GPG password"
+            echo "   - GPG key not available"
+            echo "   - SOPS configuration error"
+            echo "📝 Tests may fail without valid GITLAB_API_TOKEN"
+            _load_shell_env || true
+            return 0  # Graceful return so sourcing continues
+        fi
     fi
+
+    _load_shell_env || true
 else
     echo "⚠️ $ENCRYPTED_FILE is not encrypted or not in SOPS format"
     echo "📝 Tests may fail without valid GITLAB_API_TOKEN"
+    _load_shell_env || true
     return 0  # Graceful return so sourcing continues
 fi

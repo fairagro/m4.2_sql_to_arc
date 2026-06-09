@@ -72,10 +72,6 @@
 		}
 	},
 
-	"containerEnv": {
-		"UV_LINK_MODE": "copy"
-	},
-
 	// Configure tool-specific properties.
 	"customizations": {
 		"vscode": {
@@ -94,11 +90,11 @@
 				"ms-python.autopep8",
 				"ms-python.vscode-python-envs",
 				"ms-python.pylint",
-				"ms-python.mypy-type-checker",
 				"mhutchie.git-graph",
 				"donjayamanne.githistory",
 				"codezombiech.gitignore",
 				"github.copilot-chat",
+				"ms-python.mypy-type-checker",
 				"charliermarsh.ruff",
 				"tim-koehler.helm-intellisense",
 				"vadzimnestsiarenka.helm-template-preview-and-more"
@@ -108,7 +104,12 @@
 
 	// Load encrypted environment variables automatically (with error tolerance)
 	"postCreateCommand": {
-		"setup bashrc": "grep -qF 'source ${containerWorkspaceFolder}/scripts/load-env.sh' ~/.bashrc || echo 'source ${containerWorkspaceFolder}/scripts/load-env.sh' >> ~/.bashrc",
+		"install dependencies": "bash ${containerWorkspaceFolder}/scripts/uv-sync-dev.sh",
+		"install dev hooks": "bash ${containerWorkspaceFolder}/scripts/install-dev-hooks.sh",
+		"import public gpg keys": "bash ${containerWorkspaceFolder}/scripts/import-public-gpg-keys.sh",
+		"setup bashrc": "grep -qF 'source ${containerWorkspaceFolder}/scripts/load-env.sh' ~/.bashrc || echo 'source ${containerWorkspaceFolder}/scripts/load-env.sh' >> ~/.bashrc"
+	},
+	"postStartCommand": {
 		"install ggshield": "sudo /usr/local/py-utils/bin/pipx install --global ggshield"
 	},
 
