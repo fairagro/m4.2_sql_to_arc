@@ -40,7 +40,7 @@ package "RDI Provider" as rdi {
             node "Builder + Mapper\n(arctrl)" as worker <<internal-dashed>>
         }
 
-        node "api_client\n(shared lib)" as apiclient <<internal>>
+        node "ApiClient\n(shared lib)" as apiclient <<internal>>
     }
 }
 
