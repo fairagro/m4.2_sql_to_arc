@@ -11,9 +11,15 @@ hosts (e.g. Apple Silicon), Docker runs the container via amd64 emulation.
 | ----- | ------ | --------- |
 | Git config | `${localEnv:HOME}${localEnv:USERPROFILE}/.gitconfig` (read-only) | Linux, macOS, Windows |
 | GPG agent socket | `${localEnv:XDG_RUNTIME_DIR}/gnupg/S.gpg-agent.extra` | **Linux only** |
-| GPG trustdb | `${localEnv:HOME}/.gnupg/trustdb.gpg` | Linux, macOS, Windows (optional file) |
+| GPG trustdb | `${localEnv:HOME}${localEnv:USERPROFILE}/.gnupg/trustdb.gpg` (optional) | Linux, macOS; path fallback for Windows, but see below |
 
-## GPG agent forwarding (Linux only)
+## GPG agent forwarding (Linux only — not Windows)
+
+**Supported:** Linux hosts with a running host `gpg-agent` (typical DevPod/Cursor setup).
+
+**Not supported:** Windows (and usually macOS) — `XDG_RUNTIME_DIR` is unset, so the agent
+socket mount fails at container create. Decrypt secrets on the host or remove the GPG
+`mounts` entries (see [macOS / Windows](#macos--windows)).
 
 The GPG agent bind mount relies on `XDG_RUNTIME_DIR`, which systemd sets on Linux
 (typically `/run/user/<uid>`). It is usually **not** set on macOS or Windows.
