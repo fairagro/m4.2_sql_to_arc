@@ -28,7 +28,7 @@ RUN apk add --no-cache \
     build-base=0.5-r3 \
     python3-dev=3.12.13-r0 \
     libffi-dev=3.5.2-r0 \
-    libcrypto3-3.5.7-r0
+    libcrypto3-3.5.7-r0 \
     openssl-dev=3.5.7-r0 \
     cargo=1.91.1-r2 \
     git=2.52.0-r0 \
