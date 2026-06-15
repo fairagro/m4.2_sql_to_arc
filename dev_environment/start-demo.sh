@@ -38,6 +38,8 @@ export LOCAL_GID="$(id -g)"
 # Ensure output directory exists for the volume mount
 mkdir -p "${script_dir}/demo_output"
 
+bash "${script_dir}/../scripts/fix-docker-credentials.sh"
+
 # Start services using the base compose file + the demo override
 # This now overrides the db-init service to use demo.sql without downloads
 docker compose -f compose.demo.yaml up $BUILD_FLAG --abort-on-container-exit --exit-code-from sql_to_arc
