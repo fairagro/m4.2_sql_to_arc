@@ -11,6 +11,9 @@ fi
 mydir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 repo_root="${mydir}/.."
 
+# DevPod cred helper blocks public pulls when localhost:12049 is down
+bash "${mydir}/fix-docker-credentials.sh" 2>/dev/null || true
+
 # pre-commit and other dev tools live in the uv venv (not on PATH by default)
 if [ -d "${repo_root}/.venv/bin" ]; then
     case ":${PATH}:" in

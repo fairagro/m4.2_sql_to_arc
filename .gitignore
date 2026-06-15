@@ -227,3 +227,4 @@ helmchart/**/server.conf
 .cache_ggshield
 
 dev_environment/demo_output/
+docker/Dockerfile.sql_to_arc.bak
