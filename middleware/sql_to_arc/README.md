@@ -26,7 +26,7 @@ The tool is configured using a YAML file, which can be overridden by Environment
 Example configuration file:
 
 ```yaml
-connection_string: "postgresql+psycopg://user:password@localhost:5432/edaphobase"
+connection_string: "postgresql+psycopg://user:password@localhost:5432/rdi"
 rdi: "edaphobase"
 rdi_url: "https://portal.edaphobase.org"
 max_concurrent_arc_builds: 4

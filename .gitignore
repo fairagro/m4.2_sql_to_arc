@@ -226,5 +226,9 @@ helmchart/**/server.conf
 # ggshield cache
 .cache_ggshield
 
+# Docker CLI local state (committed config for DevPod DinD; ignore runtime artifacts)
+.docker/*
+!.docker/config.json
+
 dev_environment/demo_output/
 docker/Dockerfile.sql_to_arc.bak
