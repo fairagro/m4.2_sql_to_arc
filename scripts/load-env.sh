@@ -11,8 +11,8 @@ fi
 mydir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 repo_root="${mydir}/.."
 
-# DevPod cred helper blocks public pulls when localhost:12049 is down
-bash "${mydir}/fix-docker-credentials.sh" 2>/dev/null || true
+# DevPod injects credsStore=devpod into ~/.docker; use repo config instead (no cred helper).
+export DOCKER_CONFIG="${repo_root}/.docker"
 
 # pre-commit and other dev tools live in the uv venv (not on PATH by default)
 if [ -d "${repo_root}/.venv/bin" ]; then

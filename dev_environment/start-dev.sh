@@ -30,7 +30,7 @@ if [[ ! -f "secrets.enc.yaml" ]]; then
   exit 1
 fi
 
-bash "${script_dir}/../scripts/fix-docker-credentials.sh"
+export DOCKER_CONFIG="${script_dir}/../.docker"
 
 # Use sops exec-env to pass the decrypted secrets as environment variables
 # without writing them to physical disk files.

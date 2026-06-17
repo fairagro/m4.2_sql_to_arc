@@ -38,7 +38,7 @@ export LOCAL_GID="$(id -g)"
 # Ensure output directory exists for the volume mount
 mkdir -p "${script_dir}/demo_output"
 
-bash "${script_dir}/../scripts/fix-docker-credentials.sh"
+export DOCKER_CONFIG="${script_dir}/../.docker"
 
 # Start services using the base compose file + the demo override
 # This now overrides the db-init service to use demo.sql without downloads
