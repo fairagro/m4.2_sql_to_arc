@@ -6,7 +6,7 @@
 		"options": ["--platform=linux/amd64"]
 	},
 	"features": {
-		"ghcr.io/devcontainers/features/docker-in-docker:3": {
+		"ghcr.io/devcontainers/features/docker-in-docker:": {
 			"moby": false,
 			"disableIp6tables": true,
 			"version": "28.5.1"
