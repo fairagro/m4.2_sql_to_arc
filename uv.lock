@@ -455,15 +455,15 @@ wheels = [
 
 [[package]]
 name = "fairagro-middleware-api-client"
-version = "9.0.0"
+version = "9.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e1/44/1e06b74ea4be38ed1d03f987b441af96b3a7f26d36c2df8dd9b0eb3d3a22/fairagro_middleware_api_client-9.0.0.tar.gz", hash = "sha256:a908b95f70e06c1f29d5e49388a0776837a4a22f2345e71b740779a910647f43", size = 25520, upload-time = "2026-05-27T15:16:20.122Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/33/ede1e30452b586bdd1a4558d6ce3ab04034f846b84f977ab4b325d940fe6/fairagro_middleware_api_client-9.1.0.tar.gz", hash = "sha256:40be537751cd3912350098bd9f552447bbc7fb39dd60402441933474fdb2fd83", size = 27086, upload-time = "2026-06-17T12:31:59.581Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3c/02/198df6fad79770af3b3071c2c6ba2a286a468d639aa7b4930804ffbb72ee/fairagro_middleware_api_client-9.0.0-py3-none-any.whl", hash = "sha256:3ad67a1b71186ee97c08725606b839cf39a07daab03d3c701a21896de0074f1a", size = 14106, upload-time = "2026-05-27T15:16:17.112Z" },
+    { url = "https://files.pythonhosted.org/packages/88/6d/97a71a933873794cfe84a768baba3d23177a2c4f4dd2cfc21d4f4f8c0c0c/fairagro_middleware_api_client-9.1.0-py3-none-any.whl", hash = "sha256:1575434f3589bac8d0a67245c2cfb18278544824698e644ed4eb6ff4721543a6", size = 14319, upload-time = "2026-06-17T12:31:56.898Z" },
 ]
 
 [[package]]
@@ -1965,13 +1965,13 @@ requires-dist = [
     { name = "aiomysql", specifier = ">=0.2.0" },
     { name = "aioodbc", specifier = ">=0.4.1" },
     { name = "arctrl", specifier = ">=3.0.0b15" },
-    { name = "fairagro-middleware-api-client", specifier = ">=9.0.0" },
+    { name = "fairagro-middleware-api-client", specifier = ">=9.1.0" },
     { name = "fairagro-middleware-shared", specifier = ">=9.0.0" },
     { name = "opentelemetry-api", specifier = ">=1.30.0" },
     { name = "oracledb", specifier = ">=2.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.3" },
     { name = "pydantic", specifier = ">=2.12.5" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.51" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.46" },
 ]
 
 [[package]]
