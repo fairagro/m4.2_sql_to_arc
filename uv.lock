@@ -468,7 +468,7 @@ wheels = [
 
 [[package]]
 name = "fairagro-middleware-shared"
-version = "9.0.0"
+version = "9.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-api" },
@@ -478,9 +478,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2a/57/2957e742498e1deda4b017d6a653a47e787a9cf6efa6485577fa76d0720e/fairagro_middleware_shared-9.0.0.tar.gz", hash = "sha256:8c2f1ad3ca8c6f4ecc8b3d7e72275150bfcbf16758906244a519b07174400335", size = 16243, upload-time = "2026-05-27T15:16:18.15Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4d/22/e9a4301f03db8ac0711d835650a56c717bd8a6f708254c6dbac4415f320e/fairagro_middleware_shared-9.1.0.tar.gz", hash = "sha256:659f877d0c965edbf96a7cad2fe5b939d23d19753e4595680e5dcc780cb770ef", size = 16304, upload-time = "2026-06-17T12:31:58.928Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/45/f6/d165d16b04d4dbf5182c6fd5f67ba214b96c12cb28b889760021aabadf9d/fairagro_middleware_shared-9.0.0-py3-none-any.whl", hash = "sha256:c02f94b76668a95daf748ccbb680b1b1fe792803d08cf877ef9678ec37ee702f", size = 15150, upload-time = "2026-05-27T15:16:19.087Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/3a/aa450c632f8bbd28234e0f6e94cde128fb9362e5e52691505b13c538c2f0/fairagro_middleware_shared-9.1.0-py3-none-any.whl", hash = "sha256:8bdb0ce3c12ba59384fbf492fd2f3d18db4b8aa15309825739962ba5a031dd9b", size = 15150, upload-time = "2026-06-17T12:31:57.895Z" },
 ]
 
 [[package]]
@@ -1966,7 +1966,7 @@ requires-dist = [
     { name = "aioodbc", specifier = ">=0.4.1" },
     { name = "arctrl", specifier = ">=3.0.0b15" },
     { name = "fairagro-middleware-api-client", specifier = ">=9.0.0" },
-    { name = "fairagro-middleware-shared", specifier = ">=9.0.0" },
+    { name = "fairagro-middleware-shared", specifier = ">=9.1.0" },
     { name = "opentelemetry-api", specifier = ">=1.30.0" },
     { name = "oracledb", specifier = ">=2.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.3" },
