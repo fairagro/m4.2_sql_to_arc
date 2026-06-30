@@ -259,6 +259,15 @@ wheels = [
 ]
 
 [[package]]
+name = "configupdater"
+version = "3.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/f4/603bd8a65e040b23d25b5843836297b0f4e430f509d8ed2ef8f072fb4127/ConfigUpdater-3.2.tar.gz", hash = "sha256:9fdac53831c1b062929bf398b649b87ca30e7f1a735f3fbf482072804106306b", size = 140603, upload-time = "2023-11-27T17:16:45.434Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e7/f0/b59cb7613d9d0f866b6ff247c5953ad78363c27ff5d684a2a98899ab8220/ConfigUpdater-3.2-py2.py3-none-any.whl", hash = "sha256:0f65a041627d7693840b4dd743581db4c441c97195298a29d075f91b79539df2", size = 34688, upload-time = "2023-11-27T17:16:43.53Z" },
+]
+
+[[package]]
 name = "coverage"
 version = "7.14.1"
 source = { registry = "https://pypi.org/simple" }
@@ -501,12 +510,14 @@ wheels = [
 
 [[package]]
 name = "ggshield"
-version = "1.51.0"
+version = "1.52.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "charset-normalizer" },
     { name = "click" },
+    { name = "configupdater" },
     { name = "cryptography" },
+    { name = "filelock" },
     { name = "keyring" },
     { name = "marshmallow" },
     { name = "marshmallow-dataclass" },
@@ -526,9 +537,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/51/d5/54067ee60dee03485ceab3f5f3f998fed550ffb087e63a25635797cb0e77/ggshield-1.51.0.tar.gz", hash = "sha256:e7f21d6a2693ab7c546f1be84d218e5cd69357ed5ac2e0bfb92fb93cfa367edb", size = 770492, upload-time = "2026-05-26T13:10:58.243Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/f9/3f2b594156cda7ed2afba978daec90fc0fad5023a1896aacf120f259f9a1/ggshield-1.52.2.tar.gz", hash = "sha256:bcb3f485e0ac12adbca44b4e7135bb522e29b2a774842eaf942ffca972f2219a", size = 839118, upload-time = "2026-06-17T13:38:10.541Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/58/d4712914f27681cc435ba15ccde921c6810371dad8784b716eb2e65f341f/ggshield-1.51.0-py3-none-any.whl", hash = "sha256:3422ee6bc10cd13d1bcec40b46dbcdf15eb7a7e992df57575bb19f8f583de41b", size = 279772, upload-time = "2026-05-26T13:10:56.888Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/57/87d9192d07f34f586e229b033d50c3d91a29ec2423a83777b9116bddb06c/ggshield-1.52.2-py3-none-any.whl", hash = "sha256:c5a60a97148f1bd5cca53a5c0f031cf6adba24a0e7eac07257840645cb567ea7", size = 308163, upload-time = "2026-06-17T13:38:08.899Z" },
 ]
 
 [[package]]
@@ -901,7 +912,7 @@ requires-dist = [{ name = "sql-to-arc", editable = "middleware/sql_to_arc" }]
 dev = [
     { name = "bandit", specifier = ">=1.7.0" },
     { name = "fastapi", specifier = ">=0.135.3" },
-    { name = "ggshield", specifier = ">=1.51.0" },
+    { name = "ggshield", specifier = ">=1.52.2" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mypy", specifier = ">=1.19.0" },
     { name = "pre-commit", specifier = ">=4.6.0" },
@@ -942,15 +953,16 @@ wheels = [
 
 [[package]]
 name = "marshmallow-dataclass"
-version = "8.5.14"
+version = "8.7.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "marshmallow" },
+    { name = "typeguard" },
     { name = "typing-inspect" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/20/f2/1af94d8e8432ddd80e30983b3c7fdeb4cf7c9b0790d6d4855c4343dbecde/marshmallow_dataclass-8.5.14.tar.gz", hash = "sha256:233c414dd24a6d512bcdb6fb840076bf7a29b7daaaea40634f155a5933377d2e", size = 19355, upload-time = "2023-04-27T16:58:49.713Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/01/23/a863a5d569f03454d733f884a72415ac3f1e1b1b3215de3a9f4f621a83a6/marshmallow_dataclass-8.7.1.tar.gz", hash = "sha256:4fb80e1bf7b31ce1b192aa87ffadee2cedb3f6f37bb0042f8500b07e6fad59c4", size = 32059, upload-time = "2024-09-12T16:18:51.952Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/31/56/997c3a603386f3736ab778e258f7ce7935219676744e4e9216e9f6932a95/marshmallow_dataclass-8.5.14-py3-none-any.whl", hash = "sha256:73859c8963774b5aad6b23ff3dd8456c8463e7c96bf5076051e1656fd4e101d0", size = 17699, upload-time = "2023-04-27T16:58:47.185Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/f5/6764f3f3203d14a0e6df0fce4838f8195ccc61ec7d48d7ed89acfb8adeed/marshmallow_dataclass-8.7.1-py3-none-any.whl", hash = "sha256:405cbaaad9cea56b3de2f85eff32a9880e3bf849f652e7f6de7395e4b1ddc072", size = 19111, upload-time = "2024-09-12T16:18:50.286Z" },
 ]
 
 [[package]]
@@ -1493,7 +1505,7 @@ wheels = [
 
 [[package]]
 name = "pygitguardian"
-version = "1.30.0"
+version = "1.32.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "marshmallow" },
@@ -1502,9 +1514,9 @@ dependencies = [
     { name = "setuptools" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/52/d9/15e6d313c47c1e8753d7c0a274717b8841f34e9e187ba8a9f5b9598096f4/pygitguardian-1.30.0.tar.gz", hash = "sha256:fd6a43a2650d181c06d3e0a5c38b7a9ed9e4868bdd1997ce4e6c5863c94de9fe", size = 56271, upload-time = "2026-04-28T12:02:32.555Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/58/17a8fb8459871f0a7a758a64f492a282a1251b629789a6f72d80a6831fc4/pygitguardian-1.32.0.tar.gz", hash = "sha256:2bc9880c139dee3692bff369a10d42e99f58e4122358ce0d632b51e250e90252", size = 57374, upload-time = "2026-06-16T13:27:06.488Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/01/3e/aefd6fcc2fcb88dfe5fd1a026a3ca5d5ba87eb7baba3feea70ce4db117c4/pygitguardian-1.30.0-py3-none-any.whl", hash = "sha256:9ff6acb3e6a47ddc96fb4fc7f70dbe058ccb828c5cef67097ab5cef897c88219", size = 23518, upload-time = "2026-04-28T12:02:31.151Z" },
+    { url = "https://files.pythonhosted.org/packages/56/4a/b26702ad735fa24b0b93bfbb64cbe6a4a761304a767e8b3ce4b890dd8f6d/pygitguardian-1.32.0-py3-none-any.whl", hash = "sha256:7f0549565a4a7ef13be2ced9b2fd787cfe402bdd169c3e40e8057a63e0c06bf6", size = 23910, upload-time = "2026-06-16T13:27:05.556Z" },
 ]
 
 [[package]]
@@ -1957,9 +1969,9 @@ requires-dist = [
     { name = "fairagro-middleware-shared", specifier = ">=9.0.0" },
     { name = "opentelemetry-api", specifier = ">=1.30.0" },
     { name = "oracledb", specifier = ">=2.0.0" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.3" },
     { name = "pydantic", specifier = ">=2.12.5" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.50" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.46" },
 ]
 
 [[package]]
@@ -2104,6 +2116,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/aa/40/25ceaf7f02e18b0d99150d94e200929351a542479c54abb7b92e1fd74b10/tuf-7.0.0.tar.gz", hash = "sha256:9d2e6723538e0d5a3e482b6de805fcfe64481448d5853039ba6b06ba541efd7f", size = 272032, upload-time = "2026-05-18T08:28:57.408Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/c7/301f699ad9427bb0e06935ed56850dd26eecb2b3e8e07b80311875eae676/tuf-7.0.0-py3-none-any.whl", hash = "sha256:572bdbdc9ff4a82278a0d4773e6100863b9b33023f27575e84ca65b486dd0d79", size = 55277, upload-time = "2026-05-18T08:28:56.123Z" },
+]
+
+[[package]]
+name = "typeguard"
+version = "4.5.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/67/1c/dfba5c4633cafc4c701f237d2ba63b416805047fd6d96aab4cfc40969f98/typeguard-4.5.2.tar.gz", hash = "sha256:5a16dcac23502039299c97c8941651bc33d7ea8cc4b2f7d6bbb1b528f6eea423", size = 80240, upload-time = "2026-05-14T12:59:40.857Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5b/29/74eeb4d3f3ae61ca096b018ad486b3b3c74b17bec09ab4edab721cbefec3/typeguard-4.5.2-py3-none-any.whl", hash = "sha256:fcf9de18bd945cdb4c7b996e12b4c51ce83f92f191314a6d7cf1739586ec98cf", size = 36748, upload-time = "2026-05-14T12:59:39.473Z" },
 ]
 
 [[package]]
