@@ -23,7 +23,7 @@ dev = [
   "pre-commit>=4.6.0",
   "ggshield>=1.52.2",
   "respx>=0.20.0",
-  "fastapi>=0.135.3",
+  "fastapi>=0.139.0",
   "uvicorn>=0.42.0",
 ]
 
