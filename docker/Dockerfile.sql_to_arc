@@ -23,7 +23,8 @@ RUN uv build --package sql_to_arc --wheel
 # ---- Binary Build Stage ----
 FROM python:3.12.13-alpine3.23 AS binary-builder
 
-# Install build tools for PyInstaller and native DB drivers
+# Install build tools for PyInstaller and native DB drivers.
+# Pre-download Microsoft ODBC Driver 18 for Alpine (kept for runtime stage; -L follows redirects).
 RUN apk add --no-cache \
     build-base=0.5-r3 \
     python3-dev=3.12.13-r0 \
@@ -33,11 +34,8 @@ RUN apk add --no-cache \
     cargo=1.91.1-r2 \
     git=2.52.0-r0 \
     unixodbc-dev=2.3.14-r0 \
-    curl=8.19.0-r0
-
-# Pre-download Microsoft ODBC Driver 18 for Alpine (kept for runtime stage)
-# Use -L to follow redirects
-RUN curl -L -O https://download.microsoft.com/download/9dcab408-e0d4-4571-a81a-5a0951e3445f/msodbcsql18_18.6.1.1-1_amd64.apk
+    curl=8.20.0-r0 && \
+    curl -L -O https://download.microsoft.com/download/9dcab408-e0d4-4571-a81a-5a0951e3445f/msodbcsql18_18.6.1.1-1_amd64.apk
 
 WORKDIR /build
 
@@ -63,16 +61,11 @@ COPY middleware ./middleware
 # 2. We skip workspace installation here to avoid editable builds of the root package,
 #    which can fail in shallow/branch builds when hatch-vcs parses non-PEP440 refs.
 # 3. fairagro-middleware-api-client and fairagro-middleware-shared are installed from PyPI.
-RUN uv sync --no-dev --no-install-workspace
-
-# Install the application wheel and PyInstaller.
-# This replaces the editable install from 'uv sync' with the optimized wheel.
-RUN uv pip install /tmp/wheels/*.whl pyinstaller
-
-# Build standalone binary using the .venv's context.
-# We point PyInstaller to the 'main.py' INSTALLED in site-packages.
-# --copy-metadata is still needed because the code checks its own version at runtime.
-RUN . .venv/bin/activate && \
+# 4. Install the application wheel and PyInstaller (replaces editable workspace installs).
+# 5. Build a standalone binary; point PyInstaller at main.py in site-packages.
+#    --copy-metadata is needed because the code checks its own version at runtime.
+RUN uv sync --no-dev --no-install-workspace && \
+    uv pip install /tmp/wheels/*.whl pyinstaller && \
     .venv/bin/python -m PyInstaller --onedir \
     --name sql_to_arc \
     --copy-metadata sql_to_arc \
