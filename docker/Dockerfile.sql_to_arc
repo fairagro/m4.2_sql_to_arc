@@ -8,7 +8,7 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY middleware ./middleware
 
 # Upgrade pip and install uv
-RUN pip install --no-cache-dir --upgrade pip==26.1.2 uv==0.11.21
+RUN pip install --no-cache-dir --upgrade pip==26.1.2 uv==0.11.30
 
 # Declare build argument for versioning
 ARG APP_VERSION=0.0.0
@@ -33,7 +33,7 @@ RUN apk add --no-cache \
     cargo=1.91.1-r2 \
     git=2.52.0-r0 \
     unixodbc-dev=2.3.14-r0 \
-    curl=8.19.0-r0
+    curl=8.20.0-r0
 
 # Pre-download Microsoft ODBC Driver 18 for Alpine (kept for runtime stage)
 # Use -L to follow redirects
@@ -42,7 +42,7 @@ RUN curl -L -O https://download.microsoft.com/download/9dcab408-e0d4-4571-a81a-5
 WORKDIR /build
 
 # Install uv core tool
-RUN pip install --no-cache-dir --upgrade pip==26.1.2 uv==0.11.21
+RUN pip install --no-cache-dir --upgrade pip==26.1.2 uv==0.11.30
 
 # Declare build argument for versioning
 ARG APP_VERSION=0.0.0
