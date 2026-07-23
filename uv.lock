@@ -78,15 +78,15 @@ wheels = [
 
 [[package]]
 name = "arctrl"
-version = "3.0.5"
+version = "3.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "openpyxl" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b7/c6/2424b1a2de8d86ee743dfaaf9e5f99a0a4377a108cddda2a7848e9246d96/arctrl-3.0.5.tar.gz", hash = "sha256:29da7068882a5fbe32109b80c9699541b152afc9adf709ffabec05ca9f43ffe4", size = 661964, upload-time = "2026-04-20T17:40:45.371Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f5/67/71166ceca5434b968adf448e2e8bd1c011f93cada850fdd26e6f6063464b/arctrl-3.1.1.tar.gz", hash = "sha256:f3cc0d483ef1d427b0cfb174b2388afe750de28a237de2df0d569cee27b50aa7", size = 672314, upload-time = "2026-07-22T12:12:23.14Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/5a/5aab94de88a19b5429d6f16c6e71146f44fe690205419ffe0c22a1468bd8/arctrl-3.0.5-py3-none-any.whl", hash = "sha256:b3457c2679c31307a22bb692076053fad4f83522c2b7dc4263c287f82707c5a1", size = 958069, upload-time = "2026-04-20T17:40:43.038Z" },
+    { url = "https://files.pythonhosted.org/packages/22/0a/8425a499889b5866185e8b273076d61a8912ca6d6062007f252233c8df14/arctrl-3.1.1-py3-none-any.whl", hash = "sha256:f4351c8b06b3876fd337f512ccea2581a76208a51d86ff3edc35748ba0915c2d", size = 961864, upload-time = "2026-07-22T12:12:21.628Z" },
 ]
 
 [[package]]
@@ -1964,7 +1964,7 @@ dependencies = [
 requires-dist = [
     { name = "aiomysql", specifier = ">=0.2.0" },
     { name = "aioodbc", specifier = ">=0.4.1" },
-    { name = "arctrl", specifier = ">=3.0.0b15" },
+    { name = "arctrl", specifier = ">=3.1.1" },
     { name = "fairagro-middleware-api-client", specifier = ">=10.0.1" },
     { name = "fairagro-middleware-shared", specifier = ">=10.0.1" },
     { name = "opentelemetry-api", specifier = ">=1.30.0" },
