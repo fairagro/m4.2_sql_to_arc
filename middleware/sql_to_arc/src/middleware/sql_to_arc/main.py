@@ -108,8 +108,9 @@ async def main(argv: list[str] | None = None) -> None:
                     repo.harvested_datasets,
                 )
 
-        except Exception as e:  # pylint: disable=broad-exception-caught
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             logger.critical("Fatal error during conversion process: %s", e, exc_info=True)
+            raise
 
 
 if __name__ == "__main__":
