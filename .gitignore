@@ -226,7 +226,7 @@ helmchart/**/server.conf
 # ggshield cache
 .cache_ggshield
 
-# Docker CLI local state (committed config for DevPod DinD; ignore runtime artifacts)
+# Docker CLI local state (committed config for DinD; ignore runtime artifacts)
 .docker/*
 !.docker/config.json
 

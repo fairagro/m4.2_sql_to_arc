@@ -52,11 +52,9 @@ middleware/
 
 scripts/
 ├── load-env.sh                    # Per-shell env (PATH, aliases, SOPS); sourced from bashrc
-├── start-devcontainer-cursor.sh   # Cursor: open project via DevPod (host only)
 ├── uv-sync-dev.sh                 # One-time uv sync (devcontainer postCreate)
 ├── install-dev-hooks.sh           # One-time pre-commit + Git LFS hooks
-├── setup-container-gpg.sh         # One-time GPG agent/trustdb (Cursor devcontainer)
-├── import-public-gpg-keys.sh      # Import public_gpg_keys/*.asc (Antigravity / local)
+├── import-public-gpg-keys.sh      # Import public_gpg_keys/*.asc (devcontainer / local)
 ├── setup-git-lfs.sh               # Git LFS hook installation
 ├── quality-check.sh               # Run all quality checks (pre-commit push stage)
 ├── quality-fix.sh                 # Run auto-formatters (ruff)
@@ -97,11 +95,10 @@ uv sync --dev --all-packages
 
 | IDE | How to open |
 | --- | --- |
-| **VS Code** | **Reopen in Container** → `.devcontainer/vscode/devcontainer.json` |
-| **Cursor** | `./scripts/start-devcontainer-cursor.sh` (DevPod; see `.devcontainer/cursor/README.md`) |
-| **Antigravity** | `.devcontainer/antigravity/devcontainer.json` (feature-based image) |
+| **VS Code** | **Reopen in Container** → `.devcontainer/devcontainer.json` |
+| **Cursor** | **Dev Containers: Reopen in Container** → `.devcontainer/devcontainer.json` |
 
-VS Code and Cursor share `.devcontainer/Dockerfile` (pinned tools, **linux/amd64 only**) + DinD feature. `devcontainer.json` sets `--platform=linux/amd64`. One-time setup runs in `postCreateCommand` (`uv-sync-dev.sh`, `install-dev-hooks.sh`; Cursor also runs `setup-container-gpg.sh`, VS Code and Antigravity run `import-public-gpg-keys.sh` only). Per-shell: `scripts/load-env.sh` (sourced from `~/.bashrc`).
+Shared image: `.devcontainer/Dockerfile` (pinned tools, **linux/amd64 only**) + DinD feature. `devcontainer.json` sets `--platform=linux/amd64`. One-time setup runs in `postCreateCommand` (`uv-sync-dev.sh`, `install-dev-hooks.sh`, `import-public-gpg-keys.sh`). Per-shell: `scripts/load-env.sh` (sourced from `~/.bashrc`).
 
 ### Development Environment
 
