@@ -455,15 +455,15 @@ wheels = [
 
 [[package]]
 name = "fairagro-middleware-api-client"
-version = "10.0.1"
+version = "11.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1e/08/4c41afb62c6a9e9f35459f89f3ed421429872529a78020cdef362fea92bb/fairagro_middleware_api_client-10.0.1.tar.gz", hash = "sha256:6e21917811fc23a4dbcb9ea31b5a32d7e8026e8a60f832846dc46af821ccdf84", size = 27327, upload-time = "2026-07-01T12:42:39.421Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/6e/99a4a184307c887170c36e233e1395a2749c39e56e9565442e7937edab5f/fairagro_middleware_api_client-11.0.0.tar.gz", hash = "sha256:6ad12fad0c40e7c1e898e09b1387d9aa4d68831ef67dcbdd6d4f4fc0f42ab6ba", size = 28417, upload-time = "2026-07-27T12:58:06.435Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/f3/651fb0cb0ea0aed32bb97753641c3672a08cfb21194e46ce4480cacf629d/fairagro_middleware_api_client-10.0.1-py3-none-any.whl", hash = "sha256:6efeacefff781c6db5f3a77ce73e6be9e7a9e8ead33610b3d15666e909b4540f", size = 14205, upload-time = "2026-07-01T12:42:37.511Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/a9/0150d733cff1e96751d29467e9943ac6a575aa0a1cb41ca1acc9287d60e7/fairagro_middleware_api_client-11.0.0-py3-none-any.whl", hash = "sha256:a9710f3a069f07fc69f90a5d57c3a9503f31629978ff645fae03b565af32c6c4", size = 14710, upload-time = "2026-07-27T12:58:04.33Z" },
 ]
 
 [[package]]
@@ -1965,7 +1965,7 @@ requires-dist = [
     { name = "aiomysql", specifier = ">=0.2.0" },
     { name = "aioodbc", specifier = ">=0.4.1" },
     { name = "arctrl", specifier = ">=3.1.1" },
-    { name = "fairagro-middleware-api-client", specifier = ">=10.0.1" },
+    { name = "fairagro-middleware-api-client", specifier = ">=11.0.0" },
     { name = "fairagro-middleware-shared", specifier = ">=11.0.0" },
     { name = "opentelemetry-api", specifier = ">=1.30.0" },
     { name = "oracledb", specifier = ">=4.0.2" },
