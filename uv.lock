@@ -2039,7 +2039,7 @@ dependencies = [
 requires-dist = [
     { name = "aiomysql", specifier = ">=0.2.0" },
     { name = "aioodbc", specifier = ">=0.4.1" },
-    { name = "arctrl", specifier = ">=3.1.1" },
+    { name = "arctrl", specifier = ">=3.2.0" },
     { name = "fairagro-middleware-api-client", specifier = ">=10.0.1" },
     { name = "fairagro-middleware-shared", specifier = ">=11.0.1.dev29" },
     { name = "opentelemetry-api", specifier = ">=1.30.0" },
