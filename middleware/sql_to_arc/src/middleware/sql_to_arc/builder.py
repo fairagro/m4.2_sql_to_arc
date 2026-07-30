@@ -11,12 +11,13 @@ from arctrl import (
     ArcAssay,
     ArcStudy,
     ArcTable,
-    CompositeCell,
-    CompositeHeader,
-    IOType,
     OntologyAnnotation,
 )
-from arctrl.py.Core.Table.composite_cell import Data
+from arctrl.py.Core.Table.composite_cell import CompositeCell_FreeText as CompositeCell, Data
+
+# arctrl ≥3.2 exports CompositeHeader/IOType as typing.TypeAlias only; factories live
+# on the tagged-union case classes.
+from arctrl.py.Core.Table.composite_header import CompositeHeader_Output as CompositeHeader, IOType_Data as IOType
 
 from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.mapper import (
