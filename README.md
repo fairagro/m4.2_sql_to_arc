@@ -7,6 +7,7 @@ This repository contains the **SQL-to-ARC Converter**, a core component of the F
 | Folder | Description |
 | :--- | :--- |
 | [middleware/](middleware/) | Source code of the converter component. |
+| [openspec/](openspec/) | OpenSpec domain specs and change proposals (spec-driven development). |
 | [docs/](docs/) | Architectural design, database view specifications, and API documentation. |
 | [dev_environment/](dev_environment/) | Docker-based local development setup (Postgres, Mock API). |
 | [scripts/](scripts/) | Tooling for quality checks, environment setup, and Git LFS. |

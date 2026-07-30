@@ -1,0 +1,60 @@
+schema: spec-driven
+
+context: |
+  Project: FAIRagro SQL-to-ARC Converter — batch process that reads SQL views,
+  builds ARC RO-Crate JSON-LD, and uploads to the Middleware API.
+
+  Tech stack: Python 3.12, PostgreSQL 15, uv, Docker, arctrl, SQLAlchemy async,
+  Pydantic v2, httpx. External libs: middleware.shared + middleware.api_client
+  (git workspace from m4.2_advanced_middleware_api).
+
+  Authoritative DB contract: docs/sql_to_arc_database_views.md — never restate
+  view definitions in specs; reference that document.
+
+  Specs live in openspec/specs/<domain>/ (spec.md + optional design.md for
+  current architecture decisions). Changes use openspec/changes/<name>/.
+
+  Domain map:
+    principles, configuration, demo-environment, tooling-consistency —
+      cross-cutting / project-level
+    sql-to-arc-conversion, arc-building, database-access, api-upload —
+      converter internals (code under middleware/sql_to_arc/)
+
+  Hard constraints (also in openspec/specs/principles/):
+    - No os.environ in app code; use Config / ConfigWrapper (prefix SQL_TO_ARC)
+    - All SQL only in Database class; views only, never raw tables
+    - Worker IPC via JSON strings only
+    - Quality: ruff, mypy, pylint, bandit, pytest must pass
+    - Prefer real fixes over noqa / type: ignore
+
+  Skills (project): .agents/skills/arctrl, .agents/skills/config-wrapper
+  Commands: uv run pytest / ruff / mypy; never run scripts/quality-check.sh
+
+rules:
+  proposal:
+    - Reference existing openspec/specs/<domain>/ when changing behavior
+    - Do not restate docs/sql_to_arc_database_views.md column definitions
+    - Include Non-goals when scope could bleed into adjacent domains
+  specs:
+    - Use RFC 2119 MUST/SHALL/SHOULD/MAY
+    - Every requirement needs at least one testable scenario
+    - Keep requirements behavioral; put implementation choices in design.md
+  design:
+    - Number Key Decisions with explicit "— reasoning" (chose X over Y because Z)
+    - Preserve module dependency rules from principles
+  tasks:
+    - Prefer small, independently verifiable tasks
+    - Include test updates alongside code changes
+    - End with uv run ruff format and targeted pytest
+
+operations:
+  apply:
+    guidance:
+      - Read openspec/specs/<domain>/design.md for current architecture before editing
+      - Load .agents/skills/arctrl or config-wrapper when those APIs are touched
+      - After edits: uv run ruff format ., then uv run pytest on affected tests
+      - Check Problems tab / ruff / mypy; avoid unjustified suppressions
+  archive:
+    guidance:
+      - Merge delta specs into openspec/specs/; update design.md if architecture changed
+      - Confirm openspec validate --specs passes before finishing
