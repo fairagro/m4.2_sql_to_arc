@@ -41,8 +41,9 @@ worker IPC stays JSON-only; no `os.environ`; bump
    — Create `HarvestReport(name="SQL to ARC Conversion Run")` at run start,
    `open_repository(config.rdi)`, pass the scope into processing, call
    `report.finish()` after the loop (success or partial failure), then
-   `JsonLdReportSerializer().render(report)` to stdout. Duration comes from
-   start/finish timestamps — drop manual `duration_seconds` assignment.
+   print `JsonLdReportSerializer().render(report)` from `main` (log on
+   serializer failure; do not raise). Duration comes from start/finish
+   timestamps — drop manual `duration_seconds` assignment.
 
 3. **`record_harvested` only after successful upload**
    — Matches shared/harvester guidance. Today `found_datasets` increments on
@@ -81,9 +82,10 @@ worker IPC stays JSON-only; no `os.environ`; bump
    — Shared `RepositoryScope` already locks; concurrent tasks MAY call
    counting methods without an extra sql_to_arc lock.
 
-9. **Emission helper local to sql_to_arc**
-   — Small `emit_report(report)` (print serializer output, log on failure)
-   similar to the harvester helper. Do not add a shared stdout helper.
+9. **No local reporting module**
+   — Emit inline in `main` via `JsonLdReportSerializer`. Call
+   `scope.record_skipped()` directly if intentional skips appear later.
+   Do not add a shared stdout helper either.
 
 10. **Dependency pin**
     — Raise `fairagro-middleware-shared` to `>=11.0.1.dev29` (or the first

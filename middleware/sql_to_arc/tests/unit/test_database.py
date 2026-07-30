@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from middleware.shared.report import HarvestReport
 from middleware.sql_to_arc.database import Database
-from middleware.sql_to_arc.stats import ProcessingStats
 
 
 class AsyncIterator:
@@ -54,7 +54,8 @@ async def test_stream_investigations() -> None:
         mock_conn.stream.return_value = mock_result
 
         db = Database("sqlite+aiosqlite:///")
-        res = await collect_gen(db.stream_investigations(stats=ProcessingStats(), limit=5))
+        scope = HarvestReport().open_repository("test")
+        res = await collect_gen(db.stream_investigations(scope=scope, limit=5))
 
         assert len(res) == 1
         assert res[0].identifier == "1"

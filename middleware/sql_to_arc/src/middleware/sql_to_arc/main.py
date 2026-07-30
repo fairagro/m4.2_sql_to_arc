@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import logging
 import multiprocessing
-import time
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -13,11 +12,11 @@ from pydantic import ValidationError
 from middleware.api_client import ApiClient
 from middleware.shared.config.config_wrapper import ConfigWrapper
 from middleware.shared.config.logging import configure_logging
+from middleware.shared.report import HarvestReport, JsonLdReportSerializer
 from middleware.shared.tracing import initialize_tracing
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.database import Database
 from middleware.sql_to_arc.processor import process_investigations
-from middleware.sql_to_arc.stats import ProcessingStats
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -44,11 +43,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-async def run_conversion(config: Config) -> ProcessingStats:
-    """Run the conversion."""
+async def run_conversion(config: Config) -> HarvestReport:
+    """Run the conversion and return the finished harvest report."""
     db = Database(config.connection_string.get_secret_value())
 
-    # 1. Validate DB schema before starting
     await db.validate_schema()
 
     async with ApiClient(config.api_client) as client:
@@ -84,22 +82,31 @@ async def main(argv: list[str] | None = None) -> None:
     with tracer.start_as_current_span("sql_to_arc.main"):
         logger.info("Starting SQL-to-ARC conversion with config: %s", args.config)
         try:
-            start_time = time.perf_counter()
-            stats = await run_conversion(config)
-            end_time = time.perf_counter()
-            stats.duration_seconds = end_time - start_time
+            report = await run_conversion(config)
 
             logger.info("SQL-to-ARC conversion completed. Report:")
-            print(stats.to_jsonld(rdi_identifier=config.rdi, rdi_url=config.rdi_url))
+            try:
+                print(JsonLdReportSerializer().render(report), end="")
+            except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+                logger.warning("Failed to serialise harvest report: %s", exc)
 
-            if stats.failed_datasets > 0:
+            repo = report.repository_reports[0] if report.repository_reports else None
+            if repo is None:
+                logger.info("Conversion finished with no repository scope.")
+            elif repo.failed_datasets > 0:
+                processed = repo.harvested_datasets + repo.failed_datasets + repo.skipped_datasets
                 logger.warning(
-                    "Conversion finished with %d failures out of %d datasets.",
-                    stats.failed_datasets,
-                    stats.found_datasets,
+                    "Conversion finished with %d failures out of %d datasets (harvested=%d, skipped=%d).",
+                    repo.failed_datasets,
+                    processed,
+                    repo.harvested_datasets,
+                    repo.skipped_datasets,
                 )
             else:
-                logger.info("Conversion finished successfully. %d datasets processed.", stats.found_datasets)
+                logger.info(
+                    "Conversion finished successfully. %d datasets harvested.",
+                    repo.harvested_datasets,
+                )
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             logger.critical("Fatal error during conversion process: %s", e, exc_info=True)

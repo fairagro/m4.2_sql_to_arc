@@ -8,7 +8,7 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY middleware ./middleware
 
 # Upgrade pip and install uv
-RUN pip install --no-cache-dir --upgrade pip==26.1.2 uv==0.11.30
+RUN pip install --no-cache-dir --upgrade pip==26.2 uv==0.12.0
 
 # Declare build argument for versioning
 ARG APP_VERSION=0.0.0
@@ -42,7 +42,7 @@ RUN curl -L -O https://download.microsoft.com/download/9dcab408-e0d4-4571-a81a-5
 WORKDIR /build
 
 # Install uv core tool
-RUN pip install --no-cache-dir --upgrade pip==26.1.2 uv==0.11.30
+RUN pip install --no-cache-dir --upgrade pip==26.2 uv==0.12.0
 
 # Declare build argument for versioning
 ARG APP_VERSION=0.0.0

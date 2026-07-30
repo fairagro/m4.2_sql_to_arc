@@ -13,6 +13,7 @@ from arctrl import ARC
 from middleware.api_client import ApiClient, ArcMetadata, ArcResult, ArcStatus
 from middleware.api_client.models import ArcLifecycleStatus
 from middleware.shared.config.config_base import OtelConfig
+from middleware.shared.report import HarvestReport
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import WorkerContext
 from middleware.sql_to_arc.main import main
@@ -26,7 +27,6 @@ from middleware.sql_to_arc.models import (
 )
 from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 from middleware.sql_to_arc.processor import process_investigation
-from middleware.sql_to_arc.stats import ProcessingStats
 
 
 class MockExecutor(ThreadPoolExecutor):
@@ -91,7 +91,7 @@ class WorkflowTester:
         self.api_client = mock_api_client
         self.db = AsyncMock()
         self.db.validate_schema = AsyncMock(return_value=None)
-        self.db.to_jsonld.return_value = "{}"
+        self.db.count_investigations = AsyncMock(return_value=0)
         self.captured_arcs: list[ARC] = []
 
         # Default empty mocks
@@ -195,6 +195,7 @@ class WorkflowTester:
                 _prepare_data(investigations, InvestigationRow), InvestigationRow
             )
         )
+        self.db.count_investigations = AsyncMock(return_value=len(investigations or []))
         self.db.stream_studies = MagicMock(
             side_effect=lambda *args, **kwargs: self._as_gen(  # noqa: ARG005
                 _prepare_data(studies, StudyRow), StudyRow
@@ -286,10 +287,12 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
             pool_holder=pool_holder,
         )
         semaphore = asyncio.Semaphore(1)
-        stats = ProcessingStats()
+        report = HarvestReport()
+        scope = report.open_repository("edaphobase")
         for i, inv in enumerate(investigation_rows):
             inv_info = f"Investigation {i + 1}"
-            await process_investigation(ctx, InvestigationRow.model_validate(inv), stats, inv_info, semaphore)
+            await process_investigation(ctx, InvestigationRow.model_validate(inv), scope, inv_info, semaphore)
+        report.finish()
 
     assert mock_api_client.create_or_update_arc.called
     # There should be two calls, each with one ARC (since batch size is always 1)
