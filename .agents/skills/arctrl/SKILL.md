@@ -39,7 +39,6 @@ from the bare `arctrl` package.
 override is not in place):
 
 ```python
-from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
 from arctrl.py.Core.Table.composite_cell import Data  # type: ignore[import-untyped]
 ```
 
@@ -58,10 +57,8 @@ from arctrl import (
     OntologyAnnotation,
     Person,
     Publication,
+    start_as_task,  # re-exported from fable_library (arctrl ≥3.2)
 )
-
-# Async write helper lives in the Fable internals:
-from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
 ```
 
 ---
@@ -273,8 +270,8 @@ await start_as_task(arc.WriteAsync("/path/to/output/dir"))
 
 ## Known Pitfalls
 
-**`start_as_task` is untyped** — always add `# type: ignore[import-untyped]`
-on the import.
+**`start_as_task`** — import from `arctrl` (re-exported since 3.2). The old
+path `arctrl.py.fable_modules.fable_library.async_` no longer exists.
 
 **`CompositeHeader.performer` and `.date` are properties, not constructors**
 — call them without `()`:
