@@ -97,6 +97,15 @@ async def _upload_and_update_scope(
             request.investigation_id,
         )
 
+    except json.JSONDecodeError as e:
+        logger.error(
+            "%s: Invalid ARC JSON for investigation %s: %s",
+            request.inv_info,
+            request.investigation_id,
+            e,
+            exc_info=True,
+        )
+        scope.record_failed(f"Invalid ARC JSON: {e}", record_id=request.investigation_id)
     except (ConnectionError, TimeoutError, ApiClientError) as e:
         size_kb = len(request.arc_json.encode("utf-8")) / 1024
         logger.error(

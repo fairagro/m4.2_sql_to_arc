@@ -138,6 +138,50 @@ async def test_process_investigation_upload_failure_records_failed(
 
 
 @pytest.mark.asyncio
+async def test_process_investigation_invalid_arc_json_records_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed ARC JSON must record failed with investigation id, not harvested."""
+    mock_client = AsyncMock(spec=ApiClient)
+
+    investigation = InvestigationRow(identifier="inv-bad-json", title="Inv", description_text="Desc")
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    semaphore = asyncio.Semaphore(1)
+
+    loop_future: asyncio.Future[str] = asyncio.Future()
+    loop_future.set_result("not-json")
+    loop_mock = MagicMock()
+    loop_mock.run_in_executor.return_value = loop_future
+    monkeypatch.setattr("asyncio.get_event_loop", MagicMock(return_value=loop_mock))
+
+    pool_holder = ProcessPoolHolder(1, inject_executor=MagicMock(spec=concurrent.futures.ProcessPoolExecutor))
+    ctx = WorkerContext(
+        client=mock_client,
+        rdi="test_rdi",
+        studies_by_inv={},
+        assays_by_inv={},
+        contacts_by_inv={},
+        pubs_by_inv={},
+        anns_by_inv={},
+        worker_id=1,
+        total_workers=1,
+        pool_holder=pool_holder,
+        arc_generation_timeout_minutes=1,
+    )
+
+    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.harvested_datasets == 0
+    assert entry.failed_datasets == 1
+    assert entry.failed_records[0].record_id == "inv-bad-json"
+    assert "Invalid ARC JSON" in entry.failed_records[0].message
+    mock_client.create_or_update_arc.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test full process_investigations flow with batching and streaming."""
     mock_db = MagicMock()
