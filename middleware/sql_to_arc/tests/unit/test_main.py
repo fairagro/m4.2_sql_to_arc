@@ -16,7 +16,7 @@ import pytest
 
 from middleware.api_client import ApiClient, ApiClientError
 from middleware.shared.report import HarvestReport, JsonLdReportSerializer, RepositoryScope
-from middleware.sql_to_arc.builder import build_single_arc_task
+from middleware.sql_to_arc.builder import DuplicateAssayRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
 from middleware.sql_to_arc.main import main, parse_args
@@ -228,6 +228,46 @@ async def test_process_investigation_bare_exception_records_failed(
     assert entry.failed_records[0].record_id == "inv-dup"
     assert "Build failed" in entry.failed_records[0].message
     mock_client.create_or_update_arc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_investigation_duplicate_assay_includes_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Conflicting duplicate assay failures must list the conflicting field names."""
+    mock_client = AsyncMock(spec=ApiClient)
+    investigation = InvestigationRow(identifier="inv-conflict", title="Inv", description_text="Desc")
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    semaphore = asyncio.Semaphore(1)
+
+    loop_future: asyncio.Future[str] = asyncio.Future()
+    loop_future.set_exception(DuplicateAssayRowError("assay-xyz", ["title", "measurement_type_term"]))
+    loop_mock = MagicMock()
+    loop_mock.run_in_executor.return_value = loop_future
+    monkeypatch.setattr("asyncio.get_running_loop", MagicMock(return_value=loop_mock))
+
+    pool_holder = ProcessPoolHolder(1, inject_executor=MagicMock(spec=concurrent.futures.ProcessPoolExecutor))
+    ctx = WorkerContext(
+        client=mock_client,
+        rdi="test_rdi",
+        studies_by_inv={},
+        assays_by_inv={},
+        contacts_by_inv={},
+        pubs_by_inv={},
+        anns_by_inv={},
+        worker_id=1,
+        total_workers=1,
+        pool_holder=pool_holder,
+        arc_generation_timeout_minutes=1,
+    )
+
+    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    report.finish()
+
+    message = report.repository_reports[0].failed_records[0].message
+    assert "assay-xyz" in message
+    assert "fields: title, measurement_type_term" in message
 
 
 @pytest.mark.asyncio

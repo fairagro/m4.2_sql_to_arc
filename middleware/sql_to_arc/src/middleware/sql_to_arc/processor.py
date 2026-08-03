@@ -185,27 +185,29 @@ async def _build_and_upload_single_arc(
             logger.error("%s: ARC generation timed out for investigation %s", inv_info, inv_id)
             scope.record_failed("ARC generation timed out", record_id=inv_id)
         except DuplicateAssayRowError as e:
+            fields = ", ".join(e.fields)
             logger.error(
                 "%s: Conflicting duplicate vAssay rows for assay %s (fields: %s) in investigation %s",
                 inv_info,
                 e.assay_id,
-                ", ".join(e.fields),
+                fields,
                 inv_id,
             )
             scope.record_failed(
-                f"Conflicting duplicate vAssay rows for assay {e.assay_id}",
+                f"Conflicting duplicate vAssay rows for assay {e.assay_id} (fields: {fields})",
                 record_id=inv_id,
             )
         except DuplicateStudyRowError as e:
+            fields = ", ".join(e.fields)
             logger.error(
                 "%s: Conflicting duplicate vStudy rows for study %s (fields: %s) in investigation %s",
                 inv_info,
                 e.study_id,
-                ", ".join(e.fields),
+                fields,
                 inv_id,
             )
             scope.record_failed(
-                f"Conflicting duplicate vStudy rows for study {e.study_id}",
+                f"Conflicting duplicate vStudy rows for study {e.study_id} (fields: {fields})",
                 record_id=inv_id,
             )
         except concurrent.futures.BrokenExecutor as e:
