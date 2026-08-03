@@ -62,7 +62,7 @@ async def test_process_investigation_builds_and_uploads(monkeypatch: pytest.Monk
 
     loop_mock = MagicMock()
     loop_mock.run_in_executor.return_value = loop_future
-    monkeypatch.setattr("asyncio.get_event_loop", MagicMock(return_value=loop_mock))
+    monkeypatch.setattr("asyncio.get_running_loop", MagicMock(return_value=loop_mock))
 
     injected_executor = MagicMock(spec=concurrent.futures.ProcessPoolExecutor)
     pool_holder = ProcessPoolHolder(1, inject_executor=injected_executor)
@@ -109,7 +109,7 @@ async def test_process_investigation_upload_failure_records_failed(
     loop_future.set_result('{"Identifier": "inv-x"}')
     loop_mock = MagicMock()
     loop_mock.run_in_executor.return_value = loop_future
-    monkeypatch.setattr("asyncio.get_event_loop", MagicMock(return_value=loop_mock))
+    monkeypatch.setattr("asyncio.get_running_loop", MagicMock(return_value=loop_mock))
 
     pool_holder = ProcessPoolHolder(1, inject_executor=MagicMock(spec=concurrent.futures.ProcessPoolExecutor))
     ctx = WorkerContext(
@@ -153,7 +153,7 @@ async def test_process_investigation_invalid_arc_json_records_failed(
     loop_future.set_result("not-json")
     loop_mock = MagicMock()
     loop_mock.run_in_executor.return_value = loop_future
-    monkeypatch.setattr("asyncio.get_event_loop", MagicMock(return_value=loop_mock))
+    monkeypatch.setattr("asyncio.get_running_loop", MagicMock(return_value=loop_mock))
 
     pool_holder = ProcessPoolHolder(1, inject_executor=MagicMock(spec=concurrent.futures.ProcessPoolExecutor))
     ctx = WorkerContext(

@@ -155,7 +155,7 @@ async def _build_and_upload_single_arc(
             annotations=ctx.anns_by_inv.get(inv_id, []),
         )
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             executor = ctx.pool_holder.get_executor()
             arc_json = await asyncio.wait_for(
@@ -351,7 +351,7 @@ async def process_investigations(
                         break
             except (RuntimeError, OSError, ConnectionError) as e:
                 logger.error("Database or connection error while fetching investigations: %s", e, exc_info=True)
-                break
+                raise
             except Exception as e:
                 logger.error("Unexpected error while fetching investigations: %s", e, exc_info=True)
                 raise
