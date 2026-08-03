@@ -88,7 +88,7 @@ async def main(argv: list[str] | None = None) -> None:
             try:
                 print(JsonLdReportSerializer().render(report), end="")
             except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
-                logger.warning("Failed to serialise harvest report: %s", exc)
+                logger.warning("Failed to serialise harvest report: %s", exc, exc_info=True)
 
             repo = report.repository_reports[0] if report.repository_reports else None
             if repo is None:

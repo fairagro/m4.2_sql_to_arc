@@ -65,6 +65,33 @@ async def test_stream_investigations() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stream_investigations_null_identifier_records_unknown() -> None:
+    """Validation failures with null identifier must use record_id 'unknown', not 'None'."""
+    with patch("middleware.sql_to_arc.database.create_async_engine") as mock_engine:
+        mock_conn = AsyncMock()
+        mock_engine.return_value.connect.return_value.__aenter__.return_value = mock_conn
+
+        mock_result = AsyncMock()
+        mock_result.mappings = MagicMock()
+        # Missing title (required) and identifier is null → validation fails.
+        mock_result.mappings.return_value = AsyncIterator([
+            {"identifier": None, "description_text": "orphan"},
+        ])
+        mock_conn.stream.return_value = mock_result
+
+        db = Database("sqlite+aiosqlite:///")
+        report = HarvestReport()
+        scope = report.open_repository("test")
+        res = await collect_gen(db.stream_investigations(scope=scope))
+
+        assert res == []
+        report.finish()
+        entry = report.repository_reports[0]
+        assert entry.failed_datasets == 1
+        assert entry.failed_records[0].record_id == "unknown"
+
+
+@pytest.mark.asyncio
 async def test_stream_studies() -> None:
     """Test the stream_studies method of the Database class."""
     with patch("middleware.sql_to_arc.database.create_async_engine") as mock_engine:

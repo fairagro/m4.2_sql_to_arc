@@ -232,7 +232,8 @@ class Database:
                 async for row in result.mappings():
                     investigation = self._validate_and_map(row, InvestigationRow, "investigation")
                     if investigation is None:
-                        record_id = str(row.get("identifier", "unknown"))
+                        raw_id = row.get("identifier")
+                        record_id = "unknown" if raw_id is None or raw_id == "" else str(raw_id)
                         scope.record_failed(
                             "Investigation row failed Pydantic validation",
                             record_id=record_id,
