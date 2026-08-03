@@ -244,7 +244,8 @@ class AnnotationTableRow(BaseRow):
     column_annotation_term: str | None = spec_field(default=None)
     column_annotation_uri: str | None = spec_field(default=None)
     column_annotation_version: str | None = spec_field(default=None)
-    column_name: str | None = spec_field(default=None)
+    # Not part of the view contract — test/fallback header label only.
+    column_name: str | None = Field(default=None)
     cell_value: str | None = spec_field(default=None)
     cell_annotation_term: str | None = spec_field(default=None)
     cell_annotation_uri: str | None = spec_field(default=None)

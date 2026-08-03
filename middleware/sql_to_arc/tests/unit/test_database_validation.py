@@ -4,6 +4,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from middleware.sql_to_arc.database import SchemaValidator
@@ -63,6 +64,33 @@ async def test_schema_validator_missing_optional_column(caplog: pytest.LogCaptur
             await validator._validate_model(conn, ValidationTestRow)
 
     assert "is missing optional columns: optional" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_schema_validator_ignores_internal_model_fields(caplog: pytest.LogCaptureFixture) -> None:
+    """Internal non-spec_field attributes must not be reported as missing DB columns."""
+
+    class RowWithInternalFlag(BaseRow):
+        __view_name__ = "vInternal"
+        id: str = spec_field(required=True)
+        internal_flag: bool = Field(default=False, exclude=True)
+
+    engine = MagicMock()
+    conn = AsyncMock(spec=AsyncConnection)
+    mock_inspect = MagicMock()
+    mock_inspect.get_columns.return_value = [{"name": "id"}]
+    conn.run_sync.side_effect = lambda f: f(mock_inspect)
+    mock_result = MagicMock()
+    mock_result.scalar.return_value = 0
+    conn.execute.return_value = mock_result
+
+    with patch("middleware.sql_to_arc.database.inspect", return_value=mock_inspect):
+        validator = SchemaValidator(engine)
+        with caplog.at_level(logging.WARNING):
+            await validator._validate_model(conn, RowWithInternalFlag)
+
+    assert "internal_flag" not in caplog.text
+    assert "missing optional columns" not in caplog.text
 
 
 @pytest.mark.asyncio

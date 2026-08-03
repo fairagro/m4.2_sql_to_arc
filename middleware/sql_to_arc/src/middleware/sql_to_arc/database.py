@@ -72,14 +72,20 @@ class SchemaValidator:
             return None
 
     @staticmethod
+    def _is_view_mapped_field(field_info: Any) -> bool:
+        """Return whether the field is part of the SQL view contract (``spec_field``)."""
+        json_extra = field_info.json_schema_extra
+        return isinstance(json_extra, dict) and "spec_required" in json_extra
+
+    @staticmethod
     def _check_column_presence(model: type[BaseRow], db_columns: set[str]) -> None:
         """Check for missing required/optional columns and extra columns."""
         model_fields = model.model_fields
-        present_fields = set(model_fields.keys())
+        view_fields = {name: info for name, info in model_fields.items() if SchemaValidator._is_view_mapped_field(info)}
         missing_required: list[str] = []
         missing_optional: list[str] = []
 
-        for field_name, field_info in model_fields.items():
+        for field_name, field_info in view_fields.items():
             if field_name in db_columns:
                 continue
 
@@ -102,7 +108,7 @@ class SchemaValidator:
                 ", ".join(sorted(missing_optional)),
             )
 
-        extra_columns = db_columns - present_fields
+        extra_columns = db_columns - set(view_fields)
         if extra_columns:
             logger.info(
                 'Table "%s" contains extra columns not used by model: %s.',
