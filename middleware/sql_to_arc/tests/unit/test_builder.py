@@ -11,6 +11,7 @@ from arctrl.py.Core.Table.composite_header import CompositeHeader_Output as Comp
 from middleware.sql_to_arc.builder import (
     _IO_TYPE_MAP,
     DuplicateAssayRowError,
+    DuplicateStudyRowError,
     _build_header,
     _build_single_cell,
     build_single_arc_task,
@@ -182,6 +183,76 @@ def test_build_arc_deduplicates_assay_rows_per_study_link(
     assert len(warning_records) == 1
     assert "merged 1 duplicate vAssay row" in warning_records[0].message
     assert "inv1" in warning_records[0].message
+
+
+def test_build_arc_deduplicates_study_rows(
+    sample_investigation: dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Duplicate vStudy rows with the same identifier must not call AddRegisteredStudy twice."""
+    shared_study_id = "ea195a914ab1df58a84f29a7cf64a1a6"
+    studies = [
+        StudyRow.model_validate({
+            "identifier": shared_study_id,
+            "investigation_ref": "inv1",
+            "title": "Study A",
+        }),
+        StudyRow.model_validate({
+            "identifier": shared_study_id,
+            "investigation_ref": "inv1",
+            "title": "Study A",
+        }),
+    ]
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=studies,
+        assays=[],
+        contacts=[],
+        publications=[],
+        annotations=[],
+    )
+    with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
+        arc_json = build_single_arc_task(arc_data)
+    res = json.loads(arc_json)
+    graph = res.get("@graph", [])
+    study_nodes = [
+        item for item in graph if item.get("@id") == shared_study_id or item.get("identifier") == shared_study_id
+    ]
+    assert len(study_nodes) == 1
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warning_records) == 1
+    assert "skipped 1 duplicate vStudy row" in warning_records[0].message
+
+
+def test_build_arc_raises_on_conflicting_duplicate_study_rows(
+    sample_investigation: dict[str, Any],
+) -> None:
+    """Duplicate study identifiers with conflicting metadata must raise."""
+    shared_study_id = "dup-study"
+    studies = [
+        StudyRow.model_validate({
+            "identifier": shared_study_id,
+            "investigation_ref": "inv1",
+            "title": "Title A",
+        }),
+        StudyRow.model_validate({
+            "identifier": shared_study_id,
+            "investigation_ref": "inv1",
+            "title": "Title B",
+        }),
+    ]
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=studies,
+        assays=[],
+        contacts=[],
+        publications=[],
+        annotations=[],
+    )
+    with pytest.raises(DuplicateStudyRowError) as exc_info:
+        build_single_arc_task(arc_data)
+    assert exc_info.value.study_id == shared_study_id
+    assert "title" in exc_info.value.fields
 
 
 def test_build_arc_warns_on_missing_first_name(

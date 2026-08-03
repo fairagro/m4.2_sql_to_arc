@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from middleware.api_client import ApiClient, ApiClientError
 from middleware.shared.report import HarvestReport, RepositoryScope
-from middleware.sql_to_arc.builder import DuplicateAssayRowError, build_single_arc_task
+from middleware.sql_to_arc.builder import DuplicateAssayRowError, DuplicateStudyRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import (
     ArcBuildData,
@@ -196,6 +196,18 @@ async def _build_and_upload_single_arc(
                 f"Conflicting duplicate vAssay rows for assay {e.assay_id}",
                 record_id=inv_id,
             )
+        except DuplicateStudyRowError as e:
+            logger.error(
+                "%s: Conflicting duplicate vStudy rows for study %s (fields: %s) in investigation %s",
+                inv_info,
+                e.study_id,
+                ", ".join(e.fields),
+                inv_id,
+            )
+            scope.record_failed(
+                f"Conflicting duplicate vStudy rows for study {e.study_id}",
+                record_id=inv_id,
+            )
         except concurrent.futures.BrokenExecutor as e:
             logger.error(
                 "%s: Worker process died while building investigation %s "
@@ -207,8 +219,9 @@ async def _build_and_upload_single_arc(
             )
             ctx.pool_holder.recreate(executor)
             scope.record_failed(f"Worker process died: {e}", record_id=inv_id)
-        except (ValueError, RuntimeError) as e:
-            logger.error("%s: Failed to build ARC for investigation %s: %s", inv_info, inv_id, e)
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+            # arctrl often raises bare Exception (e.g. duplicate study names); keep the run going.
+            logger.error("%s: Failed to build ARC for investigation %s: %s", inv_info, inv_id, e, exc_info=True)
             scope.record_failed(f"Build failed: {e}", record_id=inv_id)
 
 
@@ -306,7 +319,17 @@ def _spawn_investigation_task(
     inv_info = f"Investigation {idx}"
     task = asyncio.create_task(process_investigation(ctx, investigation, res.scope, inv_info, res.semaphore))
     running_tasks.add(task)
-    task.add_done_callback(running_tasks.discard)
+
+    def _on_task_done(done: asyncio.Task[None]) -> None:
+        running_tasks.discard(done)
+        if done.cancelled():
+            return
+        exc = done.exception()
+        if exc is not None:
+            # Should be rare: process_investigation is expected to swallow per-investigation failures.
+            logger.error("%s: Unhandled task failure: %s", inv_info, exc, exc_info=exc)
+
+    task.add_done_callback(_on_task_done)
 
 
 async def process_investigations(
