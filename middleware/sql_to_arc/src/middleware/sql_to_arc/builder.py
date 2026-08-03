@@ -500,7 +500,7 @@ def build_single_arc_task(data: ArcBuildData) -> str:
         relevant_assays = [a for a in data.assays if str(a.investigation_ref) == inv_id]
 
         # Add studies and assays
-        study_map = _add_studies_to_arc(arc, inv_id, relevant_studies)
+        study_map = _add_studies_to_arc(arc, investigation_id=inv_id, study_rows=relevant_studies)
         assay_map = _add_assays_to_arc(arc, inv_id, relevant_assays, study_map)
 
         # Add contacts and publications
