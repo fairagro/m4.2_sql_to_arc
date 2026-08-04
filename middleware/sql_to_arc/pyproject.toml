@@ -19,6 +19,8 @@ dependencies = [
 
 [tool.hatch.version]
 source = "vcs"
+# See root pyproject.toml — strip GitVersion branch suffix from docker tags.
+tag-pattern = '^(?:\d+-docker-)?(?P<version>[vV]?\d+\.\d+\.\d+)(?:-.*)?$'
 raw-options = { root = "../.." }
 
 [tool.hatch.build.targets.wheel]
