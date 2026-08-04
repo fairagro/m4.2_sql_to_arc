@@ -1,8 +1,8 @@
 # AGENTS.md - Instructions for AI Assistants
 
-This file contains critical context about the FAIRagro SQL-to-ARC Converter project for AI assistants (GitHub Copilot, Claude, etc.).
+This file contains critical context about the FAIRagro SQL-to-ARC Converter project for AI assistants (GitHub Copilot, Cursor, Claude, etc.).
 
-## 📋 Tech Stack
+## Tech Stack
 
 | Component | Version | Details |
 | --------- | ------- | ------- |
@@ -12,36 +12,40 @@ This file contains critical context about the FAIRagro SQL-to-ARC Converter proj
 | Git LFS | 3.3.0+ | Large file storage |
 | uv | Latest | Python package manager |
 | arctrl | Latest | ARC manipulation library |
+| OpenSpec | Latest | Spec-driven development (`openspec/` + `/opsx-*`) |
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 .agents/
 └── skills/                # Agent Skills (agentskills.io standard)
     ├── arctrl/            # arctrl Python library reference
-    ├── config-wrapper/    # ConfigWrapper / ConfigBase pattern
-    └── create-specifica-feature/  # How to create a new Specifica feature
+    └── config-wrapper/    # ConfigWrapper / ConfigBase pattern
 
+.cursor/                   # Cursor OpenSpec commands + skills (opsx-*)
 .github/
-└── agents/                # VS Code custom agents
-    └── spec-to-code.agent.md  # Implements code changes from spec updates
+├── prompts/               # GitHub Copilot OpenSpec prompts (opsx-*)
+└── skills/                # GitHub Copilot OpenSpec skills
 
 docs/
 ├── ai_workflow.md         # AI agent workflow documentation
 └── sql_to_arc_database_views.md  # Authoritative DB view / schema contract
 
-spec/                      # Project-level architecture & design
-├── principles.md          # Project principles and foundation contract
-├── configuration/         # Config loading, env overrides, secrets
-└── demo-environment/      # Local demo / deployment setup
+openspec/                  # OpenSpec source of truth + changes
+├── config.yaml            # Project context for OpenSpec artifacts
+├── specs/                 # Current behavior by domain
+│   ├── principles/
+│   ├── configuration/
+│   ├── demo-environment/
+│   ├── tooling-consistency/
+│   ├── sql-to-arc-conversion/
+│   ├── arc-building/
+│   ├── database-access/
+│   └── api-upload/
+└── changes/               # Active change proposals (delta specs)
 
 middleware/
 └── sql_to_arc/            # SQL to ARC converter (Core logic)
-    ├── spec/              # Component-level architecture & design
-    │   ├── sql-to-arc-conversion/ # Top-level workflow feature
-    │   ├── arc-building/          # ARC object construction
-    │   ├── database-access/       # DB queries and row models
-    │   └── api-upload/            # ARC upload to the Middleware API
     ├── src/middleware/sql_to_arc/
     │   ├── main.py        # Entry point
     │   ├── mapper.py      # Database to ARC mapping logic
@@ -52,11 +56,9 @@ middleware/
 
 scripts/
 ├── load-env.sh                    # Per-shell env (PATH, aliases, SOPS); sourced from bashrc
-├── start-devcontainer-cursor.sh   # Cursor: open project via DevPod (host only)
 ├── uv-sync-dev.sh                 # One-time uv sync (devcontainer postCreate)
 ├── install-dev-hooks.sh           # One-time pre-commit + Git LFS hooks
-├── setup-container-gpg.sh         # One-time GPG agent/trustdb (Cursor devcontainer)
-├── import-public-gpg-keys.sh      # Import public_gpg_keys/*.asc (Antigravity / local)
+├── import-public-gpg-keys.sh      # Import public_gpg_keys/*.asc (devcontainer / local)
 ├── setup-git-lfs.sh               # Git LFS hook installation
 ├── quality-check.sh               # Run all quality checks (pre-commit push stage)
 ├── quality-fix.sh                 # Run auto-formatters (ruff)
@@ -74,7 +76,7 @@ dev_environment/
 └── config.dev.yaml       # Development configuration for the converter
 ```
 
-## 🔧 Important Commands
+## Important Commands
 
 ### Always use `uv` for Python
 
@@ -93,15 +95,26 @@ uv run bandit -r middleware/sql_to_arc/src/
 uv sync --dev --all-packages
 ```
 
+### OpenSpec
+
+```bash
+openspec list --specs          # List domain specs
+openspec validate --specs      # Validate main specs
+openspec list                  # List active changes
+openspec validate <change>     # Validate a change folder
+```
+
+In Cursor chat: `/opsx-explore`, `/opsx-propose`, `/opsx-apply`, `/opsx-archive`.
+In GitHub Copilot: the matching `opsx-*` prompts under `.github/prompts/`.
+
 ### Dev Container
 
 | IDE | How to open |
 | --- | --- |
-| **VS Code** | **Reopen in Container** → `.devcontainer/vscode/devcontainer.json` |
-| **Cursor** | `./scripts/start-devcontainer-cursor.sh` (DevPod; see `.devcontainer/cursor/README.md`) |
-| **Antigravity** | `.devcontainer/antigravity/devcontainer.json` (feature-based image) |
+| **VS Code** | **Reopen in Container** → `.devcontainer/devcontainer.json` |
+| **Cursor** | **Dev Containers: Reopen in Container** → `.devcontainer/devcontainer.json` |
 
-VS Code and Cursor share `.devcontainer/Dockerfile` (pinned tools, **linux/amd64 only**) + DinD feature. `devcontainer.json` sets `--platform=linux/amd64`. One-time setup runs in `postCreateCommand` (`uv-sync-dev.sh`, `install-dev-hooks.sh`; Cursor also runs `setup-container-gpg.sh`, VS Code and Antigravity run `import-public-gpg-keys.sh` only). Per-shell: `scripts/load-env.sh` (sourced from `~/.bashrc`).
+Shared image: `.devcontainer/Dockerfile` (pinned tools, **linux/amd64 only**) + DinD feature. `devcontainer.json` sets `--platform=linux/amd64`. One-time setup runs in `postCreateCommand` (`uv-sync-dev.sh`, `install-dev-hooks.sh`, `import-public-gpg-keys.sh`). Per-shell: `scripts/load-env.sh` (sourced from `~/.bashrc`).
 
 ### Development Environment
 
@@ -123,25 +136,29 @@ docker compose down
 
 ## Architecture & Design
 
-Before generating or modifying code, read the relevant spec folders.
+Before generating or modifying code, read the relevant OpenSpec domain under
+`openspec/specs/`. Prefer an active change under `openspec/changes/` when one
+exists for the work in progress.
 
-**Project-level** (`spec/`) — cross-cutting concerns:
+**Cross-cutting domains:**
 
-- **[`spec/principles.md`](spec/principles.md)** — Project principles and foundation contract (start here).
-- **[`spec/configuration/`](spec/configuration/)** — Config loading, env overrides, secrets, extension rules.
-- **[`spec/demo-environment/`](spec/demo-environment/)** — Local demo / deployment setup.
-- **[`spec/tooling-consistency/`](spec/tooling-consistency/)** — VS Code, pre-commit, and CI must report identical results from a shared config.
+- **[`openspec/specs/principles/`](openspec/specs/principles/)** — Foundation contract and project values (start here).
+- **[`openspec/specs/configuration/`](openspec/specs/configuration/)** — Config loading, env overrides, secrets.
+- **[`openspec/specs/demo-environment/`](openspec/specs/demo-environment/)** — Local demo / deployment setup.
+- **[`openspec/specs/tooling-consistency/`](openspec/specs/tooling-consistency/)** — VS Code, pre-commit, and CI must report identical results.
 
-**Component-level** (`middleware/sql_to_arc/spec/`) — sql_to_arc internals:
+**Converter domains** (code under `middleware/sql_to_arc/`):
 
-- **[`middleware/sql_to_arc/spec/sql-to-arc-conversion/`](middleware/sql_to_arc/spec/sql-to-arc-conversion/)** — Top-level workflow: workers, stats, CLI.
-- **[`middleware/sql_to_arc/spec/arc-building/`](middleware/sql_to_arc/spec/arc-building/)** — ARC object construction (`mapper.py` + `builder.py`).
-- **[`middleware/sql_to_arc/spec/database-access/`](middleware/sql_to_arc/spec/database-access/)** — DB access patterns, row models, SQL views.
-- **[`middleware/sql_to_arc/spec/api-upload/`](middleware/sql_to_arc/spec/api-upload/)** — Upload to the Middleware API.
+- **[`openspec/specs/sql-to-arc-conversion/`](openspec/specs/sql-to-arc-conversion/)** — Top-level workflow: workers, stats, CLI.
+- **[`openspec/specs/arc-building/`](openspec/specs/arc-building/)** — ARC object construction (`mapper.py` + `builder.py`).
+- **[`openspec/specs/database-access/`](openspec/specs/database-access/)** — DB access patterns, row models, SQL views.
+- **[`openspec/specs/api-upload/`](openspec/specs/api-upload/)** — Upload to the Middleware API.
+
+Each domain has `spec.md` (behavior). Domains with non-obvious architecture also keep `design.md` (current Key Decisions).
 
 ---
 
-## 📝 Key Implementation Details
+## Key Implementation Details
 
 ### External Dependencies
 
@@ -162,7 +179,7 @@ This project depends on `shared` and `api_client` libraries, which are hosted in
 - DB passwords and API secrets should be managed via environment variables or `.env`.
 - `client.key` is dynamically handled in container secrets (`tmpfs`).
 
-## ✨ Code Quality Standards
+## Code Quality Standards
 
 Agents are expected to maintain high code quality by addressing issues reported by the project's configured tools: **Ruff, Pylance, MyPy, Pylint, and Bandit**.
 
@@ -171,7 +188,7 @@ Agents are expected to maintain high code quality by addressing issues reported 
 - **When to Suppress**: Only suppress if a fix is technically impossible or would result in unnecessarily complex or unreadable code.
 - **Comprehensive Coverage**: Fix all reported issues, including low-severity notices and warnings, not just critical errors.
 
-## 📚 File Modifications Pattern
+## File Modifications Pattern
 
 When editing files:
 
@@ -182,6 +199,5 @@ When editing files:
 
 ---
 
-**Last Updated**: 2026-04-13
-**Current Branch**: feature/workflow_fixes
-**Maintainer Notes**: This repository is now decoupled from the main Middleware API. High-level architecture involves converting SQL views into ARC files.
+**Last Updated**: 2026-07-30
+**Maintainer Notes**: Spec-driven workflow uses OpenSpec (`openspec/`). High-level architecture involves converting SQL views into ARC files.

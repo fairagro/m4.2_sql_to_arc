@@ -8,16 +8,22 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY middleware ./middleware
 
 # Upgrade pip and install uv
-RUN pip install --no-cache-dir --upgrade pip==26.1.2 uv==0.11.30
+RUN pip install --no-cache-dir --upgrade pip==26.2 uv==0.12.0
 
-# Declare build argument for versioning
+# Declare build argument for versioning.
+# GitVersion feature-branch SemVer (e.g. 1.1.1-introduce-report-lib.1) is not
+# PEP 440; hatch-vcs rejects it. Normalize "X.Y.Z-label" → "X.Y.Z+label"
+# (hyphens in the local segment become dots).
 ARG APP_VERSION=0.0.0
-ENV SETUPTOOLS_SCM_PRETEND_VERSION=${APP_VERSION}
-ENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SQL_TO_ARC=${APP_VERSION}
-
-# We prefer to build a wheel for our package first. This ensures we have a clean,
-# distributable artifact that contains only the necessary files.
-RUN uv build --package sql_to_arc --wheel
+RUN set -eu; \
+    case "${APP_VERSION}" in \
+      *-*) _pep440="${APP_VERSION%%-*}+$(printf '%s' "${APP_VERSION#*-}" | tr '-' '.')" ;; \
+      *) _pep440="${APP_VERSION}" ;; \
+    esac; \
+    echo "APP_VERSION=${APP_VERSION} → PEP440=${_pep440}"; \
+    export SETUPTOOLS_SCM_PRETEND_VERSION="${_pep440}"; \
+    export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SQL_TO_ARC="${_pep440}"; \
+    uv build --package sql_to_arc --wheel
 
 
 # ---- Binary Build Stage ----
@@ -42,12 +48,16 @@ RUN curl -L -O https://download.microsoft.com/download/9dcab408-e0d4-4571-a81a-5
 WORKDIR /build
 
 # Install uv core tool
-RUN pip install --no-cache-dir --upgrade pip==26.1.2 uv==0.11.30
+RUN pip install --no-cache-dir --upgrade pip==26.2 uv==0.12.0
 
-# Declare build argument for versioning
+# Declare build argument for versioning (same PEP 440 normalization as package-builder)
 ARG APP_VERSION=0.0.0
-ENV SETUPTOOLS_SCM_PRETEND_VERSION=${APP_VERSION}
-ENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SQL_TO_ARC=${APP_VERSION}
+RUN set -eu; \
+    case "${APP_VERSION}" in \
+      *-*) _pep440="${APP_VERSION%%-*}+$(printf '%s' "${APP_VERSION#*-}" | tr '-' '.')" ;; \
+      *) _pep440="${APP_VERSION}" ;; \
+    esac; \
+    printf '%s' "${_pep440}" > /tmp/app_version_pep440
 
 # Bring in the pre-built wheel and project metadata
 COPY --from=package-builder /build/dist/*.whl /tmp/wheels/
@@ -63,7 +73,11 @@ COPY middleware ./middleware
 # 2. We skip workspace installation here to avoid editable builds of the root package,
 #    which can fail in shallow/branch builds when hatch-vcs parses non-PEP440 refs.
 # 3. fairagro-middleware-api-client and fairagro-middleware-shared are installed from PyPI.
-RUN uv sync --no-dev --no-install-workspace
+RUN set -eu; \
+    _pep440="$(cat /tmp/app_version_pep440)"; \
+    export SETUPTOOLS_SCM_PRETEND_VERSION="${_pep440}"; \
+    export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SQL_TO_ARC="${_pep440}"; \
+    uv sync --no-dev --no-install-workspace
 
 # Install the application wheel and PyInstaller.
 # This replaces the editable install from 'uv sync' with the optimized wheel.

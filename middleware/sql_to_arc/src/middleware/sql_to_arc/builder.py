@@ -11,12 +11,13 @@ from arctrl import (
     ArcAssay,
     ArcStudy,
     ArcTable,
-    CompositeCell,
-    CompositeHeader,
-    IOType,
     OntologyAnnotation,
 )
-from arctrl.py.Core.Table.composite_cell import Data
+from arctrl.py.Core.Table.composite_cell import CompositeCell_FreeText as CompositeCell, Data
+
+# arctrl ≥3.2 exports CompositeHeader/IOType as typing.TypeAlias only; factories live
+# on the tagged-union case classes.
+from arctrl.py.Core.Table.composite_header import CompositeHeader_Output as CompositeHeader, IOType_Data as IOType
 
 from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.mapper import (
@@ -39,6 +40,9 @@ logger = logging.getLogger(__name__)
 # Fields ignored when comparing duplicate vAssay rows (same identifier).
 _ASSAY_ROW_COMPARE_EXCLUDE = {"identifier", "investigation_ref", "study_ref"}
 
+# Fields ignored when comparing duplicate vStudy rows (same identifier).
+_STUDY_ROW_COMPARE_EXCLUDE = {"identifier", "investigation_ref"}
+
 
 class DuplicateAssayRowError(ValueError):
     """Duplicate assay identifier with conflicting metadata (not just study_ref)."""
@@ -55,6 +59,21 @@ class DuplicateAssayRowError(ValueError):
         return (self.__class__, (self.assay_id, self.fields))
 
 
+class DuplicateStudyRowError(ValueError):
+    """Duplicate study identifier with conflicting metadata."""
+
+    def __init__(self, study_id: str, fields: list[str]) -> None:
+        """Initialize with the duplicate study id and conflicting field names."""
+        self.study_id = study_id
+        self.fields = fields
+        field_list = ", ".join(fields)
+        super().__init__(f'Duplicate study identifier "{study_id}" with conflicting fields: {field_list}')
+
+    def __reduce__(self) -> tuple[type["DuplicateStudyRowError"], tuple[str, list[str]]]:
+        """Preserve study_id and fields when the exception crosses a process pool boundary."""
+        return (self.__class__, (self.study_id, self.fields))
+
+
 def _conflicting_assay_fields(first: AssayRow, second: AssayRow) -> list[str]:
     """Return field names that differ between two rows excluding link-only columns."""
     first_payload = first.model_dump(exclude=_ASSAY_ROW_COMPARE_EXCLUDE)
@@ -64,13 +83,39 @@ def _conflicting_assay_fields(first: AssayRow, second: AssayRow) -> list[str]:
     )
 
 
-def _add_studies_to_arc(arc: ARC, study_rows: list[StudyRow]) -> dict[str, ArcStudy]:
-    """Add studies to ARC and return study map."""
+def _conflicting_study_fields(first: StudyRow, second: StudyRow) -> list[str]:
+    """Return field names that differ between two study rows excluding link-only columns."""
+    first_payload = first.model_dump(exclude=_STUDY_ROW_COMPARE_EXCLUDE)
+    second_payload = second.model_dump(exclude=_STUDY_ROW_COMPARE_EXCLUDE)
+    return sorted(
+        key for key in first_payload.keys() | second_payload.keys() if first_payload.get(key) != second_payload.get(key)
+    )
+
+
+def _add_studies_to_arc(arc: ARC, investigation_id: str, study_rows: list[StudyRow]) -> dict[str, ArcStudy]:
+    """Add studies to ARC (deduped by identifier) and return study map."""
     study_map: dict[str, ArcStudy] = {}
+    study_row_by_id: dict[str, StudyRow] = {}
+    duplicate_row_skip_count = 0
     for s_row in study_rows:
+        study_id = str(s_row.identifier)
+        if study_id in study_map:
+            conflicting = _conflicting_study_fields(study_row_by_id[study_id], s_row)
+            if conflicting:
+                raise DuplicateStudyRowError(study_id, conflicting)
+            duplicate_row_skip_count += 1
+            continue
         study = map_study(s_row)
         arc.AddRegisteredStudy(study)
-        study_map[str(s_row.identifier)] = study
+        study_map[study_id] = study
+        study_row_by_id[study_id] = s_row
+    if duplicate_row_skip_count:
+        logger.warning(
+            'Investigation "%s": skipped %d duplicate vStudy row(s) with the same study identifier '
+            "(ARCtrl requires unique study identifiers).",
+            investigation_id,
+            duplicate_row_skip_count,
+        )
     return study_map
 
 
@@ -455,7 +500,7 @@ def build_single_arc_task(data: ArcBuildData) -> str:
         relevant_assays = [a for a in data.assays if str(a.investigation_ref) == inv_id]
 
         # Add studies and assays
-        study_map = _add_studies_to_arc(arc, relevant_studies)
+        study_map = _add_studies_to_arc(arc, investigation_id=inv_id, study_rows=relevant_studies)
         assay_map = _add_assays_to_arc(arc, inv_id, relevant_assays, study_map)
 
         # Add contacts and publications

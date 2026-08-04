@@ -39,7 +39,6 @@ from the bare `arctrl` package.
 override is not in place):
 
 ```python
-from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
 from arctrl.py.Core.Table.composite_cell import Data  # type: ignore[import-untyped]
 ```
 
@@ -58,10 +57,8 @@ from arctrl import (
     OntologyAnnotation,
     Person,
     Publication,
+    start_as_task,  # re-exported from fable_library (arctrl ≥3.2)
 )
-
-# Async write helper lives in the Fable internals:
-from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
 ```
 
 ---
@@ -205,19 +202,25 @@ json_str: str = arc.ToROCrateJsonString()
 ## ArcTable (Annotation Tables)
 
 ```python
+# arctrl ≥3.2: CompositeHeader / IOType / CompositeCell are TypeAliases on
+# `from arctrl import …`. Use a case class for factories:
+from arctrl.py.Core.Table.composite_header import CompositeHeader_Output as CompositeHeader
+from arctrl.py.Core.Table.composite_header import IOType_Data as IOType
+from arctrl.py.Core.Table.composite_cell import CompositeCell_FreeText as CompositeCell
+
 # Create table
 table = ArcTable.init("my-table-name")
 
 # Build headers
-header_input = CompositeHeader.input(IOType.of_string("source_name"))
-header_output = CompositeHeader.output(IOType.of_string("sample_name"))
+header_input = CompositeHeader.input(IOType.of_string("Source Name"))
+header_output = CompositeHeader.output(IOType.of_string("Sample Name"))
 header_char = CompositeHeader.characteristic(OntologyAnnotation("pH", "", ""))
 header_factor = CompositeHeader.factor(OntologyAnnotation("temperature", "", ""))
 header_param = CompositeHeader.parameter(OntologyAnnotation("extraction", "", ""))
 header_comp = CompositeHeader.component(OntologyAnnotation("reagent", "", ""))
 header_cmt = CompositeHeader.comment("My comment label")
-header_perf = CompositeHeader.performer  # property, not callable
-header_date = CompositeHeader.date  # property, not callable
+header_perf = CompositeHeader.performer()  # factory — call it
+header_date = CompositeHeader.date()  # factory — call it
 # Fallback for unknown/simple header names:
 header_any = CompositeHeader.OfHeaderString("SomeColumnName")
 
@@ -273,15 +276,20 @@ await start_as_task(arc.WriteAsync("/path/to/output/dir"))
 
 ## Known Pitfalls
 
-**`start_as_task` is untyped** — always add `# type: ignore[import-untyped]`
-on the import.
+**`start_as_task`** — import from `arctrl` (re-exported since 3.2). The old
+path `arctrl.py.fable_modules.fable_library.async_` no longer exists.
 
-**`CompositeHeader.performer` and `.date` are properties, not constructors**
-— call them without `()`:
+**`CompositeHeader` / `IOType` / `CompositeCell` TypeAliases (arctrl ≥3.2)** —
+`from arctrl import CompositeHeader` is annotation-only. Factory methods
+(`.input`, `.output`, `.of_string`, `.free_text`, …) live on case classes such
+as `CompositeHeader_Output`, `IOType_Data`, `CompositeCell_FreeText`. Alias one
+of those at import time for runtime use.
+
+**`CompositeHeader.performer` and `.date` are factories** — call them with `()`:
 
 ```python
-header = CompositeHeader.performer  # CORRECT
-header = CompositeHeader.performer()  # TypeError
+header = CompositeHeader.performer()
+header = CompositeHeader.date()
 ```
 
 **`OntologyAnnotation()` without args is valid** — use for empty/unknown terms

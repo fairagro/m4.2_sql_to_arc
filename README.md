@@ -7,6 +7,7 @@ This repository contains the **SQL-to-ARC Converter**, a core component of the F
 | Folder | Description |
 | :--- | :--- |
 | [middleware/](middleware/) | Source code of the converter component. |
+| [openspec/](openspec/) | OpenSpec domain specs and change proposals (spec-driven development). |
 | [docs/](docs/) | Architectural design, database view specifications, and API documentation. |
 | [dev_environment/](dev_environment/) | Docker-based local development setup (Postgres, Mock API). |
 | [scripts/](scripts/) | Tooling for quality checks, environment setup, and Git LFS. |
@@ -25,12 +26,7 @@ For the best **out-of-the-box experience**, you can run a complete local demonst
 
 ## 🚀 Getting Started (Development)
 
-The preferred method for working with this repository is using a **Dev Container**:
-
-| IDE | Entry point |
-| --- | --- |
-| **VS Code** | **Reopen in Container** (`.devcontainer/vscode/`) |
-| **Cursor** | `./scripts/start-devcontainer-cursor.sh` (DevPod; see `.devcontainer/cursor/README.md`) |
+The preferred method for working with this repository is using a **Dev Container** (VS Code or Cursor): **Reopen in Container** / **Dev Containers: Reopen in Container** uses `.devcontainer/devcontainer.json`.
 
 While it is possible to develop without the Dev Container (see next steps below), this approach is not tested and is therefore neither documented nor officially supported.
 

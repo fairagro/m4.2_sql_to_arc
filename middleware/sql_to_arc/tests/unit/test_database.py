@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from middleware.shared.report import HarvestReport
 from middleware.sql_to_arc.database import Database
-from middleware.sql_to_arc.stats import ProcessingStats
 
 
 class AsyncIterator:
@@ -54,13 +54,41 @@ async def test_stream_investigations() -> None:
         mock_conn.stream.return_value = mock_result
 
         db = Database("sqlite+aiosqlite:///")
-        res = await collect_gen(db.stream_investigations(stats=ProcessingStats(), limit=5))
+        scope = HarvestReport().open_repository("test")
+        res = await collect_gen(db.stream_investigations(scope=scope, limit=5))
 
         assert len(res) == 1
         assert res[0].identifier == "1"
         assert res[0].title == "Test Investigation"
         assert res[0].description_text == "Test Desc"
         mock_conn.stream.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_stream_investigations_null_identifier_records_unknown() -> None:
+    """Validation failures with null identifier must use record_id 'unknown', not 'None'."""
+    with patch("middleware.sql_to_arc.database.create_async_engine") as mock_engine:
+        mock_conn = AsyncMock()
+        mock_engine.return_value.connect.return_value.__aenter__.return_value = mock_conn
+
+        mock_result = AsyncMock()
+        mock_result.mappings = MagicMock()
+        # Missing title (required) and identifier is null → validation fails.
+        mock_result.mappings.return_value = AsyncIterator([
+            {"identifier": None, "description_text": "orphan"},
+        ])
+        mock_conn.stream.return_value = mock_result
+
+        db = Database("sqlite+aiosqlite:///")
+        report = HarvestReport()
+        scope = report.open_repository("test")
+        res = await collect_gen(db.stream_investigations(scope=scope))
+
+        assert res == []
+        report.finish()
+        entry = report.repository_reports[0]
+        assert entry.failed_datasets == 1
+        assert entry.failed_records[0].record_id == "unknown"
 
 
 @pytest.mark.asyncio

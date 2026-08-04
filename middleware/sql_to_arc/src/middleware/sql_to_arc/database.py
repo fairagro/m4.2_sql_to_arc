@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.exc import NoSuchTableError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
+from middleware.shared.report import RepositoryScope
 from middleware.sql_to_arc.models import (
     AnnotationTableRow,
     AssayRow,
@@ -28,7 +29,6 @@ from middleware.sql_to_arc.models import (
     RequiredColumnsNullError,
     StudyRow,
 )
-from middleware.sql_to_arc.stats import ProcessingStats
 
 logger = logging.getLogger(__name__)
 RowModel = TypeVar("RowModel", bound=BaseRow)
@@ -72,14 +72,20 @@ class SchemaValidator:
             return None
 
     @staticmethod
+    def _is_view_mapped_field(field_info: Any) -> bool:
+        """Return whether the field is part of the SQL view contract (``spec_field``)."""
+        json_extra = field_info.json_schema_extra
+        return isinstance(json_extra, dict) and "spec_required" in json_extra
+
+    @staticmethod
     def _check_column_presence(model: type[BaseRow], db_columns: set[str]) -> None:
         """Check for missing required/optional columns and extra columns."""
         model_fields = model.model_fields
-        present_fields = set(model_fields.keys())
+        view_fields = {name: info for name, info in model_fields.items() if SchemaValidator._is_view_mapped_field(info)}
         missing_required: list[str] = []
         missing_optional: list[str] = []
 
-        for field_name, field_info in model_fields.items():
+        for field_name, field_info in view_fields.items():
             if field_name in db_columns:
                 continue
 
@@ -102,7 +108,7 @@ class SchemaValidator:
                 ", ".join(sorted(missing_optional)),
             )
 
-        extra_columns = db_columns - present_fields
+        extra_columns = db_columns - set(view_fields)
         if extra_columns:
             logger.info(
                 'Table "%s" contains extra columns not used by model: %s.',
@@ -192,9 +198,25 @@ class Database:
             logger.warning("Skipping %s due to validation error: %s", entity_name, error)
             return None
 
+    async def count_investigations(self) -> int | None:
+        """Return the number of rows in ``vInvestigation``, or ``None`` if unknown.
+
+        Used to populate ``expected_datasets`` on the harvest report. Failures
+        are logged and return ``None`` so callers can omit the wire field.
+        """
+        view_name = InvestigationRow.__view_name__
+        try:
+            async with self.engine.connect() as conn:
+                stmt = select(func.count()).select_from(table(view_name))  # pylint: disable=not-callable
+                result = await conn.execute(stmt)
+                return int(result.scalar() or 0)
+        except (ProgrammingError, NoSuchTableError, OSError, RuntimeError) as e:
+            logger.warning("Could not count investigations for expected_datasets: %s", e)
+            return None
+
     async def stream_investigations(
         self,
-        stats: ProcessingStats,
+        scope: RepositoryScope,
         limit: int | None = None,
     ) -> AsyncGenerator[InvestigationRow, None]:
         """Stream investigations using a server-side cursor."""
@@ -214,18 +236,16 @@ class Database:
                 # Execute stream to use server-side cursor (prevents loading all rows into RAM)
                 result = await conn.stream(stmt)
                 async for row in result.mappings():
-                    # Count everything we find in the database
-                    stats.found_datasets += 1
-
-                    # Map raw DB row to Pydantic model with validation
                     investigation = self._validate_and_map(row, InvestigationRow, "investigation")
                     if investigation is None:
-                        # If validation fails, it's a found but failed dataset
-                        stats.failed_datasets += 1
-                        stats.failed_ids.append(row.get("identifier", "unknown"))
+                        raw_id = row.get("identifier")
+                        record_id = "unknown" if raw_id is None or raw_id == "" else str(raw_id)
+                        scope.record_failed(
+                            "Investigation row failed Pydantic validation",
+                            record_id=record_id,
+                        )
                         continue
 
-                    # Yield validated model to the async loop in processor.py
                     yield investigation
         except ProgrammingError as e:
             # Handle missing view gracefully (e.g. during initial setup or empty DBs)

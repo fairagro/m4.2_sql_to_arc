@@ -11,7 +11,7 @@ fi
 mydir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
 repo_root="${mydir}/.."
 
-# DevPod injects credsStore=devpod into ~/.docker; use repo config instead (no cred helper).
+# Use repo Docker CLI config (no credential helper) so DinD is independent of the host.
 export DOCKER_CONFIG="${repo_root}/.docker"
 
 # pre-commit and other dev tools live in the uv venv (not on PATH by default)
@@ -41,7 +41,7 @@ if command -v ggshield &> /dev/null; then
         echo "✅ ggshield: authenticated (~/.config/ggshield/auth_config.yaml)"
     else
         echo "🔐 ggshield not authenticated — run: ggshield auth login --method token"
-        echo "   Or set GITGUARDIAN_API_KEY (non-interactive / DevPod-friendly)"
+        echo "   Or set GITGUARDIAN_API_KEY (non-interactive)"
     fi
 else
     echo "⚠️ ggshield not available - run: uv sync --dev --all-packages"

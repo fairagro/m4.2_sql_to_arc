@@ -38,6 +38,7 @@ For every config field, the wrapper resolves values in this order:
 4. **Pydantic field default**
 
 Nested fields use `_` as path separator:
+
 - `api_client.api_url` with prefix `MY_APP` → `MY_APP_API_CLIENT_API_URL`
 
 ---
@@ -45,7 +46,7 @@ Nested fields use `_` as path separator:
 ## Type Coercion (env / secret values are always strings)
 
 | String value | Parsed as |
-|---|---|
+| --- | --- |
 | `"true"` / `"True"` / `"TRUE"` | `True` (bool) |
 | `"false"` / `"False"` / `"FALSE"` | `False` (bool) |
 | `"123"` | `123` (int) |
@@ -95,6 +96,7 @@ otel: OtelConfig  # OpenTelemetry settings
 ```
 
 `OtelConfig` fields:
+
 - `endpoint: str | None` — OTLP collector URL
 - `log_console_spans: bool` — print spans to stdout
 - `log_level: LogLevel` — OTLP log export level

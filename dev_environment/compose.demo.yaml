@@ -33,7 +33,7 @@ services:
       - -c
       - |
         set -e
-        pip install fastapi uvicorn arctrl
+        pip install fastapi uvicorn 'arctrl>=3.2'
         uvicorn main:app --app-dir /app --host 0.0.0.0 --port 8000
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/live')\" 2>/dev/null || exit 1"]
