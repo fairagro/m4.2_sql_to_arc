@@ -115,6 +115,8 @@ class WorkflowTester:
         self.mock_config.max_concurrent_tasks = 4
         self.mock_config.db_batch_size = 10
         self.mock_config.arc_generation_timeout_minutes = 30
+        self.mock_config.max_studies = 5000
+        self.mock_config.max_assays = 10000
         self.mock_config.debug_limit = None
         self.mock_config.log_level = "INFO"
         self.mock_config.otel = OtelConfig(endpoint=None, log_console_spans=False, log_level="INFO")
