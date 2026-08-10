@@ -88,7 +88,8 @@ async def test_stream_investigations_null_identifier_records_unknown() -> None:
         report.finish()
         entry = report.repository_reports[0]
         assert entry.failed_datasets == 1
-        assert entry.failed_records[0].record_id == "unknown"
+        assert entry.failures[0].record_id == "unknown"
+        assert entry.failures[0].kind.value == "dataset"
 
 
 @pytest.mark.asyncio

@@ -41,6 +41,8 @@ class WorkerContext:
     total_workers: int
     pool_holder: ProcessPoolHolder
     arc_generation_timeout_minutes: int = 30
+    max_studies: int = 5000
+    max_assays: int = 10000
 
 
 @dataclass(frozen=True, slots=True)

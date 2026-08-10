@@ -41,7 +41,9 @@ def test_finished_report_uses_shared_jsonld_vocabulary() -> None:
     assert entry["fairagro:failedDatasets"] == failed_datasets
     assert entry["fairagro:totalStudies"] == total_studies
     assert entry["fairagro:totalAssays"] == total_assays
-    assert entry["fairagro:failedRecords"][0]["fairagro:recordId"] == "inv-fail"
+    failure = entry["fairagro:failures"][0]
+    assert failure["fairagro:recordId"] == "inv-fail"
+    assert failure["fairagro:kind"] == "dataset"
 
 
 def test_failed_investigations_exclude_composition_from_totals() -> None:
@@ -59,6 +61,7 @@ def test_failed_investigations_exclude_composition_from_totals() -> None:
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 1
     assert entry.failed_datasets == 1
-    assert entry.failed_records[0].record_id == "bad-inv"
+    assert entry.failures[0].record_id == "bad-inv"
+    assert entry.failures[0].kind.value == "dataset"
     assert entry.total_studies == total_studies
     assert entry.total_assays == total_assays

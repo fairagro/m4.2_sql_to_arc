@@ -542,7 +542,7 @@ wheels = [
 
 [[package]]
 name = "fairagro-middleware-shared"
-version = "11.1.0"
+version = "11.1.1.dev34"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-api" },
@@ -552,9 +552,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4a/6d/9354ea14687b85142205549078440f77b50f7d4f2f820b39dbccc22dbc87/fairagro_middleware_shared-11.1.0.tar.gz", hash = "sha256:6ccbead4941c79664d514e763770a5a909a17a013c14d98c747999fb05c3f62c", size = 24574, upload-time = "2026-08-04T08:01:16.839Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/31/dea185f8476d400292a84eaf97a52c84d8e0cf9114c6a3347774f7e2e233/fairagro_middleware_shared-11.1.1.dev34.tar.gz", hash = "sha256:283aaea3675cb3ba7d9b75a6dd68fccca993f81af07dd03c154ea2440072ca1d", size = 25442, upload-time = "2026-08-10T12:14:41.547Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/72/25/e63f38532b758571d931fbc549e60d44f12be30c89e81938495d199dd5c8/fairagro_middleware_shared-11.1.0-py3-none-any.whl", hash = "sha256:28ac8ea6d8cec4e01fb66294ff3424b762d77408f021cd87cc9e61cc126447eb", size = 21294, upload-time = "2026-08-04T08:01:15.358Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/62/d0a4a4b3ee299ae8978d71c0ac27fbae33ff739e496f6a12177502bd5fee/fairagro_middleware_shared-11.1.1.dev34-py3-none-any.whl", hash = "sha256:9222ab833f05af1dd23baa729113720cd98b4c993d439cabc4240d8d3d791c65", size = 21694, upload-time = "2026-08-10T12:14:40.218Z" },
 ]
 
 [[package]]
@@ -2040,7 +2040,7 @@ requires-dist = [
     { name = "aioodbc", specifier = ">=0.4.1" },
     { name = "arctrl", specifier = ">=3.2.0" },
     { name = "fairagro-middleware-api-client", specifier = ">=10.0.1" },
-    { name = "fairagro-middleware-shared", specifier = ">=11.0.1.dev29" },
+    { name = "fairagro-middleware-shared", specifier = ">=11.1.1.dev34" },
     { name = "opentelemetry-api", specifier = ">=1.30.0" },
     { name = "oracledb", specifier = ">=4.0.2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
