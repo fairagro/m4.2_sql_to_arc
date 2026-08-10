@@ -997,7 +997,7 @@ dev = [
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pytest-env", specifier = ">=1.2.0" },
+    { name = "pytest-env", specifier = ">=1.7.0" },
     { name = "pytest-mock", specifier = ">=3.10.0" },
     { name = "respx", specifier = ">=0.20.0" },
     { name = "ruff", specifier = ">=0.15.22" },
