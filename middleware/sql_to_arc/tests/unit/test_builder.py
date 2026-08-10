@@ -6,7 +6,7 @@ import pickle
 from typing import Any
 
 import pytest
-from arctrl.py.Core.Table.composite_header import CompositeHeader_Output as CompositeHeader, IOType_Data as IOType
+from arctrl import CompositeHeader, IOType
 
 from middleware.sql_to_arc.builder import (
     _IO_TYPE_MAP,
