@@ -209,8 +209,8 @@ json_str: str = arc.ToROCrateJsonString()
 table = ArcTable.init("my-table-name")
 
 # Build headers
-header_input = CompositeHeader.input(IOType.of_string("source_name"))
-header_output = CompositeHeader.output(IOType.of_string("sample_name"))
+header_input = CompositeHeader.input(IOType.of_string("Source Name"))
+header_output = CompositeHeader.output(IOType.of_string("Sample Name"))
 header_char = CompositeHeader.characteristic(OntologyAnnotation("pH", "", ""))
 header_factor = CompositeHeader.factor(OntologyAnnotation("temperature", "", ""))
 header_param = CompositeHeader.parameter(OntologyAnnotation("extraction", "", ""))
