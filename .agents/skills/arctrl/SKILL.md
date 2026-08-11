@@ -39,7 +39,6 @@ from the bare `arctrl` package.
 override is not in place):
 
 ```python
-from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
 from arctrl.py.Core.Table.composite_cell import Data  # type: ignore[import-untyped]
 ```
 
@@ -58,10 +57,8 @@ from arctrl import (
     OntologyAnnotation,
     Person,
     Publication,
+    start_as_task,  # re-exported from fable_library
 )
-
-# Async write helper lives in the Fable internals:
-from arctrl.py.fable_modules.fable_library.async_ import start_as_task  # type: ignore[import-untyped]
 ```
 
 ---
@@ -216,8 +213,8 @@ header_factor = CompositeHeader.factor(OntologyAnnotation("temperature", "", "")
 header_param = CompositeHeader.parameter(OntologyAnnotation("extraction", "", ""))
 header_comp = CompositeHeader.component(OntologyAnnotation("reagent", "", ""))
 header_cmt = CompositeHeader.comment("My comment label")
-header_perf = CompositeHeader.performer  # property, not callable
-header_date = CompositeHeader.date  # property, not callable
+header_perf = CompositeHeader.performer()  # factory — call it
+header_date = CompositeHeader.date()  # factory — call it
 # Fallback for unknown/simple header names:
 header_any = CompositeHeader.OfHeaderString("SomeColumnName")
 
@@ -273,15 +270,14 @@ await start_as_task(arc.WriteAsync("/path/to/output/dir"))
 
 ## Known Pitfalls
 
-**`start_as_task` is untyped** — always add `# type: ignore[import-untyped]`
-on the import.
+**`start_as_task`** — import from `arctrl` (re-exported). Prefer the public
+import over the internal `arctrl.py.fable_modules…` path.
 
-**`CompositeHeader.performer` and `.date` are properties, not constructors**
-— call them without `()`:
+**`CompositeHeader.performer` and `.date` are factories** — call them with `()`:
 
 ```python
-header = CompositeHeader.performer  # CORRECT
-header = CompositeHeader.performer()  # TypeError
+header = CompositeHeader.performer()
+header = CompositeHeader.date()
 ```
 
 **`OntologyAnnotation()` without args is valid** — use for empty/unknown terms

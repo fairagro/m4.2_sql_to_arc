@@ -13,8 +13,7 @@ import traceback
 from datetime import UTC, datetime
 from pathlib import Path
 
-from arctrl import ARC
-from arctrl.py.fable_modules.fable_library.async_ import start_as_task
+from arctrl import ARC, start_as_task
 from fastapi import FastAPI, Request
 
 app = FastAPI()
