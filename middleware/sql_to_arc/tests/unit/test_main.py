@@ -132,7 +132,8 @@ async def test_process_investigation_upload_failure_records_failed(
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 0
     assert entry.failed_datasets == 1
-    assert entry.failed_records[0].record_id == "inv-x"
+    assert entry.failures[0].record_id == "inv-x"
+    assert entry.failures[0].kind.value == "dataset"
     assert entry.total_studies is None
     assert entry.total_assays is None
 
@@ -176,8 +177,9 @@ async def test_process_investigation_invalid_arc_json_records_failed(
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 0
     assert entry.failed_datasets == 1
-    assert entry.failed_records[0].record_id == "inv-bad-json"
-    assert "Invalid ARC JSON" in entry.failed_records[0].message
+    assert entry.failures[0].record_id == "inv-bad-json"
+    assert entry.failures[0].kind.value == "dataset"
+    assert "Invalid ARC JSON" in entry.failures[0].message
     mock_client.create_or_update_arc.assert_not_called()
 
 
@@ -225,8 +227,9 @@ async def test_process_investigation_bare_exception_records_failed(
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 0
     assert entry.failed_datasets == 1
-    assert entry.failed_records[0].record_id == "inv-dup"
-    assert "Build failed" in entry.failed_records[0].message
+    assert entry.failures[0].record_id == "inv-dup"
+    assert entry.failures[0].kind.value == "dataset"
+    assert "Build failed" in entry.failures[0].message
     mock_client.create_or_update_arc.assert_not_called()
 
 
@@ -265,9 +268,84 @@ async def test_process_investigation_duplicate_assay_includes_fields(
     await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
     report.finish()
 
-    message = report.repository_reports[0].failed_records[0].message
-    assert "assay-xyz" in message
-    assert "fields: title, measurement_type_term" in message
+    failure = report.repository_reports[0].failures[0]
+    assert failure.kind.value == "dataset"
+    assert "assay-xyz" in failure.message
+    assert "fields: title, measurement_type_term" in failure.message
+
+
+@pytest.mark.asyncio
+async def test_process_investigation_skips_when_study_limit_exceeded() -> None:
+    """Investigations above max_studies are skipped without build or upload."""
+    mock_client = AsyncMock(spec=ApiClient)
+    investigation = InvestigationRow(identifier="inv-big", title="Inv", description_text="Desc")
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    semaphore = asyncio.Semaphore(1)
+
+    pool_holder = ProcessPoolHolder(1, inject_executor=MagicMock(spec=concurrent.futures.ProcessPoolExecutor))
+    ctx = WorkerContext(
+        client=mock_client,
+        rdi="test_rdi",
+        studies_by_inv={"inv-big": [MagicMock(), MagicMock(), MagicMock()]},
+        assays_by_inv={"inv-big": []},
+        contacts_by_inv={},
+        pubs_by_inv={},
+        anns_by_inv={},
+        worker_id=1,
+        total_workers=1,
+        pool_holder=pool_holder,
+        arc_generation_timeout_minutes=1,
+        max_studies=2,
+        max_assays=10000,
+    )
+
+    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.skipped_datasets == 1
+    assert entry.harvested_datasets == 0
+    assert entry.failed_datasets == 0
+    assert entry.failures == ()
+    mock_client.create_or_update_arc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_investigation_skips_when_assay_limit_exceeded() -> None:
+    """Investigations above max_assays are skipped without build or upload."""
+    mock_client = AsyncMock(spec=ApiClient)
+    investigation = InvestigationRow(identifier="inv-assays", title="Inv", description_text="Desc")
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    semaphore = asyncio.Semaphore(1)
+
+    pool_holder = ProcessPoolHolder(1, inject_executor=MagicMock(spec=concurrent.futures.ProcessPoolExecutor))
+    ctx = WorkerContext(
+        client=mock_client,
+        rdi="test_rdi",
+        studies_by_inv={"inv-assays": [MagicMock()]},
+        assays_by_inv={"inv-assays": [MagicMock(), MagicMock()]},
+        contacts_by_inv={},
+        pubs_by_inv={},
+        anns_by_inv={},
+        worker_id=1,
+        total_workers=1,
+        pool_holder=pool_holder,
+        arc_generation_timeout_minutes=1,
+        max_studies=5000,
+        max_assays=1,
+    )
+
+    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.skipped_datasets == 1
+    assert entry.harvested_datasets == 0
+    assert entry.failed_datasets == 0
+    assert entry.failures == ()
+    mock_client.create_or_update_arc.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -308,6 +386,8 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
         rdi="test",
         debug_limit=10,
         arc_generation_timeout_minutes=30,
+        max_studies=5000,
+        max_assays=10000,
     )
 
     async def mock_process_inv(*_args: Any, **_kwargs: Any) -> None:

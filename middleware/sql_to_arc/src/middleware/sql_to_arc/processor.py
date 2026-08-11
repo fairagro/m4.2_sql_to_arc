@@ -141,6 +141,27 @@ async def _build_and_upload_single_arc(
         studies = ctx.studies_by_inv.get(inv_id, [])
         assays = ctx.assays_by_inv.get(inv_id, [])
 
+        if len(studies) > ctx.max_studies:
+            logger.warning(
+                "%s: Skipping investigation %s: %d studies exceed max_studies=%d",
+                inv_info,
+                inv_id,
+                len(studies),
+                ctx.max_studies,
+            )
+            scope.record_skipped()
+            return
+        if len(assays) > ctx.max_assays:
+            logger.warning(
+                "%s: Skipping investigation %s: %d assays exceed max_assays=%d",
+                inv_info,
+                inv_id,
+                len(assays),
+                ctx.max_assays,
+            )
+            scope.record_skipped()
+            return
+
         if assays and not studies:
             logger.warning(
                 "%s: Investigation %s has assays but no studies. This is allowed but unusual.", inv_info, inv_id
@@ -316,6 +337,8 @@ def _spawn_investigation_task(
         total_workers=res.config.max_concurrent_arc_builds,
         pool_holder=res.pool_holder,
         arc_generation_timeout_minutes=res.config.arc_generation_timeout_minutes,
+        max_studies=res.config.max_studies,
+        max_assays=res.config.max_assays,
     )
 
     inv_info = f"Investigation {idx}"

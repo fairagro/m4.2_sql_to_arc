@@ -57,7 +57,7 @@ from arctrl import (
     OntologyAnnotation,
     Person,
     Publication,
-    start_as_task,  # re-exported from fable_library (arctrl ≥3.2)
+    start_as_task,  # re-exported from fable_library
 )
 ```
 
@@ -202,12 +202,6 @@ json_str: str = arc.ToROCrateJsonString()
 ## ArcTable (Annotation Tables)
 
 ```python
-# arctrl ≥3.2: CompositeHeader / IOType / CompositeCell are TypeAliases on
-# `from arctrl import …`. Use a case class for factories:
-from arctrl.py.Core.Table.composite_header import CompositeHeader_Output as CompositeHeader
-from arctrl.py.Core.Table.composite_header import IOType_Data as IOType
-from arctrl.py.Core.Table.composite_cell import CompositeCell_FreeText as CompositeCell
-
 # Create table
 table = ArcTable.init("my-table-name")
 
@@ -276,14 +270,8 @@ await start_as_task(arc.WriteAsync("/path/to/output/dir"))
 
 ## Known Pitfalls
 
-**`start_as_task`** — import from `arctrl` (re-exported since 3.2). The old
-path `arctrl.py.fable_modules.fable_library.async_` no longer exists.
-
-**`CompositeHeader` / `IOType` / `CompositeCell` TypeAliases (arctrl ≥3.2)** —
-`from arctrl import CompositeHeader` is annotation-only. Factory methods
-(`.input`, `.output`, `.of_string`, `.free_text`, …) live on case classes such
-as `CompositeHeader_Output`, `IOType_Data`, `CompositeCell_FreeText`. Alias one
-of those at import time for runtime use.
+**`start_as_task`** — import from `arctrl` (re-exported). Prefer the public
+import over the internal `arctrl.py.fable_modules…` path.
 
 **`CompositeHeader.performer` and `.date` are factories** — call them with `()`:
 
