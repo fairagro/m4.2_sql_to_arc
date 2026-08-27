@@ -532,7 +532,7 @@ wheels = [
 
 [[package]]
 name = "fairagro-middleware-shared"
-version = "12.0.0"
+version = "12.1.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "opentelemetry-api" },
@@ -542,9 +542,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/de/6d/f19fb3dd902efa9ea70c0c0a98cb3cf059b2e1a41c299b5bd3a0dc184dfa/fairagro_middleware_shared-12.0.0.tar.gz", hash = "sha256:a2960e5eaad493a7dab23da1fa9abd2a1f34d2cc529d3836d8b926b6b716e16d", size = 25423, upload-time = "2026-08-11T11:43:15.026Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/de/3e/d61656fdd266f9eabd1e2fff56b98f9d9fe2e54feafed28a31878a908a01/fairagro_middleware_shared-12.1.4.tar.gz", hash = "sha256:783fb0895a65785397020a2afb6903db3dc76ca7130c7269218848fbb383ab4b", size = 25421, upload-time = "2026-08-20T16:22:56.949Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1d/99/412840104574896ea1d787b77955704bfb6b6440dcf694450202f8b49c0e/fairagro_middleware_shared-12.0.0-py3-none-any.whl", hash = "sha256:916832dc1f3c0e88abd722bedc576eb902ed01aa82baa2cf64e450a4933c6e69", size = 21651, upload-time = "2026-08-11T11:43:13.403Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/29/93fffcca00ec928f095a11581339092f78e1946a90747ff4d19ec0fd7cd1/fairagro_middleware_shared-12.1.4-py3-none-any.whl", hash = "sha256:51fbc2cb57078b475f008cb953ec18c5ac2cae41716f995b0a89237602dfa4b8", size = 21648, upload-time = "2026-08-20T16:22:55.437Z" },
 ]
 
 [[package]]
