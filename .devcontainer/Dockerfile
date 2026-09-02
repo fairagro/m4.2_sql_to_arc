@@ -14,7 +14,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG KUBECTL_VERSION=v1.36.1
 ARG HELM_VERSION=v4.2.0
-ARG UV_VERSION=0.11.19
+ARG UV_VERSION=0.12.9
 ARG SOPS_VERSION=v3.10.2
 ARG AGE_VERSION=v1.3.1
 ARG STARSHIP_VERSION=v1.25.1
@@ -143,4 +143,4 @@ RUN echo 'export HISTFILE=/commandhistory/.bash_history' >> /etc/bash.bashrc && 
 USER vscode
 
 # ── Python (via uv) ──────────────────────────────────────────────────────────
-RUN uv python install 3.12
+RUN uv python install 3.12.14
