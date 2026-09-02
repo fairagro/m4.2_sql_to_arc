@@ -584,6 +584,35 @@ def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> Non
     assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
 
 
+def test_apply_upload_outcomes_unmapped_arc_id_is_unattributed() -> None:
+    """Unknown arc_id must not be used as record_id or allow harvested for the real inv."""
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    state = ArcStreamState()
+    state.submitted_ids.append("inv-1")
+    state.compositions["inv-1"] = CompositionCounts(studies=2, assays=1)
+    state.arc_id_to_investigation["inv-1"] = "inv-1"
+
+    _apply_upload_outcomes(
+        [
+            HarvestError(
+                arc_id="foreign-arc-id",
+                error_type=HarvestErrorType.SUBMISSION_FAILED,
+                message="not in map",
+            )
+        ],
+        state,
+        scope,
+    )
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.harvested_datasets == 0
+    assert entry.failed_datasets == 0
+    assert all(f.record_id is None for f in entry.failures)
+    assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
+
+
 @pytest.mark.asyncio
 async def test_process_investigations_records_harvest_item_errors(
     monkeypatch: pytest.MonkeyPatch,

@@ -93,10 +93,15 @@ class ArcStreamState:
 
 
 def _investigation_id_for_error(state: ArcStreamState, arc_id: str | None) -> str | None:
-    """Resolve a harvest error arc_id to the investigation id used for reporting."""
+    """Resolve a harvest error arc_id to the investigation id used for reporting.
+
+    Returns ``None`` when ``arc_id`` is missing or not present in the stream
+    mapping so the caller treats it as unattributed instead of inventing a
+    record id that is not a known investigation.
+    """
     if not isinstance(arc_id, str) or not arc_id:
         return None
-    return state.arc_id_to_investigation.get(arc_id, arc_id)
+    return state.arc_id_to_investigation.get(arc_id)
 
 
 def _apply_upload_outcomes(errors: list[HarvestError], state: ArcStreamState, scope: RepositoryScope) -> None:
