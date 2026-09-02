@@ -244,6 +244,100 @@ def _built_arc_from_json(
     )
 
 
+def _record_duplicate_entity_failure(
+    exc: DuplicateAssayRowError | DuplicateStudyRowError,
+    *,
+    inv_info: str,
+    inv_id: str,
+    scope: RepositoryScope,
+) -> None:
+    """Record a conflicting duplicate study/assay row as a failed investigation."""
+    if isinstance(exc, DuplicateAssayRowError):
+        fields = ", ".join(exc.fields)
+        logger.error(
+            "%s: Conflicting duplicate vAssay rows for assay %s (fields: %s) in investigation %s",
+            inv_info,
+            exc.assay_id,
+            fields,
+            inv_id,
+        )
+        scope.record_failed(
+            f"Conflicting duplicate vAssay rows for assay {exc.assay_id} (fields: {fields})",
+            record_id=inv_id,
+        )
+        return
+
+    fields = ", ".join(exc.fields)
+    logger.error(
+        "%s: Conflicting duplicate vStudy rows for study %s (fields: %s) in investigation %s",
+        inv_info,
+        exc.study_id,
+        fields,
+        inv_id,
+    )
+    scope.record_failed(
+        f"Conflicting duplicate vStudy rows for study {exc.study_id} (fields: {fields})",
+        record_id=inv_id,
+    )
+
+
+async def _execute_arc_build(
+    ctx: WorkerContext,
+    build_data: ArcBuildData,
+    *,
+    inv_id: str,
+    inv_info: str,
+    scope: RepositoryScope,
+) -> BuiltArc | None:
+    """Run the process-pool build and map known failures onto ``scope``."""
+    loop = asyncio.get_running_loop()
+    executor = ctx.pool_holder.get_executor()
+    try:
+        arc_json = await asyncio.wait_for(
+            loop.run_in_executor(executor, build_single_arc_task, build_data),
+            timeout=getattr(ctx, "arc_generation_timeout_minutes", 30) * 60,
+        )
+
+        if arc_json is None:
+            logger.error("%s: Build returned None for investigation %s", inv_info, inv_id)
+            scope.record_failed("Build returned no ARC JSON", record_id=inv_id)
+            return None
+
+        return _built_arc_from_json(
+            arc_json,
+            inv_id=inv_id,
+            inv_info=inv_info,
+            composition=CompositionCounts(
+                studies=len(build_data.studies),
+                assays=len(build_data.assays),
+            ),
+            scope=scope,
+        )
+
+    except TimeoutError:
+        logger.error("%s: ARC generation timed out for investigation %s", inv_info, inv_id)
+        scope.record_failed("ARC generation timed out", record_id=inv_id)
+    except (DuplicateAssayRowError, DuplicateStudyRowError) as e:
+        _record_duplicate_entity_failure(e, inv_info=inv_info, inv_id=inv_id, scope=scope)
+    except concurrent.futures.BrokenExecutor as e:
+        logger.error(
+            "%s: Worker process died while building investigation %s "
+            "(likely OOM or crash in arctrl; process pool was reset): %s",
+            inv_info,
+            inv_id,
+            e,
+            exc_info=True,
+        )
+        ctx.pool_holder.recreate(executor)
+        scope.record_failed(f"Worker process died: {e}", record_id=inv_id)
+    except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+        # arctrl often raises bare Exception (e.g. duplicate study names); keep the run going.
+        # asyncio.CancelledError is BaseException (3.8+) and is not caught here.
+        logger.error("%s: Failed to build ARC for investigation %s: %s", inv_info, inv_id, e, exc_info=True)
+        scope.record_failed(f"Build failed: {e}", record_id=inv_id)
+    return None
+
+
 async def _build_single_arc(
     ctx: WorkerContext,
     investigation: InvestigationRow,
@@ -297,73 +391,13 @@ async def _build_single_arc(
             publications=ctx.pubs_by_inv.get(inv_id, []),
             annotations=ctx.anns_by_inv.get(inv_id, []),
         )
-
-        loop = asyncio.get_running_loop()
-        try:
-            executor = ctx.pool_holder.get_executor()
-            arc_json = await asyncio.wait_for(
-                loop.run_in_executor(executor, build_single_arc_task, build_data),
-                timeout=getattr(ctx, "arc_generation_timeout_minutes", 30) * 60,
-            )
-
-            if arc_json is None:
-                logger.error("%s: Build returned None for investigation %s", inv_info, inv_id)
-                scope.record_failed("Build returned no ARC JSON", record_id=inv_id)
-                return None
-
-            return _built_arc_from_json(
-                arc_json,
-                inv_id=inv_id,
-                inv_info=inv_info,
-                composition=CompositionCounts(studies=len(studies), assays=len(assays)),
-                scope=scope,
-            )
-
-        except TimeoutError:
-            logger.error("%s: ARC generation timed out for investigation %s", inv_info, inv_id)
-            scope.record_failed("ARC generation timed out", record_id=inv_id)
-        except DuplicateAssayRowError as e:
-            fields = ", ".join(e.fields)
-            logger.error(
-                "%s: Conflicting duplicate vAssay rows for assay %s (fields: %s) in investigation %s",
-                inv_info,
-                e.assay_id,
-                fields,
-                inv_id,
-            )
-            scope.record_failed(
-                f"Conflicting duplicate vAssay rows for assay {e.assay_id} (fields: {fields})",
-                record_id=inv_id,
-            )
-        except DuplicateStudyRowError as e:
-            fields = ", ".join(e.fields)
-            logger.error(
-                "%s: Conflicting duplicate vStudy rows for study %s (fields: %s) in investigation %s",
-                inv_info,
-                e.study_id,
-                fields,
-                inv_id,
-            )
-            scope.record_failed(
-                f"Conflicting duplicate vStudy rows for study {e.study_id} (fields: {fields})",
-                record_id=inv_id,
-            )
-        except concurrent.futures.BrokenExecutor as e:
-            logger.error(
-                "%s: Worker process died while building investigation %s "
-                "(likely OOM or crash in arctrl; process pool was reset): %s",
-                inv_info,
-                inv_id,
-                e,
-                exc_info=True,
-            )
-            ctx.pool_holder.recreate(executor)
-            scope.record_failed(f"Worker process died: {e}", record_id=inv_id)
-        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
-            # arctrl often raises bare Exception (e.g. duplicate study names); keep the run going.
-            logger.error("%s: Failed to build ARC for investigation %s: %s", inv_info, inv_id, e, exc_info=True)
-            scope.record_failed(f"Build failed: {e}", record_id=inv_id)
-        return None
+        return await _execute_arc_build(
+            ctx,
+            build_data,
+            inv_id=inv_id,
+            inv_info=inv_info,
+            scope=scope,
+        )
 
 
 @dataclass(slots=True)
@@ -608,6 +642,7 @@ async def _run_harvest_upload(
             logger.error("%s", detail, exc_info=True)
             return detail
         except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+            # asyncio.CancelledError is BaseException (3.8+) and is not caught here.
             upload_span.set_status(Status(StatusCode.ERROR))
             upload_span.record_exception(e)
             detail = f"Harvest upload failed: {e}"

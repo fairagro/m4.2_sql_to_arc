@@ -81,13 +81,22 @@ results MUST NOT be submitted into the harvest.
 
 ### Requirement: Per-Investigation Upload Logging
 
-The system MUST log success or failure per investigation after each call.
+The system MUST log per-investigation upload progress when an ARC enters the
+harvest stream, and MUST log overall harvest completion (or failure) for the
+run. Logging MUST reflect harvest-session outcomes, not a separate
+per-investigation upload RPC.
 
-#### Scenario: Successful upload
+#### Scenario: ARC queued for harvest
 
-- **GIVEN** the API accepts the ARC
-- **WHEN** the call completes
-- **THEN** an INFO success log is written for that investigation
+- **GIVEN** an investigation built successfully
+- **WHEN** its ARC payload is yielded into `harvest_arcs`
+- **THEN** an INFO log is written for that investigation
+
+#### Scenario: Harvest finished
+
+- **GIVEN** `harvest_arcs` returns a result
+- **WHEN** outcomes have been applied
+- **THEN** an INFO log summarizes the harvest id and submitted/error counts
 
 ### Requirement: Reuse ApiClient Instance
 
