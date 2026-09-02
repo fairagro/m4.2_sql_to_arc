@@ -108,3 +108,20 @@ def test_demo_api_harvest_create_arcs_complete(client: TestClient, demo_api: Dem
 
     payload = demo_api.OUTPUT_ROOT / "inv-1.payload.json"
     assert payload.is_file()
+
+
+def test_demo_api_persist_failure_returns_error(demo_api: DemoApiModule, client: TestClient) -> None:
+    """Failed ARC writes must not look like a successful created submission."""
+    create_resp = client.post("/v3/harvests", json={"rdi": "demo-rdi", "expected_datasets": 1})
+    harvest = HarvestResult.model_validate(create_resp.json())
+
+    with patch.object(demo_api, "start_as_task", new=AsyncMock(side_effect=RuntimeError("write boom"))):
+        arc_resp = client.post(
+            f"/v3/harvests/{harvest.harvest_id}/arcs",
+            json={"arc": {"identifier": "inv-fail", "@context": {}, "@graph": []}},
+        )
+
+    assert arc_resp.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert "Failed to persist ARC" in arc_resp.json()["detail"]
+    get_resp = client.get(f"/v3/harvests/{harvest.harvest_id}")
+    assert HarvestResult.model_validate(get_resp.json()).statistics.arcs_submitted == 0

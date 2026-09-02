@@ -164,29 +164,38 @@ def _harvest_result(record: _HarvestRecord) -> JsonObject:
 
 
 async def _persist_arc_payload(rdi: str, arc_payload: RoCrateContent) -> JsonObject:
-    """Write an ARC payload to disk and return an ApiClient-compatible ArcResult dict."""
+    """Write an ARC payload to disk and return an ApiClient-compatible ArcResult dict.
+
+    Raises ``HTTPException`` (500) when writing fails so callers do not treat a
+    failed persistence as a successful ``created`` submission.
+    """
     output_path = OUTPUT_ROOT
-    output_path.mkdir(parents=True, exist_ok=True)
-    _chown_tree(output_path)
-
     now = _now_iso()
-    arc_id, arc_dir = _derive_safe_arc_id(output_path, arc_payload.get("identifier"))
-
-    payload_path = arc_dir.with_suffix(".payload.json")
-    with open(payload_path, "w", encoding="utf-8") as handle:
-        json.dump(arc_payload, handle, indent=2)
-    _chown_tree(payload_path)
+    arc_id = "unknown"
+    arc_dir = output_path
 
     try:
+        output_path.mkdir(parents=True, exist_ok=True)
+        _chown_tree(output_path)
+
+        arc_id, arc_dir = _derive_safe_arc_id(output_path, arc_payload.get("identifier"))
+
+        payload_path = arc_dir.with_suffix(".payload.json")
+        with open(payload_path, "w", encoding="utf-8") as handle:
+            json.dump(arc_payload, handle, indent=2)
+        _chown_tree(payload_path)
+
         arc_json = json.dumps(arc_payload)
         arc = ARC.from_rocrate_json_string(arc_json)
         await start_as_task(arc.WriteAsync(str(arc_dir)))
         _chown_tree(arc_dir)
         print(f"Saved ARC structure for {rdi} as {arc_id} using arctrl")
-    except (json.JSONDecodeError, OSError, RuntimeError) as exc:
+    except (json.JSONDecodeError, OSError, RuntimeError, TypeError, ValueError) as exc:
         _handle_error(arc_dir, rdi, arc_id, exc)
+        raise HTTPException(status_code=500, detail=f"Failed to persist ARC {arc_id}: {exc}") from exc
     except Exception as exc:  # noqa: BLE001
         _handle_error(arc_dir, rdi, arc_id, exc)
+        raise HTTPException(status_code=500, detail=f"Failed to persist ARC {arc_id}: {exc}") from exc
 
     return _arc_result(arc_id, rdi, now)
 
