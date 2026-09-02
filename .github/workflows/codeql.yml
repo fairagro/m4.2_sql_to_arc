@@ -68,12 +68,15 @@ jobs:
         with:
           python-version: '3.12.14'
 
-      - name: Install uv and dependencies
+      - name: Install uv
         if: matrix.language == 'python'
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          source $HOME/.cargo/env
-          uv sync --dev
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.12.9"
+
+      - name: Install dependencies
+        if: matrix.language == 'python'
+        run: uv sync --dev
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL

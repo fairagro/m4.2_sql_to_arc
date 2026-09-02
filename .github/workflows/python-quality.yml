@@ -33,7 +33,7 @@ jobs:
       if: inputs.run_checks
       uses: astral-sh/setup-uv@v4
       with:
-        version: "latest"
+        version: "0.12.9"
 
     - name: Set up Python ${{ matrix.python-version }}
       if: inputs.run_checks
