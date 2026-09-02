@@ -4,7 +4,7 @@ context: |
   Project: FAIRagro SQL-to-ARC Converter — batch process that reads SQL views,
   builds ARC RO-Crate JSON-LD, and uploads to the Middleware API.
 
-  Tech stack: Python 3.12, PostgreSQL 15, uv, Docker, arctrl, SQLAlchemy async,
+  Tech stack: Python 3.12.14, PostgreSQL 15, uv, Docker, arctrl, SQLAlchemy async,
   Pydantic v2, httpx. External libs: middleware.shared + middleware.api_client
   (git workspace from m4.2_advanced_middleware_api).
 

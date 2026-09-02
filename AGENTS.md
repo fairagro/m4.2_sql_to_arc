@@ -6,7 +6,7 @@ This file contains critical context about the FAIRagro SQL-to-ARC Converter proj
 
 | Component | Version | Details |
 | --------- | ------- | ------- |
-| Python | 3.12.12 | Primary language |
+| Python | 3.12.14 | Primary language |
 | PostgreSQL | 15.15 | Database |
 | Docker | Latest | Containerization |
 | Git LFS | 3.3.0+ | Large file storage |
