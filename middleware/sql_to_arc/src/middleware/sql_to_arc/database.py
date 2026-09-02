@@ -7,6 +7,7 @@ from typing import Any, TypeVar, cast
 
 import sqlalchemy
 from pydantic import ValidationError
+from pydantic.fields import FieldInfo
 from sqlalchemy import (
     column,
     func,
@@ -14,8 +15,10 @@ from sqlalchemy import (
     select,
     table,
 )
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import NoSuchTableError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
+from sqlalchemy.sql.elements import ColumnElement
 
 from middleware.shared.report import RepositoryScope
 from middleware.sql_to_arc.models import (
@@ -32,6 +35,9 @@ from middleware.sql_to_arc.models import (
 
 logger = logging.getLogger(__name__)
 RowModel = TypeVar("RowModel", bound=BaseRow)
+
+# ``SELECT *`` has no static column shape in SQLAlchemy; ``Any`` is required here.
+type SelectStar = sqlalchemy.Select[Any]
 
 
 class SchemaValidator:
@@ -72,7 +78,7 @@ class SchemaValidator:
             return None
 
     @staticmethod
-    def _is_view_mapped_field(field_info: Any) -> bool:
+    def _is_view_mapped_field(field_info: FieldInfo) -> bool:
         """Return whether the field is part of the SQL view contract (``spec_field``)."""
         json_extra = field_info.json_schema_extra
         return isinstance(json_extra, dict) and "spec_required" in json_extra
@@ -187,7 +193,7 @@ class Database:
 
     @staticmethod
     def _validate_and_map(
-        row: Any,
+        row: RowMapping,
         model: type[RowModel],
         entity_name: str,
     ) -> RowModel | None:
@@ -225,16 +231,15 @@ class Database:
             async with self.engine.connect() as conn:
                 # Use literal_column("*") to ensure SQLAlchemy generates 'SELECT *'
                 # instead of '"vInvestigation"."*"' which can cause issues with some dialects
-                stmt: sqlalchemy.Select[Any] = (
+                query: SelectStar = (
                     select(sqlalchemy.literal_column("*"))
                     .select_from(table(view_name))
                     .execution_options(stream_results=True)
                 )
-                if limit:
-                    stmt = stmt.limit(limit)
+                stream_stmt: SelectStar = query.limit(limit) if limit is not None else query
 
                 # Execute stream to use server-side cursor (prevents loading all rows into RAM)
-                result = await conn.stream(stmt)
+                result = await conn.stream(stream_stmt)
                 async for row in result.mappings():
                     investigation = self._validate_and_map(row, InvestigationRow, "investigation")
                     if investigation is None:
@@ -267,15 +272,15 @@ class Database:
         try:
             async with self.engine.connect() as conn:
                 # Use literal_column("*") to select all columns
-                c_inv_ref: sqlalchemy.ColumnElement[Any] = column("investigation_ref")
-                stmt: sqlalchemy.Select[Any] = (
+                c_inv_ref: ColumnElement[str] = column("investigation_ref")
+                stream_stmt: SelectStar = (
                     select(sqlalchemy.literal_column("*"))
                     .select_from(table(view_name))
                     .where(c_inv_ref.in_(investigation_ids))
                     .execution_options(stream_results=True)
                 )
 
-                result = await conn.stream(stmt)
+                result = await conn.stream(stream_stmt)
                 async for row in result.mappings():
                     item = self._validate_and_map(row, model, entity_name)
                     if item is not None:

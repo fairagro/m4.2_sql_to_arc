@@ -4,7 +4,6 @@ import gc
 import json
 import logging
 from collections import defaultdict
-from typing import Any
 
 from arctrl import (
     ARC,
@@ -18,6 +17,7 @@ from arctrl import (
 )
 from arctrl.py.Core.Table.composite_cell import Data
 
+from middleware.shared.json_types import JsonValue
 from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.mapper import (
     map_assay,
@@ -205,12 +205,28 @@ def _add_assays_to_arc(
     return assay_map
 
 
-def _link_assay_to_studies(assay: ArcAssay, study_ref_val: Any, study_map: dict[str, ArcStudy]) -> None:
+type AnnotationColumnKey = tuple[
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+]
+type AnnotationTableKey = tuple[str | None, str | None, str | None]
+
+
+def _link_assay_to_studies(
+    assay: ArcAssay,
+    study_ref_val: JsonValue,
+    study_map: dict[str, ArcStudy],
+) -> None:
     """Link an assay to one or more studies based on the study_ref value."""
     if not study_ref_val:
         return
 
-    study_refs: list[Any]
+    study_refs: list[JsonValue]
     if isinstance(study_ref_val, list):
         study_refs = study_ref_val
     elif isinstance(study_ref_val, str):
@@ -314,7 +330,7 @@ _IO_TYPE_MAP: dict[str, str] = {
 }
 
 
-def _get_column_key(r: AnnotationTableRow) -> tuple[Any, ...]:
+def _get_column_key(r: AnnotationTableRow) -> AnnotationColumnKey:
     """Extract a unique key for a column definition."""
     return (
         r.column_type,
@@ -327,7 +343,7 @@ def _get_column_key(r: AnnotationTableRow) -> tuple[Any, ...]:
     )
 
 
-def _build_header(key: tuple[Any, ...]) -> CompositeHeader | None:
+def _build_header(key: AnnotationColumnKey) -> CompositeHeader | None:
     """Build a CompositeHeader from a column key tuple."""
     c_type, c_io, c_val, c_ann_term, c_ann_uri, c_ann_ver, c_name = key
     try:
@@ -425,9 +441,9 @@ def _build_arc_table(t_name: str, rows: list[AnnotationTableRow]) -> ArcTable | 
     if max_row_idx < 0:
         return None
 
-    col_keys: list[tuple[Any, ...]] = []
-    seen_keys = set()
-    col_to_rows: dict[tuple[Any, ...], dict[int, AnnotationTableRow]] = defaultdict(dict)
+    col_keys: list[AnnotationColumnKey] = []
+    seen_keys: set[AnnotationColumnKey] = set()
+    col_to_rows: dict[AnnotationColumnKey, dict[int, AnnotationTableRow]] = defaultdict(dict)
 
     for r in rows:
         key = _get_column_key(r)
@@ -449,10 +465,13 @@ def _build_arc_table(t_name: str, rows: list[AnnotationTableRow]) -> ArcTable | 
 
 
 def _process_annotation_tables(
-    inv_id: str, annotations: list[AnnotationTableRow], study_map: dict[str, Any], assay_map: dict[str, Any]
+    inv_id: str,
+    annotations: list[AnnotationTableRow],
+    study_map: dict[str, ArcStudy],
+    assay_map: dict[str, ArcAssay],
 ) -> None:
     """Process and add annotation tables."""
-    tables_groups: dict[tuple[Any, ...], list[AnnotationTableRow]] = defaultdict(list)
+    tables_groups: dict[AnnotationTableKey, list[AnnotationTableRow]] = defaultdict(list)
     for ann in annotations:
         if ann.investigation_ref == inv_id:
             key = (ann.target_type, ann.target_ref, ann.table_name)

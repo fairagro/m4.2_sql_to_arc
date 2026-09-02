@@ -16,10 +16,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 from arctrl import ARC, start_as_task
 from fastapi import FastAPI, HTTPException, Request
+
+from middleware.shared.json_types import JsonObject, JsonValue, RoCrateContent
 
 app = FastAPI()
 
@@ -94,7 +96,7 @@ def _generate_random_arc_id() -> str:
     return f"arc_{os.urandom(4).hex()}"
 
 
-def _derive_safe_arc_id(base_dir: Path, raw_id: object) -> tuple[str, Path]:
+def _derive_safe_arc_id(base_dir: Path, raw_id: JsonValue) -> tuple[str, Path]:
     """
     Derive a safe ARC identifier and corresponding directory path.
 
@@ -122,7 +124,8 @@ def _derive_safe_arc_id(base_dir: Path, raw_id: object) -> tuple[str, Path]:
     return safe_name, candidate_real
 
 
-def _arc_result(arc_id: str, rdi: str, now: str) -> dict[str, Any]:
+def _arc_result(arc_id: str, rdi: str, now: str) -> JsonObject:
+    _ = rdi
     return {
         "arc_id": arc_id,
         "status": "created",
@@ -138,7 +141,7 @@ def _arc_result(arc_id: str, rdi: str, now: str) -> dict[str, Any]:
     }
 
 
-def _harvest_result(record: _HarvestRecord) -> dict[str, Any]:
+def _harvest_result(record: _HarvestRecord) -> JsonObject:
     return {
         "harvest_id": record.harvest_id,
         "rdi": record.rdi,
@@ -160,7 +163,7 @@ def _harvest_result(record: _HarvestRecord) -> dict[str, Any]:
     }
 
 
-async def _persist_arc_payload(rdi: str, arc_payload: dict[str, Any]) -> dict[str, Any]:
+async def _persist_arc_payload(rdi: str, arc_payload: RoCrateContent) -> JsonObject:
     """Write an ARC payload to disk and return an ApiClient-compatible ArcResult dict."""
     output_path = OUTPUT_ROOT
     output_path.mkdir(parents=True, exist_ok=True)
@@ -195,11 +198,17 @@ def _require_harvest(harvest_id: str) -> _HarvestRecord:
     return record
 
 
+def _as_json_object(data: JsonValue) -> JsonObject | None:
+    return cast(JsonObject, data) if isinstance(data, dict) else None
+
+
 @app.post("/v3/harvests")
-async def create_harvest(request: Request) -> dict[str, Any]:
+async def create_harvest(request: Request) -> JsonObject:
     """Start a demo harvest run (``RUNNING``)."""
-    data = await request.json()
-    rdi = str(data.get("rdi") or "unknown")
+    raw = await request.json()
+    data = _as_json_object(raw) or {}
+    rdi_val = data.get("rdi")
+    rdi = str(rdi_val) if rdi_val is not None else "unknown"
     expected = data.get("expected_datasets")
     expected_datasets = expected if isinstance(expected, int) else None
 
@@ -217,31 +226,33 @@ async def create_harvest(request: Request) -> dict[str, Any]:
 
 
 @app.get("/v3/harvests/{harvest_id}")
-async def get_harvest(harvest_id: str) -> dict[str, Any]:
+async def get_harvest(harvest_id: str) -> JsonObject:
     """Return a demo harvest by id."""
     return _harvest_result(_require_harvest(harvest_id))
 
 
 @app.post("/v3/harvests/{harvest_id}/arcs")
-async def submit_arc_in_harvest(harvest_id: str, request: Request) -> dict[str, Any]:
+async def submit_arc_in_harvest(harvest_id: str, request: Request) -> JsonObject:
     """Accept an ARC under an active harvest and write it to disk."""
     record = _require_harvest(harvest_id)
     if record.status != "RUNNING":
         raise HTTPException(status_code=409, detail=f"Harvest is {record.status}")
 
-    data = await request.json()
-    arc_payload = data.get("arc", data)
-    if not isinstance(arc_payload, dict):
+    raw = await request.json()
+    data = _as_json_object(raw) or {}
+    nested = data.get("arc", data)
+    arc_payload = _as_json_object(nested)
+    if arc_payload is None:
         raise HTTPException(status_code=400, detail="ARC payload must be an object")
 
-    result = await _persist_arc_payload(record.rdi, arc_payload)
+    result = await _persist_arc_payload(record.rdi, cast(RoCrateContent, arc_payload))
     record.arcs_submitted += 1
     record.arcs_new += 1
     return result
 
 
 @app.post("/v3/harvests/{harvest_id}/complete")
-async def complete_harvest(harvest_id: str) -> dict[str, Any]:
+async def complete_harvest(harvest_id: str) -> JsonObject:
     """Mark a demo harvest as ``COMPLETED``."""
     record = _require_harvest(harvest_id)
     record.status = "COMPLETED"
@@ -251,11 +262,13 @@ async def complete_harvest(harvest_id: str) -> dict[str, Any]:
 
 
 @app.patch("/v3/harvests/{harvest_id}")
-async def patch_harvest(harvest_id: str, request: Request) -> dict[str, Any]:
+async def patch_harvest(harvest_id: str, request: Request) -> JsonObject:
     """Set a terminal harvest status (``COMPLETED`` / ``FAILED`` / ``CANCELLED``)."""
     record = _require_harvest(harvest_id)
-    data = await request.json()
-    status = str(data.get("status") or "").upper()
+    raw = await request.json()
+    data = _as_json_object(raw) or {}
+    status_val = data.get("status")
+    status = str(status_val or "").upper()
     if status not in _TERMINAL_STATUSES:
         raise HTTPException(status_code=400, detail=f"Unsupported status: {status}")
     record.status = status
@@ -265,16 +278,21 @@ async def patch_harvest(harvest_id: str, request: Request) -> dict[str, Any]:
 
 
 @app.post("/v3/arcs")
-async def upload_arc(request: Request) -> dict[str, Any]:
+async def upload_arc(request: Request) -> JsonObject:
     """Legacy single-ARC upload (kept for manual debugging)."""
-    rdi = request.query_params.get("rdi")
-    data = await request.json()
-    arc_payload = data.get("arc", data)
-    if rdi is None:
-        rdi = str(data.get("rdi", "unknown"))
-    if not isinstance(arc_payload, dict):
+    rdi_param = request.query_params.get("rdi")
+    raw = await request.json()
+    data = _as_json_object(raw) or {}
+    nested = data.get("arc", data)
+    arc_payload = _as_json_object(nested)
+    if rdi_param is None:
+        rdi_val = data.get("rdi", "unknown")
+        rdi = str(rdi_val)
+    else:
+        rdi = rdi_param
+    if arc_payload is None:
         raise HTTPException(status_code=400, detail="ARC payload must be an object")
-    return await _persist_arc_payload(str(rdi), arc_payload)
+    return await _persist_arc_payload(rdi, cast(RoCrateContent, arc_payload))
 
 
 @app.get("/live")

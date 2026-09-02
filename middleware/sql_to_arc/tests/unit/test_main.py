@@ -9,7 +9,6 @@ import concurrent.futures
 from collections.abc import AsyncGenerator, AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,12 +21,14 @@ from middleware.api_client import (
     HarvestResult,
     HarvestStatus,
 )
+from middleware.shared.json_types import RoCrateContent
 from middleware.shared.report import HarvestReport, JsonLdReportSerializer, RepositoryScope
 from middleware.sql_to_arc.builder import DuplicateAssayRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
+from middleware.sql_to_arc.database import Database
 from middleware.sql_to_arc.main import main, parse_args
-from middleware.sql_to_arc.models import InvestigationRow
+from middleware.sql_to_arc.models import AssayRow, InvestigationRow, StudyRow
 from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 from middleware.sql_to_arc.processor import (
     ArcStreamState,
@@ -42,6 +43,18 @@ from middleware.sql_to_arc.processor import (
 )
 
 
+def _empty_related_batch() -> RelatedDataBatch:
+    return RelatedDataBatch(
+        studies_by_inv={},
+        assays_by_inv={},
+        contacts_by_inv={},
+        pubs_by_inv={},
+        anns_by_inv={},
+        study_count=1,
+        assay_count=0,
+    )
+
+
 def _harvest_ok(rdi: str = "test", harvest_id: str = "harvest-1") -> HarvestResult:
     return HarvestResult(
         harvest_id=harvest_id,
@@ -52,8 +65,8 @@ def _harvest_ok(rdi: str = "test", harvest_id: str = "harvest-1") -> HarvestResu
     )
 
 
-async def _consume_arcs(arcs: AsyncIterator[Any]) -> list[Any]:
-    collected: list[Any] = []
+async def _consume_arcs(arcs: AsyncIterator[RoCrateContent]) -> list[RoCrateContent]:
+    collected: list[RoCrateContent] = []
     async for arc in arcs:
         collected.append(arc)
     return collected
@@ -403,7 +416,11 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     mock_db = MagicMock()
     mock_db.count_investigations = AsyncMock(return_value=2)
 
-    async def mock_gen(**_kwargs: Any) -> AsyncGenerator[Any, None]:
+    async def mock_gen(
+        scope: RepositoryScope | None = None,
+        limit: int | None = None,
+    ) -> AsyncGenerator[InvestigationRow, None]:
+        _ = (scope, limit)
         data = [
             InvestigationRow(identifier="1", title="T1", description_text="D1"),
             InvestigationRow(identifier="2", title="T2", description_text="D2"),
@@ -413,16 +430,9 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
 
     mock_db.stream_investigations.side_effect = mock_gen
 
-    async def mock_fetch_related(*_args: Any, **_kwargs: Any) -> RelatedDataBatch:
-        return RelatedDataBatch(
-            studies_by_inv={},
-            assays_by_inv={},
-            contacts_by_inv={},
-            pubs_by_inv={},
-            anns_by_inv={},
-            study_count=1,
-            assay_count=0,
-        )
+    async def mock_fetch_related(db: Database, investigation_ids: list[str]) -> RelatedDataBatch:
+        _ = (db, investigation_ids)
+        return _empty_related_batch()
 
     monkeypatch.setattr("middleware.sql_to_arc.processor._fetch_and_group_related_data", mock_fetch_related)
 
@@ -431,7 +441,7 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     async def mock_harvest_arcs(
         *,
         rdi: str,
-        arcs: AsyncIterator[Any],
+        arcs: AsyncIterator[RoCrateContent],
         expected_datasets: int | None = None,
     ) -> HarvestResult:
         await _consume_arcs(arcs)
@@ -452,8 +462,13 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
         max_assays=10000,
     )
 
-    async def mock_process_inv(*_args: Any, **_kwargs: Any) -> None:
-        pass
+    async def mock_process_inv(
+        ctx: WorkerContext,
+        investigation: InvestigationRow,
+        inv_info: str,
+        res: WorkerResources,
+    ) -> None:
+        _ = (ctx, investigation, inv_info, res)
 
     monkeypatch.setattr("middleware.sql_to_arc.processor.process_investigation", mock_process_inv)
 
@@ -549,7 +564,11 @@ async def test_process_investigations_records_harvest_item_errors(
     mock_db = MagicMock()
     mock_db.count_investigations = AsyncMock(return_value=2)
 
-    async def mock_gen(**_kwargs: Any) -> AsyncGenerator[Any, None]:
+    async def mock_gen(
+        scope: RepositoryScope | None = None,
+        limit: int | None = None,
+    ) -> AsyncGenerator[InvestigationRow, None]:
+        _ = (scope, limit)
         for item in (
             InvestigationRow(identifier="ok-1", title="T1", description_text="D1"),
             InvestigationRow(identifier="bad-1", title="T2", description_text="D2"),
@@ -558,10 +577,23 @@ async def test_process_investigations_records_harvest_item_errors(
 
     mock_db.stream_investigations.side_effect = mock_gen
 
-    async def mock_fetch_related(*_args: Any, **_kwargs: Any) -> RelatedDataBatch:
+    async def mock_fetch_related(db: Database, investigation_ids: list[str]) -> RelatedDataBatch:
+        _ = (db, investigation_ids)
         return RelatedDataBatch(
-            studies_by_inv={"ok-1": [MagicMock()], "bad-1": [MagicMock()]},
-            assays_by_inv={"ok-1": [MagicMock()], "bad-1": []},
+            studies_by_inv={
+                "ok-1": [StudyRow(identifier="s1", investigation_ref="ok-1", title="S")],
+                "bad-1": [StudyRow(identifier="s2", investigation_ref="bad-1", title="S")],
+            },
+            assays_by_inv={
+                "ok-1": [
+                    AssayRow(
+                        identifier="a1",
+                        investigation_ref="ok-1",
+                        study_ref=["s1"],
+                    )
+                ],
+                "bad-1": [],
+            },
             contacts_by_inv={},
             pubs_by_inv={},
             anns_by_inv={},
@@ -595,7 +627,7 @@ async def test_process_investigations_records_harvest_item_errors(
     async def mock_harvest_arcs(
         *,
         rdi: str,
-        arcs: AsyncIterator[Any],
+        arcs: AsyncIterator[RoCrateContent],
         expected_datasets: int | None = None,
     ) -> HarvestResult:
         _ = expected_datasets
@@ -645,12 +677,17 @@ async def test_process_investigations_aborted_harvest_records_failed(
     mock_db = MagicMock()
     mock_db.count_investigations = AsyncMock(return_value=1)
 
-    async def mock_gen(**_kwargs: Any) -> AsyncGenerator[Any, None]:
+    async def mock_gen(
+        scope: RepositoryScope | None = None,
+        limit: int | None = None,
+    ) -> AsyncGenerator[InvestigationRow, None]:
+        _ = (scope, limit)
         yield InvestigationRow(identifier="inv-x", title="T1", description_text="D1")
 
     mock_db.stream_investigations.side_effect = mock_gen
 
-    async def mock_fetch_related(*_args: Any, **_kwargs: Any) -> RelatedDataBatch:
+    async def mock_fetch_related(db: Database, investigation_ids: list[str]) -> RelatedDataBatch:
+        _ = (db, investigation_ids)
         return RelatedDataBatch(
             studies_by_inv={},
             assays_by_inv={},
@@ -687,7 +724,7 @@ async def test_process_investigations_aborted_harvest_records_failed(
     async def mock_harvest_arcs(
         *,
         rdi: str,
-        arcs: AsyncIterator[Any],
+        arcs: AsyncIterator[RoCrateContent],
         expected_datasets: int | None = None,
     ) -> HarvestResult:
         _ = rdi

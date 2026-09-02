@@ -4,18 +4,29 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from collections.abc import Iterator
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any
+from typing import Protocol, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_client import ArcResult, HarvestResult
+from middleware.shared.json_types import JsonObject
 
 
-def _load_demo_api_module() -> Any:
+class DemoApiModule(Protocol):
+    """Typed surface of ``dev_environment/demo_api_main.py`` used by these tests."""
+
+    app: FastAPI
+    OUTPUT_ROOT: Path
+    _harvests: dict[str, JsonObject]
+
+
+def _load_demo_api_module() -> DemoApiModule:
     """Load ``dev_environment/demo_api_main.py`` without requiring package install."""
     repo_root = Path(__file__).resolve().parents[4]
     module_path = repo_root / "dev_environment" / "demo_api_main.py"
@@ -24,11 +35,11 @@ def _load_demo_api_module() -> Any:
     module = importlib.util.module_from_spec(spec)
     sys.modules["demo_api_main"] = module
     spec.loader.exec_module(module)
-    return module
+    return cast(DemoApiModule, module)
 
 
 @pytest.fixture
-def demo_api(tmp_path: Path) -> Any:
+def demo_api(tmp_path: Path) -> Iterator[DemoApiModule]:
     """Provide the demo FastAPI app with an isolated harvest store and output dir."""
     module = _load_demo_api_module()
     module._harvests.clear()
@@ -48,12 +59,12 @@ def demo_api(tmp_path: Path) -> Any:
 
 
 @pytest.fixture
-def client(demo_api: Any) -> TestClient:
+def client(demo_api: DemoApiModule) -> TestClient:
     """HTTP test client bound to the demo API app."""
     return TestClient(demo_api.app)
 
 
-def test_demo_api_harvest_create_arcs_complete(client: TestClient, demo_api: Any) -> None:
+def test_demo_api_harvest_create_arcs_complete(client: TestClient, demo_api: DemoApiModule) -> None:
     """Create → submit ARC → complete must return HarvestResult/ArcResult-shaped JSON."""
     create_resp = client.post("/v3/harvests", json={"rdi": "demo-rdi", "expected_datasets": 1})
     assert create_resp.status_code == HTTPStatus.OK

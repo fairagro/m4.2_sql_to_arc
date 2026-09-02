@@ -2,9 +2,9 @@
 
 import asyncio
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from multiprocessing.context import BaseContext
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -12,6 +12,7 @@ from arctrl import ARC
 
 from middleware.api_client import ApiClient, HarvestResult, HarvestStatus
 from middleware.shared.config.config_base import OtelConfig
+from middleware.shared.json_types import JsonObject, JsonValue, RoCrateContent
 from middleware.shared.report import HarvestReport
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import WorkerContext
@@ -19,6 +20,7 @@ from middleware.sql_to_arc.main import main
 from middleware.sql_to_arc.models import (
     AnnotationTableRow,
     AssayRow,
+    BaseRow,
     ContactRow,
     InvestigationRow,
     PublicationRow,
@@ -31,10 +33,22 @@ from middleware.sql_to_arc.processor import BuiltArc, WorkerResources, process_i
 class MockExecutor(ThreadPoolExecutor):
     """Mock ThreadPoolExecutor to prevent multiprocessing."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        max_workers: int | None = None,
+        thread_name_prefix: str = "",
+        initializer: Callable[[], None] | None = None,
+        initargs: tuple[()] = (),
+        mp_context: BaseContext | None = None,
+    ) -> None:
         """Initialize the mock executor."""
-        kwargs.pop("mp_context", None)
-        super().__init__(*args, **kwargs)
+        _ = mp_context
+        super().__init__(
+            max_workers=max_workers,
+            thread_name_prefix=thread_name_prefix,
+            initializer=initializer,
+            initargs=initargs,
+        )
 
 
 @pytest.fixture
@@ -66,7 +80,7 @@ def mock_api_client() -> AsyncMock:
     async def _empty_harvest(
         *,
         rdi: str,
-        arcs: Any,
+        arcs: AsyncIterator[RoCrateContent],
         expected_datasets: int | None = None,
     ) -> HarvestResult:
         _ = expected_datasets
@@ -140,7 +154,7 @@ class WorkflowTester:
         async def capture_harvest(
             *,
             rdi: str,
-            arcs: Any,
+            arcs: AsyncIterator[RoCrateContent],
             expected_datasets: int | None = None,
         ) -> HarvestResult:
             _ = expected_datasets
@@ -160,31 +174,33 @@ class WorkflowTester:
         self.api_client.harvest_arcs.side_effect = capture_harvest
 
     @staticmethod
-    def _as_gen(data: list[dict[str, Any]], model_cls: type[Any] | None = None) -> AsyncGenerator[Any, None]:
-        async def gen() -> AsyncGenerator[Any, None]:
+    def _as_gen[RowT: BaseRow](data: list[JsonObject], model_cls: type[RowT]) -> AsyncGenerator[RowT, None]:
+        async def gen() -> AsyncGenerator[RowT, None]:
             for item in data:
-                yield model_cls.model_validate(item) if model_cls else item
+                yield model_cls.model_validate(item)
 
         return gen()
 
     def set_db_content(  # noqa: PLR0913, PLR0917
         self,
-        investigations: list[dict[str, Any]] | None = None,
-        studies: list[dict[str, Any]] | None = None,
-        assays: list[dict[str, Any]] | None = None,
-        contacts: list[dict[str, Any]] | None = None,
-        publications: list[dict[str, Any]] | None = None,
-        annotations: list[dict[str, Any]] | None = None,
+        investigations: Sequence[Mapping[str, JsonValue]] | None = None,
+        studies: Sequence[Mapping[str, JsonValue]] | None = None,
+        assays: Sequence[Mapping[str, JsonValue]] | None = None,
+        contacts: Sequence[Mapping[str, JsonValue]] | None = None,
+        publications: Sequence[Mapping[str, JsonValue]] | None = None,
+        annotations: Sequence[Mapping[str, JsonValue]] | None = None,
     ) -> None:
         """Mock the database streaming methods with provided data."""
 
-        def _prepare_data(data: list[dict[str, Any]] | None, target_cls: type[Any] | None) -> list[dict[str, Any]]:
+        def _prepare_data(
+            data: Sequence[Mapping[str, JsonValue]] | None, target_cls: type[BaseRow] | None
+        ) -> list[JsonObject]:
             if not data or not target_cls:
-                return data or []
-            prepared = []
+                return [dict(item) for item in data] if data else []
+            prepared: list[JsonObject] = []
             model_fields = target_cls.model_fields.keys()
             for item in data:
-                new_item = item.copy()
+                new_item: JsonObject = dict(item)
                 # Rename description to description_text if needed
                 if "description" in new_item and "description_text" in model_fields:
                     new_item["description_text"] = new_item.pop("description")
@@ -256,7 +272,7 @@ def workflow_tester(mocker: MagicMock, mock_api_client: AsyncMock) -> WorkflowTe
 @pytest.mark.asyncio
 async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None:
     """Test worker investigations build and enqueue ARC payloads for harvest."""
-    investigation_rows: list[dict[str, Any]] = [
+    investigation_rows: list[JsonObject] = [
         {
             "identifier": 1,
             "title": "Test 1",
@@ -273,10 +289,10 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
         },
     ]
     studies_by_investigation: dict[str, list[StudyRow]] = {
-        "1": [StudyRow.model_validate(study) for study in list[dict[str, Any]]()],
-        "2": [StudyRow.model_validate(study) for study in list[dict[str, Any]]()],
+        "1": [],
+        "2": [],
     }
-    assays_by_study: dict[str, list[dict[str, Any]]] = {}
+    assays_by_study: dict[str, list[JsonObject]] = {}
 
     built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -681,7 +697,7 @@ async def test_assay_with_annotations(workflow_tester: WorkflowTester) -> None:
 
     # Example annotation rows representing a table
     # These rows logically form a table 'Sample Metadata' with 2 rows and 2 columns
-    annotations = [
+    annotations: list[JsonObject] = [
         {
             "investigation_ref": inv_id,
             "target_type": "assay",
@@ -762,7 +778,7 @@ async def test_comprehensive_annotation_flow(workflow_tester: WorkflowTester) ->
     studies = [{"identifier": study_id, "investigation_ref": inv_id, "title": "Study Flow"}]
     assays = [{"identifier": assay_id, "investigation_ref": inv_id, "study_ref": json.dumps([study_id])}]
 
-    annotations = [
+    annotations: list[JsonObject] = [
         # --- Study Table: "Samples" ---
         {
             "investigation_ref": inv_id,

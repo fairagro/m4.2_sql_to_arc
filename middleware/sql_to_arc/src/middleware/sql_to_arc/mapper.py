@@ -1,7 +1,6 @@
 """Mapper module to convert database rows to ARCTRL objects."""
 
 from datetime import datetime
-from typing import Any
 
 from arctrl import (
     ArcAssay,
@@ -31,7 +30,7 @@ def _make_oa(term: str | None, uri: str | None, _version: str | None) -> Ontolog
     return OntologyAnnotation(name=term, tan=uri or "", tsr="")
 
 
-def _format_date(d: Any) -> str | None:
+def _format_date(d: datetime | str | None) -> str | None:
     """Format dates as ISO strings."""
     if isinstance(d, datetime):
         return d.isoformat()
@@ -125,7 +124,16 @@ def map_contact(row: ContactRow) -> Person:
     if row.roles:
         for r in row.roles:
             if isinstance(r, dict):
-                roles.append(_make_oa(r.get("term"), r.get("uri"), r.get("version")))
+                term = r.get("term")
+                uri = r.get("uri")
+                version = r.get("version")
+                roles.append(
+                    _make_oa(
+                        term if isinstance(term, str) else None,
+                        uri if isinstance(uri, str) else None,
+                        version if isinstance(version, str) else None,
+                    )
+                )
 
     return Person(
         last_name=row.last_name,

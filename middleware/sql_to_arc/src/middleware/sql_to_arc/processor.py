@@ -10,13 +10,13 @@ import multiprocessing
 from collections import defaultdict
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Protocol, TypeVar, cast
 
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
-from pydantic import BaseModel
 
-from middleware.api_client import ApiClient, ApiClientError
+from middleware.api_client import ApiClient, ApiClientError, HarvestError
+from middleware.shared.json_types import RoCrateContent
 from middleware.shared.report import HarvestReport, RepositoryScope
 from middleware.sql_to_arc.builder import DuplicateAssayRowError, DuplicateStudyRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
@@ -31,7 +31,14 @@ from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", bound=BaseModel)
+
+class _HasInvestigationRef(Protocol):
+    """Row models that can be grouped by investigation."""
+
+    investigation_ref: str
+
+
+TRow = TypeVar("TRow", bound=_HasInvestigationRef)
 
 
 def _apply_expected_datasets(scope: RepositoryScope, count: int | None, debug_limit: int | None) -> None:
@@ -55,7 +62,7 @@ class BuiltArc:
     """A successfully built ARC waiting to be submitted in the harvest stream."""
 
     arc_json: str
-    arc_payload: dict[str, Any]
+    arc_payload: RoCrateContent
     investigation_id: str
     inv_info: str
     composition: CompositionCounts
@@ -92,13 +99,12 @@ def _investigation_id_for_error(state: ArcStreamState, arc_id: str | None) -> st
     return state.arc_id_to_investigation.get(arc_id, arc_id)
 
 
-def _apply_upload_outcomes(errors: list[Any], state: ArcStreamState, scope: RepositoryScope) -> None:
+def _apply_upload_outcomes(errors: list[HarvestError], state: ArcStreamState, scope: RepositoryScope) -> None:
     """Apply harvest_arcs per-item errors and successes to the repository scope."""
     failed_ids: set[str] = set()
     for err in errors:
-        raw_id = getattr(err, "arc_id", None)
-        record_id = _investigation_id_for_error(state, raw_id if isinstance(raw_id, str) else None)
-        message = str(getattr(err, "message", err))
+        record_id = _investigation_id_for_error(state, err.arc_id)
+        message = err.message
         if record_id is None:
             # Cannot attribute to a dataset; avoid a null dataset failure and keep applying peers.
             scope.record_repository_issue(f"Unattributed harvest error: {message}")
@@ -205,7 +211,7 @@ def _built_arc_from_json(
     logger.info("%s: ARC JSON created: size=%.2fKB", inv_info, len(arc_json.encode("utf-8")) / 1024)
     return BuiltArc(
         arc_json=arc_json,
-        arc_payload=payload,
+        arc_payload=cast(RoCrateContent, payload),
         investigation_id=inv_id,
         inv_info=inv_info,
         composition=composition,
@@ -385,14 +391,13 @@ async def _fetch_and_group_related_data(db: Database, investigation_ids: list[st
     logger.info("Fetching related data (studies, assays, contacts, etc.)...")
 
     async def group_stream(
-        gen: AsyncGenerator[Any, None],
-    ) -> tuple[dict[str, list[Any]], int]:
+        gen: AsyncGenerator[TRow, None],
+    ) -> tuple[dict[str, list[TRow]], int]:
         """Consume an async generator and group items by investigation reference."""
-        m = defaultdict(list)
+        m: dict[str, list[TRow]] = defaultdict(list)
         count = 0
         async for r in gen:
-            inv_ref = r.investigation_ref
-            m[str(inv_ref)].append(r)
+            m[str(r.investigation_ref)].append(r)
             count += 1
         return dict(m), count
 
@@ -520,7 +525,7 @@ async def _drive_builds(
 async def _arc_stream_from_queue(
     built_queue: asyncio.Queue[BuiltArc | None],
     state: ArcStreamState,
-) -> AsyncGenerator[dict[str, Any], None]:
+) -> AsyncGenerator[RoCrateContent, None]:
     """Yield ARC dicts for harvest_arcs from the build queue."""
     while True:
         item = await built_queue.get()
