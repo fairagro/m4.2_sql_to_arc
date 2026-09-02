@@ -55,6 +55,7 @@ class BuiltArc:
     """A successfully built ARC waiting to be submitted in the harvest stream."""
 
     arc_json: str
+    arc_payload: dict[str, Any]
     investigation_id: str
     inv_info: str
     composition: CompositionCounts
@@ -73,11 +74,11 @@ class ArcStreamState:
         """Number of ARCs submitted into the harvest stream."""
         return len(self.submitted_ids)
 
-    def track(self, built: BuiltArc, arc_payload: dict[str, Any]) -> None:
+    def track(self, built: BuiltArc) -> None:
         """Record metadata for a yielded ARC payload."""
         self.submitted_ids.append(built.investigation_id)
         self.compositions[built.investigation_id] = built.composition
-        raw_id = arc_payload.get("identifier")
+        raw_id = built.arc_payload.get("identifier")
         if isinstance(raw_id, str) and raw_id:
             self.arc_id_to_investigation[raw_id] = built.investigation_id
         # Also map investigation id itself for clients that echo it as arc_id.
@@ -145,11 +146,70 @@ def _fail_drained_queue(
         except asyncio.QueueEmpty:
             break
         if item is None:
-            break
+            continue
         if item.investigation_id in already_recorded:
             continue
         scope.record_failed(detail, record_id=item.investigation_id)
         already_recorded.add(item.investigation_id)
+
+
+def _enqueue_queue_sentinel(built_queue: asyncio.Queue[BuiltArc | None]) -> list[BuiltArc]:
+    """
+    Enqueue the end-of-stream sentinel without blocking.
+
+    If the bounded queue is full (consumer stopped after abort), displace
+    existing ``BuiltArc`` items so ``put_nowait(None)`` can succeed and the
+    build driver cannot deadlock waiting for queue space.
+    """
+    displaced: list[BuiltArc] = []
+    while True:
+        try:
+            built_queue.put_nowait(None)
+            return displaced
+        except asyncio.QueueFull:
+            try:
+                item = built_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                continue
+            if item is None:
+                # Sentinel already present; treat as closed.
+                return displaced
+            displaced.append(item)
+
+
+def _built_arc_from_json(
+    arc_json: str,
+    *,
+    inv_id: str,
+    inv_info: str,
+    composition: CompositionCounts,
+    scope: RepositoryScope,
+) -> BuiltArc | None:
+    """Validate ARC JSON and wrap it as a ``BuiltArc``, or record failure and return None."""
+    try:
+        payload = json.loads(arc_json)
+    except json.JSONDecodeError as e:
+        logger.error(
+            "%s: Invalid ARC JSON for investigation %s: %s",
+            inv_info,
+            inv_id,
+            e,
+            exc_info=True,
+        )
+        scope.record_failed(f"Invalid ARC JSON: {e}", record_id=inv_id)
+        return None
+    if not isinstance(payload, dict):
+        logger.error("%s: ARC JSON for investigation %s is not an object", inv_info, inv_id)
+        scope.record_failed("ARC JSON is not an object", record_id=inv_id)
+        return None
+    logger.info("%s: ARC JSON created: size=%.2fKB", inv_info, len(arc_json.encode("utf-8")) / 1024)
+    return BuiltArc(
+        arc_json=arc_json,
+        arc_payload=payload,
+        investigation_id=inv_id,
+        inv_info=inv_info,
+        composition=composition,
+    )
 
 
 async def _build_single_arc(
@@ -219,12 +279,12 @@ async def _build_single_arc(
                 scope.record_failed("Build returned no ARC JSON", record_id=inv_id)
                 return None
 
-            logger.info("%s: ARC JSON created: size=%.2fKB", inv_info, len(arc_json.encode("utf-8")) / 1024)
-            return BuiltArc(
-                arc_json=arc_json,
-                investigation_id=inv_id,
+            return _built_arc_from_json(
+                arc_json,
+                inv_id=inv_id,
                 inv_info=inv_info,
                 composition=CompositionCounts(studies=len(studies), assays=len(assays)),
+                scope=scope,
             )
 
         except TimeoutError:
@@ -284,6 +344,7 @@ class WorkerResources:
     pool_holder: ProcessPoolHolder
     semaphore: asyncio.Semaphore
     built_queue: asyncio.Queue[BuiltArc | None]
+    displaced_arcs: list[BuiltArc] = field(default_factory=list)
 
 
 async def process_investigation(
@@ -312,25 +373,8 @@ async def process_investigation(
                 inv_info=inv_info,
                 semaphore=semaphore,
             )
-            if built is None:
-                return
-            try:
-                payload = json.loads(built.arc_json)
-            except json.JSONDecodeError as e:
-                logger.error(
-                    "%s: Invalid ARC JSON for investigation %s: %s",
-                    inv_info,
-                    inv_id,
-                    e,
-                    exc_info=True,
-                )
-                scope.record_failed(f"Invalid ARC JSON: {e}", record_id=inv_id)
-                return
-            if not isinstance(payload, dict):
-                logger.error("%s: ARC JSON for investigation %s is not an object", inv_info, inv_id)
-                scope.record_failed("ARC JSON is not an object", record_id=inv_id)
-                return
-            await built_queue.put(built)
+            if built is not None:
+                await built_queue.put(built)
         except asyncio.CancelledError:
             scope.record_failed("Build cancelled after harvest abort", record_id=inv_id)
             raise
@@ -448,12 +492,11 @@ async def _drive_builds(
             if not batch:
                 break
 
-            if len(running_tasks) >= config.max_concurrent_tasks:
-                await asyncio.wait(running_tasks, return_when=asyncio.FIRST_COMPLETED)
-
             batch_data = await _fetch_and_group_related_data(db, [str(inv.identifier) for inv in batch])
 
             for investigation in batch:
+                while len(running_tasks) >= config.max_concurrent_tasks:
+                    await asyncio.wait(running_tasks, return_when=asyncio.FIRST_COMPLETED)
                 inv_idx += 1
                 _spawn_investigation_task(
                     investigation,
@@ -470,7 +513,8 @@ async def _drive_builds(
         # Stop any still-running investigation builds (e.g. when the driver is cancelled
         # after a harvest abort) before closing the queue for consumers.
         await _cancel_running_builds(running_tasks)
-        await res.built_queue.put(None)
+        # Non-blocking close: never deadlock if harvest stopped consuming a full queue.
+        res.displaced_arcs.extend(_enqueue_queue_sentinel(res.built_queue))
 
 
 async def _arc_stream_from_queue(
@@ -482,18 +526,14 @@ async def _arc_stream_from_queue(
         item = await built_queue.get()
         if item is None:
             return
-        arc_payload = json.loads(item.arc_json)
-        if not isinstance(arc_payload, dict):
-            # Defensive: process_investigation validates before enqueue.
-            continue
-        state.track(item, arc_payload)
+        state.track(item)
         logger.info(
             "%s: Queued ARC %s for harvest upload (%.2f KB)",
             item.inv_info,
             item.investigation_id,
             len(item.arc_json.encode("utf-8")) / 1024,
         )
-        yield arc_payload
+        yield item.arc_payload
 
 
 async def _run_harvest_upload(
@@ -557,11 +597,17 @@ async def _finalize_build_pipeline(
     if upload_error is None:
         return
     _apply_upload_aborted(state, res.scope, upload_error)
+    already_recorded = set(state.submitted_ids)
+    for item in res.displaced_arcs:
+        if item.investigation_id in already_recorded:
+            continue
+        res.scope.record_failed(upload_error, record_id=item.investigation_id)
+        already_recorded.add(item.investigation_id)
     _fail_drained_queue(
         res.built_queue,
         res.scope,
         upload_error,
-        already_recorded=set(state.submitted_ids),
+        already_recorded=already_recorded,
     )
 
 

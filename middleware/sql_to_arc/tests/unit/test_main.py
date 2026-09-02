@@ -35,6 +35,7 @@ from middleware.sql_to_arc.processor import (
     CompositionCounts,
     WorkerResources,
     _apply_upload_outcomes,
+    _enqueue_queue_sentinel,
     _fail_drained_queue,
     process_investigation,
     process_investigations,
@@ -470,6 +471,24 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     mock_client.create_or_update_arc.assert_not_called()
 
 
+def test_enqueue_queue_sentinel_does_not_block_on_full_queue() -> None:
+    """Closing a full bounded queue must displace items instead of blocking."""
+    queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue(maxsize=1)
+    queue.put_nowait(
+        BuiltArc(
+            arc_json='{"identifier": "full-1"}',
+            arc_payload={"identifier": "full-1"},
+            investigation_id="full-1",
+            inv_info="Inv",
+            composition=CompositionCounts(studies=0, assays=0),
+        )
+    )
+    displaced = _enqueue_queue_sentinel(queue)
+    assert len(displaced) == 1
+    assert displaced[0].investigation_id == "full-1"
+    assert queue.get_nowait() is None
+
+
 def test_fail_drained_queue_records_unsubmitted_arcs() -> None:
     """ARCs left on the queue after abort must be marked failed."""
     report = HarvestReport()
@@ -478,6 +497,7 @@ def test_fail_drained_queue_records_unsubmitted_arcs() -> None:
     queue.put_nowait(
         BuiltArc(
             arc_json='{"identifier": "queued-1"}',
+            arc_payload={"identifier": "queued-1"},
             investigation_id="queued-1",
             inv_info="Inv",
             composition=CompositionCounts(studies=0, assays=0),
@@ -561,6 +581,7 @@ async def test_process_investigations_records_harvest_item_errors(
         await res.built_queue.put(
             BuiltArc(
                 arc_json=f'{{"identifier": "{inv_id}"}}',
+                arc_payload={"identifier": inv_id},
                 investigation_id=inv_id,
                 inv_info=inv_info,
                 composition=CompositionCounts(studies=1, assays=0),
@@ -652,6 +673,7 @@ async def test_process_investigations_aborted_harvest_records_failed(
         await res.built_queue.put(
             BuiltArc(
                 arc_json=f'{{"identifier": "{inv_id}"}}',
+                arc_payload={"identifier": inv_id},
                 investigation_id=inv_id,
                 inv_info=inv_info,
                 composition=CompositionCounts(studies=0, assays=0),
