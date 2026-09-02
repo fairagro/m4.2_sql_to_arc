@@ -35,6 +35,7 @@ from middleware.sql_to_arc.processor import (
     CompositionCounts,
     WorkerResources,
     _apply_upload_outcomes,
+    _fail_drained_queue,
     process_investigation,
     process_investigations,
 )
@@ -467,6 +468,29 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     assert isinstance(call_kwargs["scope"], RepositoryScope)
     assert call_kwargs["limit"] == 10  # noqa: PLR2004
     mock_client.create_or_update_arc.assert_not_called()
+
+
+def test_fail_drained_queue_records_unsubmitted_arcs() -> None:
+    """ARCs left on the queue after abort must be marked failed."""
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
+    queue.put_nowait(
+        BuiltArc(
+            arc_json='{"identifier": "queued-1"}',
+            investigation_id="queued-1",
+            inv_info="Inv",
+            composition=CompositionCounts(studies=0, assays=0),
+        )
+    )
+    queue.put_nowait(None)
+
+    _fail_drained_queue(queue, scope, "Harvest upload failed: nope", already_recorded={"submitted-1"})
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.failed_datasets == 1
+    assert entry.failures[0].record_id == "queued-1"
 
 
 def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> None:

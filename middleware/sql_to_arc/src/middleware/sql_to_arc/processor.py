@@ -131,6 +131,27 @@ def _apply_upload_aborted(
         scope.record_failed(detail, record_id=inv_id)
 
 
+def _fail_drained_queue(
+    built_queue: asyncio.Queue[BuiltArc | None],
+    scope: RepositoryScope,
+    detail: str,
+    *,
+    already_recorded: set[str],
+) -> None:
+    """Mark ARCs left on the build queue as failed after a harvest abort."""
+    while True:
+        try:
+            item = built_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+        if item is None:
+            break
+        if item.investigation_id in already_recorded:
+            continue
+        scope.record_failed(detail, record_id=item.investigation_id)
+        already_recorded.add(item.investigation_id)
+
+
 async def _build_single_arc(
     ctx: WorkerContext,
     investigation: InvestigationRow,
@@ -283,14 +304,16 @@ async def process_investigation(
         attributes={"investigation_id": inv_id, "worker_id": ctx.worker_id},
     ):
         logger.info("%s: Building ARC for investigation %s...", inv_info, inv_id)
-        built = await _build_single_arc(
-            ctx,
-            investigation,
-            scope=scope,
-            inv_info=inv_info,
-            semaphore=semaphore,
-        )
-        if built is not None:
+        try:
+            built = await _build_single_arc(
+                ctx,
+                investigation,
+                scope=scope,
+                inv_info=inv_info,
+                semaphore=semaphore,
+            )
+            if built is None:
+                return
             try:
                 payload = json.loads(built.arc_json)
             except json.JSONDecodeError as e:
@@ -308,6 +331,9 @@ async def process_investigation(
                 scope.record_failed("ARC JSON is not an object", record_id=inv_id)
                 return
             await built_queue.put(built)
+        except asyncio.CancelledError:
+            scope.record_failed("Build cancelled after harvest abort", record_id=inv_id)
+            raise
 
 
 async def _fetch_and_group_related_data(db: Database, investigation_ids: list[str]) -> RelatedDataBatch:
@@ -470,6 +496,75 @@ async def _arc_stream_from_queue(
         yield arc_payload
 
 
+async def _run_harvest_upload(
+    res: WorkerResources,
+    state: ArcStreamState,
+    expected_datasets: int | None,
+) -> str | None:
+    """Run harvest_arcs and apply success outcomes. Returns an error detail on failure."""
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span(
+        "harvest_upload",
+        attributes={"rdi": res.config.rdi},
+    ) as upload_span:
+        try:
+            result = await res.client.harvest_arcs(
+                rdi=res.config.rdi,
+                arcs=_arc_stream_from_queue(res.built_queue, state),
+                expected_datasets=expected_datasets,
+            )
+            harvest_id = result.harvest_id
+            res.scope.set_harvest_id(harvest_id)
+            _apply_upload_outcomes(result.errors, state, res.scope)
+            upload_span.set_attribute("harvester.harvest_id", harvest_id)
+            upload_span.set_attribute("harvester.arcs_submitted", state.submitted)
+            logger.info(
+                "Finished harvest upload for RDI %s. Harvest: %s (submitted=%d, errors=%d)",
+                res.config.rdi,
+                harvest_id,
+                state.submitted,
+                len(result.errors),
+            )
+            return None
+        except (ConnectionError, TimeoutError, ApiClientError, OSError, RuntimeError) as e:
+            upload_span.set_status(Status(StatusCode.ERROR))
+            upload_span.record_exception(e)
+            detail = f"Harvest upload failed: {e}"
+            logger.error("%s", detail, exc_info=True)
+            return detail
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+            upload_span.set_status(Status(StatusCode.ERROR))
+            upload_span.record_exception(e)
+            detail = f"Harvest upload failed: {e}"
+            logger.error("%s", detail, exc_info=True)
+            return detail
+
+
+async def _finalize_build_pipeline(
+    build_task: asyncio.Task[None],
+    res: WorkerResources,
+    state: ArcStreamState,
+    upload_error: str | None,
+) -> None:
+    """Cancel/await builds and record failures for any leftover queued ARCs."""
+    if not build_task.done():
+        build_task.cancel()
+    try:
+        await build_task
+    except asyncio.CancelledError:
+        logger.info("Build pipeline cancelled after harvest upload abort")
+
+    if upload_error is None:
+        return
+    _apply_upload_aborted(state, res.scope, upload_error)
+    _fail_drained_queue(
+        res.built_queue,
+        res.scope,
+        upload_error,
+        already_recorded=set(state.submitted_ids),
+    )
+
+
 async def process_investigations(
     db: Database,
     client: ApiClient,
@@ -490,7 +585,9 @@ async def process_investigations(
         config.db_batch_size,
     )
 
-    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue(
+        maxsize=max(1, config.max_concurrent_tasks),
+    )
     state = ArcStreamState()
     tracer = trace.get_tracer(__name__)
 
@@ -510,48 +607,16 @@ async def process_investigations(
             built_queue=built_queue,
         )
         build_task = asyncio.create_task(_drive_builds(db, config, worker_res))
-
-        with tracer.start_as_current_span(
-            "harvest_upload",
-            attributes={"rdi": config.rdi},
-        ) as upload_span:
-            try:
-                result = await client.harvest_arcs(
-                    rdi=config.rdi,
-                    arcs=_arc_stream_from_queue(built_queue, state),
-                    expected_datasets=expected_datasets,
-                )
-                harvest_id = result.harvest_id
-                scope.set_harvest_id(harvest_id)
-                _apply_upload_outcomes(result.errors, state, scope)
-                upload_span.set_attribute("harvester.harvest_id", harvest_id)
-                upload_span.set_attribute("harvester.arcs_submitted", state.submitted)
-                logger.info(
-                    "Finished harvest upload for RDI %s. Harvest: %s (submitted=%d, errors=%d)",
-                    config.rdi,
-                    harvest_id,
-                    state.submitted,
-                    len(result.errors),
-                )
-            except (ConnectionError, TimeoutError, ApiClientError, OSError, RuntimeError) as e:
-                upload_span.set_status(Status(StatusCode.ERROR))
-                upload_span.record_exception(e)
-                detail = f"Harvest upload failed: {e}"
-                logger.error("%s", detail, exc_info=True)
-                _apply_upload_aborted(state, scope, detail)
-                build_task.cancel()
-            except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
-                upload_span.set_status(Status(StatusCode.ERROR))
-                upload_span.record_exception(e)
-                detail = f"Harvest upload failed: {e}"
-                logger.error("%s", detail, exc_info=True)
-                _apply_upload_aborted(state, scope, detail)
-                build_task.cancel()
+        upload_error: str | None = None
 
         try:
-            await build_task
+            upload_error = await _run_harvest_upload(worker_res, state, expected_datasets)
         except asyncio.CancelledError:
-            logger.info("Build pipeline cancelled after harvest upload abort")
+            if upload_error is None:
+                upload_error = "Harvest upload cancelled"
+            raise
+        finally:
+            await _finalize_build_pipeline(build_task, worker_res, state, upload_error)
 
     report.finish()
     return report
