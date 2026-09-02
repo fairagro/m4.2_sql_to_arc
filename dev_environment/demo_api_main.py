@@ -202,6 +202,13 @@ def _as_json_object(data: JsonValue) -> JsonObject | None:
     return cast(JsonObject, data) if isinstance(data, dict) else None
 
 
+def _as_optional_int(value: JsonValue) -> int | None:
+    """Parse a JSON int, rejecting bool (``bool`` is a subclass of ``int``)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 @app.post("/v3/harvests")
 async def create_harvest(request: Request) -> JsonObject:
     """Start a demo harvest run (``RUNNING``)."""
@@ -209,8 +216,7 @@ async def create_harvest(request: Request) -> JsonObject:
     data = _as_json_object(raw) or {}
     rdi_val = data.get("rdi")
     rdi = str(rdi_val) if rdi_val is not None else "unknown"
-    expected = data.get("expected_datasets")
-    expected_datasets = expected if isinstance(expected, int) else None
+    expected_datasets = _as_optional_int(data.get("expected_datasets"))
 
     harvest_id = f"harvest-{uuid.uuid4()}"
     record = _HarvestRecord(

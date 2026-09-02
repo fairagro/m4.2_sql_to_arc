@@ -556,7 +556,7 @@ def test_fail_drained_queue_records_unsubmitted_arcs() -> None:
 
 
 def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> None:
-    """Harvest errors without arc_id must not call record_failed(None)."""
+    """Harvest errors without arc_id must not call record_failed(None) or inflate harvested."""
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
     state = ArcStreamState()
@@ -578,8 +578,9 @@ def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> Non
     report.finish()
 
     entry = report.repository_reports[0]
-    assert entry.harvested_datasets == 1
+    assert entry.harvested_datasets == 0
     assert entry.failed_datasets == 0
+    assert entry.total_studies in (None, 0)
     assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
 
 

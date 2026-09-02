@@ -102,15 +102,21 @@ def _investigation_id_for_error(state: ArcStreamState, arc_id: str | None) -> st
 def _apply_upload_outcomes(errors: list[HarvestError], state: ArcStreamState, scope: RepositoryScope) -> None:
     """Apply harvest_arcs per-item errors and successes to the repository scope."""
     failed_ids: set[str] = set()
+    has_unattributed_error = False
     for err in errors:
         record_id = _investigation_id_for_error(state, err.arc_id)
         message = err.message
         if record_id is None:
             # Cannot attribute to a dataset; avoid a null dataset failure and keep applying peers.
             scope.record_repository_issue(f"Unattributed harvest error: {message}")
+            has_unattributed_error = True
             continue
         scope.record_failed(message, record_id=record_id)
         failed_ids.add(record_id)
+
+    if has_unattributed_error:
+        # Do not inflate harvested_datasets when some failures could not be mapped to an ARC.
+        return
 
     for inv_id in state.submitted_ids:
         if inv_id in failed_ids:
@@ -530,6 +536,7 @@ async def _drive_builds(
             logger.info("Waiting for %d remaining build tasks to complete...", len(running_tasks))
             await asyncio.gather(*running_tasks)
     finally:
+        await investigation_gen.aclose()
         # Stop any still-running investigation builds (e.g. when the driver is cancelled
         # after a harvest abort) before closing the queue for consumers.
         await _cancel_running_builds(running_tasks)

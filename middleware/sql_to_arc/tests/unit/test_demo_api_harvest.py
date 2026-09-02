@@ -78,6 +78,10 @@ def test_demo_api_harvest_create_arcs_complete(client: TestClient, demo_api: Dem
     assert harvest.status.value == "RUNNING"
     assert harvest.statistics.expected_datasets == 1
 
+    bool_resp = client.post("/v3/harvests", json={"rdi": "demo-rdi", "expected_datasets": True})
+    assert bool_resp.status_code == HTTPStatus.OK
+    assert HarvestResult.model_validate(bool_resp.json()).statistics.expected_datasets is None
+
     arc_resp = client.post(
         f"/v3/harvests/{harvest.harvest_id}/arcs",
         json={"arc": {"identifier": "inv-1", "@context": {}, "@graph": []}},
