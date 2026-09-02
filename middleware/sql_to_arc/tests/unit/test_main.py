@@ -580,7 +580,7 @@ def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> Non
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 0
     assert entry.failed_datasets == 0
-    assert entry.total_studies in (None, 0)
+    assert entry.total_studies in {None, 0}
     assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
 
 
