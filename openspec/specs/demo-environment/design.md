@@ -8,7 +8,7 @@ compose.demo.yaml
   │     └── /docker-entrypoint-initdb.d/01-demo.sql  ← bind-mounted
   │         healthcheck: pg_isready -d rdi
   │
-  ├── middleware-api    (python:3.12-slim)
+  ├── middleware-api    (python:3.12.14-slim)
   │     ├── installs fastapi + uvicorn + arctrl at startup
   │     ├── mounts demo_api_main.py read-only
   │     ├── mounts demo_output/ read-write
@@ -36,7 +36,7 @@ compose.demo.yaml
    immediately without a `CREATE DATABASE` step.
 
 3. **Healthcheck uses Python's stdlib `urllib.request` instead of `curl`**
-   — `python:3.12-slim` does not include `curl`. Using Python avoids an
+   — `python:3.12.14-slim` does not include `curl`. Using Python avoids an
    extra `apt-get install` step in the image.
 
 4. **`--exit-code-from sql_to_arc` (no `--abort-on-container-exit`)**
