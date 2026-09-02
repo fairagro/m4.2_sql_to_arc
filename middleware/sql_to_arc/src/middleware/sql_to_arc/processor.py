@@ -1,5 +1,7 @@
 """Orchestration and worker management for the SQL-to-ARC conversion process."""
 
+from __future__ import annotations
+
 import asyncio
 import concurrent.futures
 import json
@@ -7,10 +9,11 @@ import logging
 import multiprocessing
 from collections import defaultdict
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 from pydantic import BaseModel
 
 from middleware.api_client import ApiClient, ApiClientError
@@ -40,101 +43,104 @@ def _apply_expected_datasets(scope: RepositoryScope, count: int | None, debug_li
 
 
 @dataclass(frozen=True, slots=True)
-class _CompositionCounts:
-    """Study/assay counts for one successfully harvested investigation."""
+class CompositionCounts:
+    """Study/assay counts for one successfully built investigation."""
 
     studies: int
     assays: int
 
 
 @dataclass(frozen=True, slots=True)
-class _UploadRequest:
-    """Inputs for a single ARC upload + scope update."""
+class BuiltArc:
+    """A successfully built ARC waiting to be submitted in the harvest stream."""
 
     arc_json: str
     investigation_id: str
     inv_info: str
-    composition: _CompositionCounts
+    composition: CompositionCounts
 
 
-async def _upload_and_update_scope(
-    ctx: WorkerContext,
-    scope: RepositoryScope,
-    request: _UploadRequest,
-) -> None:
-    """Upload ARC and record harvested/failed on the repository scope."""
-    tracer = trace.get_tracer(__name__)
-    try:
-        with tracer.start_as_current_span(
-            "upload_arc",
-            attributes={
-                "rdi": ctx.rdi,
-                "worker_id": ctx.worker_id,
-                "investigation_id": request.investigation_id,
-            },
-        ):
-            arc_dict = json.loads(request.arc_json)
+@dataclass
+class ArcStreamState:
+    """Tracks ARCs yielded into ``harvest_arcs`` for post-upload scope updates."""
 
-            result = await ctx.client.create_or_update_arc(
-                rdi=ctx.rdi,
-                arc=arc_dict,
-            )
+    submitted_ids: list[str] = field(default_factory=list)
+    compositions: dict[str, CompositionCounts] = field(default_factory=dict)
+    arc_id_to_investigation: dict[str, str] = field(default_factory=dict)
 
-        # create_or_update_arc has no harvest id today; wire the setter when one appears.
-        harvest_id = getattr(result, "harvest_id", None)
-        if isinstance(harvest_id, str) and harvest_id:
-            scope.set_harvest_id(harvest_id)
+    @property
+    def submitted(self) -> int:
+        """Number of ARCs submitted into the harvest stream."""
+        return len(self.submitted_ids)
 
+    def track(self, built: BuiltArc, arc_payload: dict[str, Any]) -> None:
+        """Record metadata for a yielded ARC payload."""
+        self.submitted_ids.append(built.investigation_id)
+        self.compositions[built.investigation_id] = built.composition
+        raw_id = arc_payload.get("identifier")
+        if isinstance(raw_id, str) and raw_id:
+            self.arc_id_to_investigation[raw_id] = built.investigation_id
+        # Also map investigation id itself for clients that echo it as arc_id.
+        self.arc_id_to_investigation.setdefault(built.investigation_id, built.investigation_id)
+
+
+def _investigation_id_for_error(state: ArcStreamState, arc_id: str | None) -> str | None:
+    """Resolve a harvest error arc_id to the investigation id used for reporting."""
+    if not isinstance(arc_id, str) or not arc_id:
+        return None
+    return state.arc_id_to_investigation.get(arc_id, arc_id)
+
+
+def _apply_upload_outcomes(errors: list[Any], state: ArcStreamState, scope: RepositoryScope) -> None:
+    """Apply harvest_arcs per-item errors and successes to the repository scope."""
+    failed_ids: set[str] = set()
+    for err in errors:
+        raw_id = getattr(err, "arc_id", None)
+        record_id = _investigation_id_for_error(state, raw_id if isinstance(raw_id, str) else None)
+        message = str(getattr(err, "message", err))
+        scope.record_failed(message, record_id=record_id)
+        if record_id is not None:
+            failed_ids.add(record_id)
+
+    for inv_id in state.submitted_ids:
+        if inv_id in failed_ids:
+            continue
         scope.record_harvested()
-        if request.composition.studies:
-            scope.add_studies(request.composition.studies)
-        if request.composition.assays:
-            scope.add_assays(request.composition.assays)
-
-        logger.info(
-            "%s: Upload request finished. API reported success for ARC %s.",
-            request.inv_info,
-            request.investigation_id,
-        )
-
-    except json.JSONDecodeError as e:
-        logger.error(
-            "%s: Invalid ARC JSON for investigation %s: %s",
-            request.inv_info,
-            request.investigation_id,
-            e,
-            exc_info=True,
-        )
-        scope.record_failed(f"Invalid ARC JSON: {e}", record_id=request.investigation_id)
-    except (ConnectionError, TimeoutError, ApiClientError) as e:
-        size_kb = len(request.arc_json.encode("utf-8")) / 1024
-        logger.error(
-            "%s: Failed to upload ARC %s (%.2f KB). Check api_client.timeout if this is httpx.ReadTimeout: %s",
-            request.inv_info,
-            request.investigation_id,
-            size_kb,
-            e,
-            exc_info=True,
-        )
-        scope.record_failed(f"Upload failed: {e}", record_id=request.investigation_id)
+        composition = state.compositions.get(inv_id)
+        if composition is None:
+            continue
+        if composition.studies:
+            scope.add_studies(composition.studies)
+        if composition.assays:
+            scope.add_assays(composition.assays)
 
 
-async def _build_and_upload_single_arc(
+def _apply_upload_aborted(
+    state: ArcStreamState,
+    scope: RepositoryScope,
+    detail: str,
+) -> None:
+    """Record failures when harvest_arcs aborts before a normal result."""
+    if state.submitted == 0:
+        scope.record_repository_issue(detail)
+        return
+    for inv_id in state.submitted_ids:
+        scope.record_failed(detail, record_id=inv_id)
+
+
+async def _build_single_arc(
     ctx: WorkerContext,
     investigation: InvestigationRow,
     *,
     scope: RepositoryScope,
     inv_info: str,
     semaphore: asyncio.Semaphore,
-) -> None:
+) -> BuiltArc | None:
     """
-    Orchestrate the creation and transmission of a single ARC.
+    Build one ARC in the process pool.
 
-    This function handles the lifecycle of one research dataset:
-    1. Acquires a semaphore slot (concurrency control).
-    2. Gathers pre-fetched relational data into a bundle.
-    3. Offloads the CPU-intensive ARC generation to a Process Pool.
-    4. Uploads the resulting JSON to the Middleware API.
+    Returns a ``BuiltArc`` on success. Build/skip failures are recorded on
+    ``scope`` and return ``None`` so they never enter the harvest stream.
     """
     inv_id = str(investigation.identifier)
     async with semaphore:
@@ -150,7 +156,7 @@ async def _build_and_upload_single_arc(
                 ctx.max_studies,
             )
             scope.record_skipped()
-            return
+            return None
         if len(assays) > ctx.max_assays:
             logger.warning(
                 "%s: Skipping investigation %s: %d assays exceed max_assays=%d",
@@ -160,7 +166,7 @@ async def _build_and_upload_single_arc(
                 ctx.max_assays,
             )
             scope.record_skipped()
-            return
+            return None
 
         if assays and not studies:
             logger.warning(
@@ -187,19 +193,14 @@ async def _build_and_upload_single_arc(
             if arc_json is None:
                 logger.error("%s: Build returned None for investigation %s", inv_info, inv_id)
                 scope.record_failed("Build returned no ARC JSON", record_id=inv_id)
-                return
+                return None
 
             logger.info("%s: ARC JSON created: size=%.2fKB", inv_info, len(arc_json.encode("utf-8")) / 1024)
-
-            await _upload_and_update_scope(
-                ctx,
-                scope,
-                _UploadRequest(
-                    arc_json=arc_json,
-                    investigation_id=inv_id,
-                    inv_info=inv_info,
-                    composition=_CompositionCounts(studies=len(studies), assays=len(assays)),
-                ),
+            return BuiltArc(
+                arc_json=arc_json,
+                investigation_id=inv_id,
+                inv_info=inv_info,
+                composition=CompositionCounts(studies=len(studies), assays=len(assays)),
             )
 
         except TimeoutError:
@@ -246,31 +247,64 @@ async def _build_and_upload_single_arc(
             # arctrl often raises bare Exception (e.g. duplicate study names); keep the run going.
             logger.error("%s: Failed to build ARC for investigation %s: %s", inv_info, inv_id, e, exc_info=True)
             scope.record_failed(f"Build failed: {e}", record_id=inv_id)
+        return None
+
+
+@dataclass(slots=True)
+class WorkerResources:
+    """Orchestration resources shared across investigation tasks."""
+
+    client: ApiClient
+    config: Config
+    scope: RepositoryScope
+    pool_holder: ProcessPoolHolder
+    semaphore: asyncio.Semaphore
+    built_queue: asyncio.Queue[BuiltArc | None]
 
 
 async def process_investigation(
     ctx: WorkerContext,
     investigation: InvestigationRow,
-    scope: RepositoryScope,
     inv_info: str,
-    semaphore: asyncio.Semaphore,
+    res: WorkerResources,
 ) -> None:
-    """Process a single investigation."""
+    """Build a single investigation and enqueue it for harvest upload."""
     tracer = trace.get_tracer(__name__)
     inv_id = str(investigation.identifier)
+    scope = res.scope
+    semaphore = res.semaphore
+    built_queue = res.built_queue
 
     with tracer.start_as_current_span(
         "build_investigation",
         attributes={"investigation_id": inv_id, "worker_id": ctx.worker_id},
     ):
         logger.info("%s: Building ARC for investigation %s...", inv_info, inv_id)
-        await _build_and_upload_single_arc(
+        built = await _build_single_arc(
             ctx,
             investigation,
             scope=scope,
             inv_info=inv_info,
             semaphore=semaphore,
         )
+        if built is not None:
+            try:
+                payload = json.loads(built.arc_json)
+            except json.JSONDecodeError as e:
+                logger.error(
+                    "%s: Invalid ARC JSON for investigation %s: %s",
+                    inv_info,
+                    inv_id,
+                    e,
+                    exc_info=True,
+                )
+                scope.record_failed(f"Invalid ARC JSON: {e}", record_id=inv_id)
+                return
+            if not isinstance(payload, dict):
+                logger.error("%s: ARC JSON for investigation %s is not an object", inv_info, inv_id)
+                scope.record_failed("ARC JSON is not an object", record_id=inv_id)
+                return
+            await built_queue.put(built)
 
 
 async def _fetch_and_group_related_data(db: Database, investigation_ids: list[str]) -> RelatedDataBatch:
@@ -306,17 +340,6 @@ async def _fetch_and_group_related_data(db: Database, investigation_ids: list[st
     )
 
 
-@dataclass(slots=True)
-class WorkerResources:
-    """Orchestration resources shared across investigation tasks."""
-
-    client: ApiClient
-    config: Config
-    scope: RepositoryScope
-    pool_holder: ProcessPoolHolder
-    semaphore: asyncio.Semaphore
-
-
 def _spawn_investigation_task(
     investigation: InvestigationRow,
     idx: int,
@@ -342,7 +365,7 @@ def _spawn_investigation_task(
     )
 
     inv_info = f"Investigation {idx}"
-    task = asyncio.create_task(process_investigation(ctx, investigation, res.scope, inv_info, res.semaphore))
+    task = asyncio.create_task(process_investigation(ctx, investigation, inv_info, res))
     running_tasks.add(task)
 
     def _on_task_done(done: asyncio.Task[None]) -> None:
@@ -357,38 +380,17 @@ def _spawn_investigation_task(
     task.add_done_callback(_on_task_done)
 
 
-async def process_investigations(
+async def _drive_builds(
     db: Database,
-    client: ApiClient,
     config: Config,
-) -> HarvestReport:
-    """Fetch investigations from DB and process them concurrently with flow control."""
-    report = HarvestReport(name="SQL to ARC Conversion Run")
-    scope = report.open_repository(config.rdi)
+    res: WorkerResources,
+) -> None:
+    """Stream DB batches, build ARCs concurrently, and enqueue successful builds."""
+    running_tasks: set[asyncio.Task[None]] = set()
+    inv_idx = 0
+    investigation_gen = db.stream_investigations(scope=res.scope, limit=config.debug_limit)
 
-    expected_count = await db.count_investigations()
-    _apply_expected_datasets(scope, expected_count, config.debug_limit)
-
-    semaphore = asyncio.Semaphore(config.max_concurrent_tasks)
-
-    logger.info(
-        "Starting SQL-to-ARC processing: CPU_workers=%d, Max_tasks=%d, Batch_size=%d",
-        config.max_concurrent_arc_builds,
-        config.max_concurrent_tasks,
-        config.db_batch_size,
-    )
-
-    with (
-        ProcessPoolHolder(
-            max_workers=config.max_concurrent_arc_builds,
-            mp_context=multiprocessing.get_context("spawn"),
-        ) as pool_holder,
-        trace.get_tracer(__name__).start_as_current_span("process_investigations"),
-    ):
-        running_tasks: set[asyncio.Task[None]] = set()
-        inv_idx = 0
-        investigation_gen = db.stream_investigations(scope=scope, limit=config.debug_limit)
-
+    try:
         while True:
             batch = []
             try:
@@ -412,14 +414,6 @@ async def process_investigations(
 
             batch_data = await _fetch_and_group_related_data(db, [str(inv.identifier) for inv in batch])
 
-            res = WorkerResources(
-                client=client,
-                config=config,
-                scope=scope,
-                pool_holder=pool_holder,
-                semaphore=semaphore,
-            )
-
             for investigation in batch:
                 inv_idx += 1
                 _spawn_investigation_task(
@@ -431,8 +425,112 @@ async def process_investigations(
                 )
 
         if running_tasks:
-            logger.info("Waiting for %d remaining tasks to complete...", len(running_tasks))
+            logger.info("Waiting for %d remaining build tasks to complete...", len(running_tasks))
             await asyncio.gather(*running_tasks)
+    finally:
+        await res.built_queue.put(None)
+
+
+async def _arc_stream_from_queue(
+    built_queue: asyncio.Queue[BuiltArc | None],
+    state: ArcStreamState,
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Yield ARC dicts for harvest_arcs from the build queue."""
+    while True:
+        item = await built_queue.get()
+        if item is None:
+            return
+        arc_payload = json.loads(item.arc_json)
+        if not isinstance(arc_payload, dict):
+            # Defensive: process_investigation validates before enqueue.
+            continue
+        state.track(item, arc_payload)
+        logger.info(
+            "%s: Queued ARC %s for harvest upload (%.2f KB)",
+            item.inv_info,
+            item.investigation_id,
+            len(item.arc_json.encode("utf-8")) / 1024,
+        )
+        yield arc_payload
+
+
+async def process_investigations(
+    db: Database,
+    client: ApiClient,
+    config: Config,
+) -> HarvestReport:
+    """Fetch investigations from DB, build ARCs, and upload via harvest_arcs."""
+    report = HarvestReport(name="SQL to ARC Conversion Run")
+    scope = report.open_repository(config.rdi)
+
+    expected_count = await db.count_investigations()
+    _apply_expected_datasets(scope, expected_count, config.debug_limit)
+    expected_datasets = scope.snapshot().expected_datasets
+
+    logger.info(
+        "Starting SQL-to-ARC processing: CPU_workers=%d, Max_tasks=%d, Batch_size=%d",
+        config.max_concurrent_arc_builds,
+        config.max_concurrent_tasks,
+        config.db_batch_size,
+    )
+
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
+    state = ArcStreamState()
+    tracer = trace.get_tracer(__name__)
+
+    with (
+        ProcessPoolHolder(
+            max_workers=config.max_concurrent_arc_builds,
+            mp_context=multiprocessing.get_context("spawn"),
+        ) as pool_holder,
+        tracer.start_as_current_span("process_investigations"),
+    ):
+        worker_res = WorkerResources(
+            client=client,
+            config=config,
+            scope=scope,
+            pool_holder=pool_holder,
+            semaphore=asyncio.Semaphore(config.max_concurrent_tasks),
+            built_queue=built_queue,
+        )
+        build_task = asyncio.create_task(_drive_builds(db, config, worker_res))
+
+        with tracer.start_as_current_span(
+            "harvest_upload",
+            attributes={"rdi": config.rdi},
+        ) as upload_span:
+            try:
+                result = await client.harvest_arcs(
+                    rdi=config.rdi,
+                    arcs=_arc_stream_from_queue(built_queue, state),
+                    expected_datasets=expected_datasets,
+                )
+                harvest_id = result.harvest_id
+                scope.set_harvest_id(harvest_id)
+                _apply_upload_outcomes(result.errors, state, scope)
+                upload_span.set_attribute("harvester.harvest_id", harvest_id)
+                upload_span.set_attribute("harvester.arcs_submitted", state.submitted)
+                logger.info(
+                    "Finished harvest upload for RDI %s. Harvest: %s (submitted=%d, errors=%d)",
+                    config.rdi,
+                    harvest_id,
+                    state.submitted,
+                    len(result.errors),
+                )
+            except (ConnectionError, TimeoutError, ApiClientError, OSError, RuntimeError) as e:
+                upload_span.set_status(Status(StatusCode.ERROR))
+                upload_span.record_exception(e)
+                detail = f"Harvest upload failed: {e}"
+                logger.error("%s", detail, exc_info=True)
+                _apply_upload_aborted(state, scope, detail)
+            except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+                upload_span.set_status(Status(StatusCode.ERROR))
+                upload_span.record_exception(e)
+                detail = f"Harvest upload failed: {e}"
+                logger.error("%s", detail, exc_info=True)
+                _apply_upload_aborted(state, scope, detail)
+
+        await build_task
 
     report.finish()
     return report

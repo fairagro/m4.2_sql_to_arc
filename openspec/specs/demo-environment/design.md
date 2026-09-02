@@ -58,13 +58,24 @@ compose.demo.yaml
 ## Mock API (`demo_api_main.py`)
 
 ```text
-POST /v3/arcs?rdi={rdi}
-  → _derive_safe_arc_id()     (sanitize identifier)
-  → write {arc_id}.payload.json  (raw RO-Crate for inspection)
-  → ARC.from_rocrate_json_string()
-  → arc.WriteAsync(arc_dir)   (arctrl writes ISA files)
-  → _chown_tree(arc_dir)      (fix ownership for host user)
-  → return { arc_id, status, metadata }
+POST /v3/harvests
+  → create in-memory harvest (RUNNING), return HarvestResult-shaped JSON
 
-GET /live → { "status": "ok" }   (healthcheck endpoint)
+POST /v3/harvests/{id}/arcs
+  → require RUNNING harvest
+  → _persist_arc_payload()   (shared write helper)
+  → return ArcResult-shaped JSON
+
+POST /v3/harvests/{id}/complete
+PATCH /v3/harvests/{id}      (status=COMPLETED|FAILED|CANCELLED)
+  → set terminal status + completed_at
+
+POST /v3/arcs                (legacy / debug; same write helper)
+
+_persist_arc_payload(rdi, arc):
+  → _derive_safe_arc_id()
+  → write {arc_id}.payload.json
+  → ARC.from_rocrate_json_string() + WriteAsync + _chown_tree
+
+GET /live → { "status": "ok" }
 ```

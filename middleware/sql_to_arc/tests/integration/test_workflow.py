@@ -10,8 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from arctrl import ARC
 
-from middleware.api_client import ApiClient, ArcMetadata, ArcResult, ArcStatus
-from middleware.api_client.models import ArcLifecycleStatus
+from middleware.api_client import ApiClient, HarvestResult, HarvestStatus
 from middleware.shared.config.config_base import OtelConfig
 from middleware.shared.report import HarvestReport
 from middleware.sql_to_arc.config import Config
@@ -26,7 +25,7 @@ from middleware.sql_to_arc.models import (
     StudyRow,
 )
 from middleware.sql_to_arc.process_pool import ProcessPoolHolder
-from middleware.sql_to_arc.processor import process_investigation
+from middleware.sql_to_arc.processor import BuiltArc, WorkerResources, process_investigation
 
 
 class MockExecutor(ThreadPoolExecutor):
@@ -61,18 +60,27 @@ def mock_db_connection(mock_db_cursor: AsyncMock) -> AsyncMock:
 
 @pytest.fixture
 def mock_api_client() -> AsyncMock:
-    """Mock API client."""
+    """Mock API client with a default successful harvest_arcs implementation."""
     client = AsyncMock(spec=ApiClient)
-    client.create_or_update_arc.return_value = ArcResult(
-        arc_id="test",
-        status=ArcStatus.CREATED,
-        metadata=ArcMetadata(
-            arc_hash="",
-            status=ArcLifecycleStatus.ACTIVE,
-            first_seen="2026-01-01T00:00:00Z",
-            last_seen="2026-01-01T00:00:00Z",
-        ),
-    )
+
+    async def _empty_harvest(
+        *,
+        rdi: str,
+        arcs: Any,
+        expected_datasets: int | None = None,
+    ) -> HarvestResult:
+        _ = expected_datasets
+        async for _arc in arcs:
+            pass
+        return HarvestResult(
+            harvest_id="harvest-test",
+            rdi=rdi,
+            status=HarvestStatus.COMPLETED,
+            started_at="2026-01-01T00:00:00Z",
+            completed_at="2026-01-01T00:01:00Z",
+        )
+
+    client.harvest_arcs.side_effect = _empty_harvest
     return client
 
 
@@ -128,27 +136,28 @@ class WorkflowTester:
         mocker.patch("middleware.sql_to_arc.main.Config.from_config_wrapper", return_value=self.mock_config)
         mocker.patch("middleware.sql_to_arc.main.configure_logging")
 
-        # Capture ARCs on API call
-        async def capture_arc(rdi: str, arc: Any) -> ArcResult:
-            serialized_arc = arc
-            if isinstance(arc, dict):
-                # Convert back to ARC object for test compatibility
-                # processor.py sends a dict, but legacy tests expect an ARC object
-                serialized_arc = ARC.from_rocrate_json_string(json.dumps(arc))
-
-            self.captured_arcs.append(serialized_arc)
-            return ArcResult(
-                arc_id=rdi,
-                status=ArcStatus.CREATED,
-                metadata=ArcMetadata(
-                    arc_hash="",
-                    status=ArcLifecycleStatus.ACTIVE,
-                    first_seen="2026-01-01T00:00:00Z",
-                    last_seen="2026-01-01T00:00:00Z",
-                ),
+        # Capture ARCs yielded into harvest_arcs
+        async def capture_harvest(
+            *,
+            rdi: str,
+            arcs: Any,
+            expected_datasets: int | None = None,
+        ) -> HarvestResult:
+            _ = expected_datasets
+            async for arc in arcs:
+                serialized_arc = arc
+                if isinstance(arc, dict):
+                    serialized_arc = ARC.from_rocrate_json_string(json.dumps(arc))
+                self.captured_arcs.append(serialized_arc)
+            return HarvestResult(
+                harvest_id="harvest-test",
+                rdi=rdi,
+                status=HarvestStatus.COMPLETED,
+                started_at="2026-01-01T00:00:00Z",
+                completed_at="2026-01-01T00:01:00Z",
             )
 
-        self.api_client.create_or_update_arc.side_effect = capture_arc
+        self.api_client.harvest_arcs.side_effect = capture_harvest
 
     @staticmethod
     def _as_gen(data: list[dict[str, Any]], model_cls: type[Any] | None = None) -> AsyncGenerator[Any, None]:
@@ -246,7 +255,7 @@ def workflow_tester(mocker: MagicMock, mock_api_client: AsyncMock) -> WorkflowTe
 
 @pytest.mark.asyncio
 async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None:
-    """Test worker investigations processing."""
+    """Test worker investigations build and enqueue ARC payloads for harvest."""
     investigation_rows: list[dict[str, Any]] = [
         {
             "identifier": 1,
@@ -269,6 +278,7 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
     }
     assays_by_study: dict[str, list[dict[str, Any]]] = {}
 
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
     with ThreadPoolExecutor(max_workers=5) as executor:
         pool_holder = ProcessPoolHolder(5, inject_executor=executor)
         ctx = WorkerContext(
@@ -288,21 +298,33 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
             total_workers=1,
             pool_holder=pool_holder,
         )
-        semaphore = asyncio.Semaphore(1)
         report = HarvestReport()
         scope = report.open_repository("edaphobase")
+        config = MagicMock(spec=Config)
+        config.rdi = "edaphobase"
+        config.max_concurrent_arc_builds = 1
+        worker_res = WorkerResources(
+            client=mock_api_client,
+            config=config,
+            scope=scope,
+            pool_holder=pool_holder,
+            semaphore=asyncio.Semaphore(1),
+            built_queue=built_queue,
+        )
         for i, inv in enumerate(investigation_rows):
             inv_info = f"Investigation {i + 1}"
-            await process_investigation(ctx, InvestigationRow.model_validate(inv), scope, inv_info, semaphore)
+            await process_investigation(ctx, InvestigationRow.model_validate(inv), inv_info, worker_res)
         report.finish()
 
-    assert mock_api_client.create_or_update_arc.called
-    # There should be two calls, each with one ARC (since batch size is always 1)
-    assert mock_api_client.create_or_update_arc.call_count == 2  # noqa: PLR2004
-    for call in mock_api_client.create_or_update_arc.call_args_list:
-        assert call.kwargs["rdi"] == "edaphobase"
-        assert isinstance(call.kwargs["arc"], dict)
-        assert "@graph" in call.kwargs["arc"]
+    assert built_queue.qsize() == 2  # noqa: PLR2004
+    for _ in range(2):
+        built = await built_queue.get()
+        assert built is not None
+        payload = json.loads(built.arc_json)
+        assert isinstance(payload, dict)
+        assert "@graph" in payload
+    mock_api_client.harvest_arcs.assert_not_called()
+    mock_api_client.create_or_update_arc.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -331,6 +353,8 @@ async def test_main_workflow(workflow_tester: WorkflowTester) -> None:
     assert len(arcs) == 2  # noqa: PLR2004
     identifiers = {arc.Identifier for arc in arcs}
     assert identifiers == {"1", "2"}
+    workflow_tester.api_client.harvest_arcs.assert_called()
+    workflow_tester.api_client.create_or_update_arc.assert_not_called()
 
     # Spot check deep property
     arc1 = next(a for a in arcs if a.Identifier == "1")
