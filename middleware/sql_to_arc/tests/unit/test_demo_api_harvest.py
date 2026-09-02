@@ -15,7 +15,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from middleware.api_client import ArcResult, HarvestResult
-from middleware.shared.json_types import JsonObject
+
+
+class _ClearableMapping(Protocol):
+    """Minimal store protocol; tests only call ``clear()``."""
+
+    def clear(self) -> None: ...
 
 
 class DemoApiModule(Protocol):
@@ -23,7 +28,7 @@ class DemoApiModule(Protocol):
 
     app: FastAPI
     OUTPUT_ROOT: Path
-    _harvests: dict[str, JsonObject]
+    _harvests: _ClearableMapping
 
 
 def _load_demo_api_module() -> DemoApiModule:

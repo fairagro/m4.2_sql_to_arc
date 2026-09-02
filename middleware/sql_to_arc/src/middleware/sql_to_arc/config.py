@@ -73,9 +73,11 @@ class Config(ConfigBase):
             return fallback
         if isinstance(value, (int, float, str)):
             try:
-                return int(value)
+                parsed = int(value)
             except (TypeError, ValueError):
                 return fallback
+            if parsed >= 1:
+                return parsed
         return fallback
 
     @model_validator(mode="before")

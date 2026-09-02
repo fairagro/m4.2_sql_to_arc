@@ -36,6 +36,7 @@ from middleware.sql_to_arc.processor import (
     CompositionCounts,
     WorkerResources,
     _apply_upload_outcomes,
+    _close_built_queue,
     _enqueue_queue_sentinel,
     _fail_drained_queue,
     process_investigation,
@@ -487,7 +488,7 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_enqueue_queue_sentinel_does_not_block_on_full_queue() -> None:
-    """Closing a full bounded queue must displace items instead of blocking."""
+    """Abort-path close must displace items instead of blocking."""
     queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue(maxsize=1)
     queue.put_nowait(
         BuiltArc(
@@ -502,6 +503,32 @@ def test_enqueue_queue_sentinel_does_not_block_on_full_queue() -> None:
     assert len(displaced) == 1
     assert displaced[0].investigation_id == "full-1"
     assert queue.get_nowait() is None
+
+
+@pytest.mark.asyncio
+async def test_close_built_queue_success_path_preserves_queued_arcs() -> None:
+    """Success-path close must wait for space instead of dropping queued ARCs."""
+    queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue(maxsize=1)
+    queue.put_nowait(
+        BuiltArc(
+            arc_json='{"identifier": "keep-1"}',
+            arc_payload={"identifier": "keep-1"},
+            investigation_id="keep-1",
+            inv_info="Inv",
+            composition=CompositionCounts(studies=0, assays=0),
+        )
+    )
+
+    # Producer waits for the consumer to free a slot before the sentinel is enqueued.
+    close_task = asyncio.create_task(_close_built_queue(queue, displace_if_full=False))
+    await asyncio.sleep(0)
+    assert not close_task.done()
+    kept = await queue.get()
+    displaced = await close_task
+    assert displaced == []
+    assert kept is not None
+    assert kept.investigation_id == "keep-1"
+    assert await queue.get() is None
 
 
 def test_fail_drained_queue_records_unsubmitted_arcs() -> None:
