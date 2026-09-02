@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from http import HTTPStatus
 from pathlib import Path
 from typing import Protocol, cast
@@ -29,6 +29,7 @@ class DemoApiModule(Protocol):
     app: FastAPI
     OUTPUT_ROOT: Path
     _harvests: _ClearableMapping
+    _resolve_under_base: Callable[[Path, str], Path]
 
 
 def _load_demo_api_module() -> DemoApiModule:
@@ -108,6 +109,19 @@ def test_demo_api_harvest_create_arcs_complete(client: TestClient, demo_api: Dem
 
     payload = demo_api.OUTPUT_ROOT / "inv-1.payload.json"
     assert payload.is_file()
+
+
+def test_resolve_under_base_rejects_traversal(demo_api: DemoApiModule, tmp_path: Path) -> None:
+    """Containment helper must reject path segments that escape the base dir."""
+    base = tmp_path / "arcs"
+    base.mkdir()
+    with pytest.raises(ValueError, match="Unsafe relative path"):
+        demo_api._resolve_under_base(base, "../etc")
+    with pytest.raises(ValueError, match="Unsafe relative path"):
+        demo_api._resolve_under_base(base, "a/b")
+    resolved = demo_api._resolve_under_base(base, "inv-1.payload.json")
+    assert resolved.parent == base.resolve()
+    assert resolved.name == "inv-1.payload.json"
 
 
 def test_demo_api_persist_failure_returns_error(demo_api: DemoApiModule, client: TestClient) -> None:

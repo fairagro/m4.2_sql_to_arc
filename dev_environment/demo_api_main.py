@@ -117,11 +117,34 @@ def _derive_safe_arc_id(base_dir: Path, raw_id: JsonValue) -> tuple[str, Path]:
     if not safe_name or safe_name in {".", ".."} or not _SAFE_NAME_PATTERN.match(safe_name):
         return _fallback()
 
+    # Normalize with realpath and verify containment *before* returning the path.
+    # This is the CodeQL-recommended pattern for preventing path traversal:
+    # construct → realpath → startswith-check.
     candidate_real = Path(os.path.realpath(base_real / safe_name))
     if not str(candidate_real).startswith(str(base_real) + os.sep):
         return _fallback()
 
     return safe_name, candidate_real
+
+
+def _resolve_under_base(base_dir: Path, relative_name: str) -> Path:
+    """Resolve ``base_dir/relative_name`` with a containment check on the result.
+
+    The returned path is the same object that callers must pass to ``open`` /
+    write APIs so CodeQL can see the realpath + startswith sanitizer on the
+    sink argument (deriving a new path from a previously validated Path is not
+    enough for ``py/path-injection``).
+    """
+    if not relative_name or relative_name in {".", ".."} or os.sep in relative_name or "/" in relative_name:
+        raise ValueError(f"Unsafe relative path segment: {relative_name!r}")
+    if relative_name != Path(relative_name).name:
+        raise ValueError(f"Relative path must be a single segment: {relative_name!r}")
+
+    base_real = os.path.realpath(base_dir)
+    candidate = os.path.realpath(os.path.join(base_real, relative_name))
+    if not candidate.startswith(base_real + os.sep):
+        raise ValueError(f"Path escapes base directory: {relative_name!r}")
+    return Path(candidate)
 
 
 def _arc_result(arc_id: str, rdi: str, now: str) -> JsonObject:
@@ -178,9 +201,12 @@ async def _persist_arc_payload(rdi: str, arc_payload: RoCrateContent) -> JsonObj
         output_path.mkdir(parents=True, exist_ok=True)
         _chown_tree(output_path)
 
-        arc_id, arc_dir = _derive_safe_arc_id(output_path, arc_payload.get("identifier"))
+        arc_id, _ = _derive_safe_arc_id(output_path, arc_payload.get("identifier"))
+        # Re-resolve from the sanitized segment so open()/WriteAsync see a path
+        # that itself passed realpath + startswith (CodeQL py/path-injection).
+        arc_dir = _resolve_under_base(output_path, arc_id)
+        payload_path = _resolve_under_base(output_path, f"{arc_id}.payload.json")
 
-        payload_path = arc_dir.with_suffix(".payload.json")
         with open(payload_path, "w", encoding="utf-8") as handle:
             json.dump(arc_payload, handle, indent=2)
         _chown_tree(payload_path)
