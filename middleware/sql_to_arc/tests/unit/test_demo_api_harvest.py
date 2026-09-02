@@ -29,7 +29,7 @@ class DemoApiModule(Protocol):
     app: FastAPI
     OUTPUT_ROOT: Path
     _harvests: _ClearableMapping
-    _resolve_under_base: Callable[[Path, str], Path]
+    _resolve_under_base: Callable[[Path, str], str]
 
 
 def _load_demo_api_module() -> DemoApiModule:
@@ -116,12 +116,14 @@ def test_resolve_under_base_rejects_traversal(demo_api: DemoApiModule, tmp_path:
     base = tmp_path / "arcs"
     base.mkdir()
     with pytest.raises(ValueError, match="Unsafe relative path"):
-        demo_api._resolve_under_base(base, "../etc")
-    with pytest.raises(ValueError, match="Unsafe relative path"):
-        demo_api._resolve_under_base(base, "a/b")
-    resolved = demo_api._resolve_under_base(base, "inv-1.payload.json")
-    assert resolved.parent == base.resolve()
-    assert resolved.name == "inv-1.payload.json"
+        demo_api._resolve_under_base(base, "..")
+    resolved = demo_api._resolve_under_base(base, "../inv-1.payload.json")
+    # basename strips the traversal prefix; result must still stay under base.
+    assert Path(resolved).parent == base.resolve()
+    assert Path(resolved).name == "inv-1.payload.json"
+    resolved_ok = demo_api._resolve_under_base(base, "inv-1.payload.json")
+    assert Path(resolved_ok).parent == base.resolve()
+    assert Path(resolved_ok).name == "inv-1.payload.json"
 
 
 def test_demo_api_persist_failure_returns_error(demo_api: DemoApiModule, client: TestClient) -> None:

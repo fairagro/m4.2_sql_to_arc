@@ -127,24 +127,24 @@ def _derive_safe_arc_id(base_dir: Path, raw_id: JsonValue) -> tuple[str, Path]:
     return safe_name, candidate_real
 
 
-def _resolve_under_base(base_dir: Path, relative_name: str) -> Path:
-    """Resolve ``base_dir/relative_name`` with a containment check on the result.
+def _resolve_under_base(base_dir: Path, relative_name: str) -> str:
+    """Return a filesystem path string under ``base_dir`` safe for ``open()``.
 
-    The returned path is the same object that callers must pass to ``open`` /
-    write APIs so CodeQL can see the realpath + startswith sanitizer on the
-    sink argument (deriving a new path from a previously validated Path is not
-    enough for ``py/path-injection``).
+    Applies CodeQL-recognized sanitizers on the sink argument itself:
+    ``os.path.basename`` then ``realpath`` + ``startswith`` containment.
+    Returns a ``str`` (not ``Path``) so the value passed to ``open`` is the
+    sanitized string, not a re-wrapped path object.
     """
-    if not relative_name or relative_name in {".", ".."} or os.sep in relative_name or "/" in relative_name:
+    # basename is a CodeQL-recognized sanitizer for py/path-injection.
+    safe_name = os.path.basename(relative_name)
+    if not safe_name or safe_name in {".", ".."}:
         raise ValueError(f"Unsafe relative path segment: {relative_name!r}")
-    if relative_name != Path(relative_name).name:
-        raise ValueError(f"Relative path must be a single segment: {relative_name!r}")
 
     base_real = os.path.realpath(base_dir)
-    candidate = os.path.realpath(os.path.join(base_real, relative_name))
+    candidate = os.path.realpath(os.path.join(base_real, safe_name))
     if not candidate.startswith(base_real + os.sep):
         raise ValueError(f"Path escapes base directory: {relative_name!r}")
-    return Path(candidate)
+    return candidate
 
 
 def _arc_result(arc_id: str, rdi: str, now: str) -> JsonObject:
@@ -195,32 +195,39 @@ async def _persist_arc_payload(rdi: str, arc_payload: RoCrateContent) -> JsonObj
     output_path = OUTPUT_ROOT
     now = _now_iso()
     arc_id = "unknown"
-    arc_dir = output_path
+    arc_dir = str(output_path)
 
     try:
         output_path.mkdir(parents=True, exist_ok=True)
         _chown_tree(output_path)
 
         arc_id, _ = _derive_safe_arc_id(output_path, arc_payload.get("identifier"))
-        # Re-resolve from the sanitized segment so open()/WriteAsync see a path
-        # that itself passed realpath + startswith (CodeQL py/path-injection).
-        arc_dir = _resolve_under_base(output_path, arc_id)
-        payload_path = _resolve_under_base(output_path, f"{arc_id}.payload.json")
+        # Inline CodeQL-recognized sanitizers at the path sinks (basename +
+        # realpath + startswith). Do not open a Path derived from user input
+        # without this check on the same value passed to open()/WriteAsync.
+        safe_arc_id = os.path.basename(arc_id)
+        base_real = os.path.realpath(str(output_path))
+        arc_dir = os.path.realpath(os.path.join(base_real, safe_arc_id))
+        if not arc_dir.startswith(base_real + os.sep):
+            raise ValueError(f"ARC path escapes output root: {safe_arc_id!r}")
+        payload_path = os.path.realpath(os.path.join(base_real, f"{safe_arc_id}.payload.json"))
+        if not payload_path.startswith(base_real + os.sep):
+            raise ValueError(f"Payload path escapes output root: {safe_arc_id!r}")
 
         with open(payload_path, "w", encoding="utf-8") as handle:
             json.dump(arc_payload, handle, indent=2)
-        _chown_tree(payload_path)
+        _chown_tree(Path(payload_path))
 
         arc_json = json.dumps(arc_payload)
         arc = ARC.from_rocrate_json_string(arc_json)
-        await start_as_task(arc.WriteAsync(str(arc_dir)))
-        _chown_tree(arc_dir)
+        await start_as_task(arc.WriteAsync(arc_dir))
+        _chown_tree(Path(arc_dir))
         print(f"Saved ARC structure for {rdi} as {arc_id} using arctrl")
     except (json.JSONDecodeError, OSError, RuntimeError, TypeError, ValueError) as exc:
-        _handle_error(arc_dir, rdi, arc_id, exc)
+        _handle_error(Path(arc_dir), rdi, arc_id, exc)
         raise HTTPException(status_code=500, detail=f"Failed to persist ARC {arc_id}: {exc}") from exc
     except Exception as exc:  # noqa: BLE001
-        _handle_error(arc_dir, rdi, arc_id, exc)
+        _handle_error(Path(arc_dir), rdi, arc_id, exc)
         raise HTTPException(status_code=500, detail=f"Failed to persist ARC {arc_id}: {exc}") from exc
 
     return _arc_result(arc_id, rdi, now)
