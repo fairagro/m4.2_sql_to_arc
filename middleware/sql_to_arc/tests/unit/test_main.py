@@ -30,9 +30,11 @@ from middleware.sql_to_arc.main import main, parse_args
 from middleware.sql_to_arc.models import InvestigationRow
 from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 from middleware.sql_to_arc.processor import (
+    ArcStreamState,
     BuiltArc,
     CompositionCounts,
     WorkerResources,
+    _apply_upload_outcomes,
     process_investigation,
     process_investigations,
 )
@@ -465,6 +467,36 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     assert isinstance(call_kwargs["scope"], RepositoryScope)
     assert call_kwargs["limit"] == 10  # noqa: PLR2004
     mock_client.create_or_update_arc.assert_not_called()
+
+
+def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> None:
+    """Harvest errors without arc_id must not call record_failed(None)."""
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    state = ArcStreamState()
+    state.submitted_ids.append("ok-1")
+    state.compositions["ok-1"] = CompositionCounts(studies=1, assays=0)
+    state.arc_id_to_investigation["ok-1"] = "ok-1"
+
+    _apply_upload_outcomes(
+        [
+            HarvestError(
+                arc_id=None,
+                error_type=HarvestErrorType.SUBMISSION_FAILED,
+                message="mystery",
+            )
+        ],
+        state,
+        scope,
+    )
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.harvested_datasets == 1
+    assert entry.failed_datasets == 0
+    assert any(
+        f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures
+    )
 
 
 @pytest.mark.asyncio

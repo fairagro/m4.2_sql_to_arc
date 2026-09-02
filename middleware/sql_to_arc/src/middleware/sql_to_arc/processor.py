@@ -98,9 +98,12 @@ def _apply_upload_outcomes(errors: list[Any], state: ArcStreamState, scope: Repo
         raw_id = getattr(err, "arc_id", None)
         record_id = _investigation_id_for_error(state, raw_id if isinstance(raw_id, str) else None)
         message = str(getattr(err, "message", err))
+        if record_id is None:
+            # Cannot attribute to a dataset; avoid a null dataset failure and keep applying peers.
+            scope.record_repository_issue(f"Unattributed harvest error: {message}")
+            continue
         scope.record_failed(message, record_id=record_id)
-        if record_id is not None:
-            failed_ids.add(record_id)
+        failed_ids.add(record_id)
 
     for inv_id in state.submitted_ids:
         if inv_id in failed_ids:
@@ -380,6 +383,16 @@ def _spawn_investigation_task(
     task.add_done_callback(_on_task_done)
 
 
+async def _cancel_running_builds(running_tasks: set[asyncio.Task[None]]) -> None:
+    """Cancel outstanding investigation build tasks and wait for them to finish."""
+    if not running_tasks:
+        return
+    for task in running_tasks:
+        task.cancel()
+    await asyncio.gather(*running_tasks, return_exceptions=True)
+    running_tasks.clear()
+
+
 async def _drive_builds(
     db: Database,
     config: Config,
@@ -428,6 +441,9 @@ async def _drive_builds(
             logger.info("Waiting for %d remaining build tasks to complete...", len(running_tasks))
             await asyncio.gather(*running_tasks)
     finally:
+        # Stop any still-running investigation builds (e.g. when the driver is cancelled
+        # after a harvest abort) before closing the queue for consumers.
+        await _cancel_running_builds(running_tasks)
         await res.built_queue.put(None)
 
 
@@ -523,14 +539,19 @@ async def process_investigations(
                 detail = f"Harvest upload failed: {e}"
                 logger.error("%s", detail, exc_info=True)
                 _apply_upload_aborted(state, scope, detail)
+                build_task.cancel()
             except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                 upload_span.set_status(Status(StatusCode.ERROR))
                 upload_span.record_exception(e)
                 detail = f"Harvest upload failed: {e}"
                 logger.error("%s", detail, exc_info=True)
                 _apply_upload_aborted(state, scope, detail)
+                build_task.cancel()
 
-        await build_task
+        try:
+            await build_task
+        except asyncio.CancelledError:
+            logger.info("Build pipeline cancelled after harvest upload abort")
 
     report.finish()
     return report
