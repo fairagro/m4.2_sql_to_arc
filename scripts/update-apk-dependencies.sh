@@ -22,7 +22,7 @@ if [[ ! -f "$DOCKERFILE" ]]; then
 fi
 
 # Extract Alpine major.minor from builder or runtime base images.
-# Matches e.g. "FROM python:3.12.12-alpine3.23" or "FROM alpine:3.23.3" → "3.23"
+# Matches e.g. "FROM python:3.12.14-alpine3.24" or "FROM alpine:3.24.1" → "3.24"
 ALPINE_VERSION=$(
   grep -E '^FROM ' "$DOCKERFILE" | grep -oE 'alpine[0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+' | head -1
 )
