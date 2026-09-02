@@ -17,7 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.12.14']
+        # Keep the minor version here: GitHub names the job
+        # "code-quality (<matrix>)", and branch rulesets require
+        # "Python Code Quality / code-quality (3.12)". Patch is pinned
+        # in .python-version and installed explicitly below.
+        python-version: ['3.12']
 
     steps:
     - name: Checkout code
@@ -37,7 +41,7 @@ jobs:
 
     - name: Set up Python ${{ matrix.python-version }}
       if: inputs.run_checks
-      run: uv python install ${{ matrix.python-version }}
+      run: uv python install  # respects .python-version (patch pin)
 
     - name: Install dependencies
       if: inputs.run_checks
