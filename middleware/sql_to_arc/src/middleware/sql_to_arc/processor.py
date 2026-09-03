@@ -528,6 +528,31 @@ async def _cancel_running_builds(running_tasks: set[asyncio.Task[None]]) -> None
     running_tasks.clear()
 
 
+async def _finalize_drive_builds(
+    investigation_gen: AsyncGenerator[InvestigationRow, None],
+    running_tasks: set[asyncio.Task[None]],
+    res: WorkerResources,
+) -> None:
+    """Close the DB stream, cancel leftover builds, and close the build queue."""
+    try:
+        await investigation_gen.aclose()
+    finally:
+        # Always cancel builds and close the queue, even if aclose() raised —
+        # otherwise harvest_arcs can wait forever for the end-of-stream sentinel.
+        current = asyncio.current_task()
+        aborting = current is not None and current.cancelling() > 0
+        if aborting:
+            # Abort path: enqueue the sentinel synchronously first. An ``await``
+            # here can raise CancelledError before the body runs and leave the
+            # harvest consumer blocked without an end-of-stream marker.
+            res.displaced_arcs.extend(_enqueue_queue_sentinel(res.built_queue))
+            await _cancel_running_builds(running_tasks)
+        else:
+            await _cancel_running_builds(running_tasks)
+            # Success path: block until there is room so built ARCs are not dropped.
+            res.displaced_arcs.extend(await _close_built_queue(res.built_queue, displace_if_full=False))
+
+
 async def _drive_builds(
     db: Database,
     config: Config,
@@ -575,17 +600,7 @@ async def _drive_builds(
             logger.info("Waiting for %d remaining build tasks to complete...", len(running_tasks))
             await asyncio.gather(*running_tasks)
     finally:
-        try:
-            await investigation_gen.aclose()
-        finally:
-            # Always cancel builds and close the queue, even if aclose() raised —
-            # otherwise harvest_arcs can wait forever for the end-of-stream sentinel.
-            await _cancel_running_builds(running_tasks)
-            current = asyncio.current_task()
-            # Only displace queued ARCs when this task is being cancelled (harvest abort).
-            # On the success path, block until there is room so built ARCs are not dropped.
-            displace_if_full = current is not None and current.cancelling() > 0
-            res.displaced_arcs.extend(await _close_built_queue(res.built_queue, displace_if_full=displace_if_full))
+        await _finalize_drive_builds(investigation_gen, running_tasks, res)
 
 
 async def _arc_stream_from_queue(
