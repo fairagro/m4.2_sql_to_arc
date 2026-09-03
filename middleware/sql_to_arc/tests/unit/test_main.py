@@ -556,7 +556,7 @@ def test_fail_drained_queue_records_unsubmitted_arcs() -> None:
 
 
 def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> None:
-    """Harvest errors without arc_id must not call record_failed(None) or inflate harvested."""
+    """Unattributed errors: repository issue + fail remaining submits (no harvested)."""
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
     state = ArcStreamState()
@@ -579,13 +579,17 @@ def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> Non
 
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 0
-    assert entry.failed_datasets == 0
+    assert entry.failed_datasets == 1
+    dataset_failures = [f for f in entry.failures if f.record_id is not None]
+    assert len(dataset_failures) == 1
+    assert dataset_failures[0].record_id == "ok-1"
+    assert "cannot confirm upload success" in dataset_failures[0].message
     assert entry.total_studies in {None, 0}
     assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
 
 
 def test_apply_upload_outcomes_unmapped_arc_id_is_unattributed() -> None:
-    """Unknown arc_id must not be used as record_id or allow harvested for the real inv."""
+    """Unknown arc_id must not be used as record_id; remaining submits fail, not harvest."""
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
     state = ArcStreamState()
@@ -608,8 +612,48 @@ def test_apply_upload_outcomes_unmapped_arc_id_is_unattributed() -> None:
 
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 0
-    assert entry.failed_datasets == 0
-    assert all(f.record_id is None for f in entry.failures)
+    assert entry.failed_datasets == 1
+    dataset_failures = [f for f in entry.failures if f.record_id is not None]
+    assert len(dataset_failures) == 1
+    assert dataset_failures[0].record_id == "inv-1"
+    assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
+
+
+def test_apply_upload_outcomes_mixed_attributed_and_unattributed() -> None:
+    """Attributed fails keep their message; other submits fail due to ambiguity."""
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    state = ArcStreamState()
+    state.submitted_ids.extend(["bad-1", "maybe-2", "maybe-3"])
+    for inv_id in ("bad-1", "maybe-2", "maybe-3"):
+        state.arc_id_to_investigation[inv_id] = inv_id
+        state.compositions[inv_id] = CompositionCounts(studies=1, assays=0)
+
+    _apply_upload_outcomes(
+        [
+            HarvestError(
+                arc_id="bad-1",
+                error_type=HarvestErrorType.SUBMISSION_FAILED,
+                message="known bad",
+            ),
+            HarvestError(
+                arc_id=None,
+                error_type=HarvestErrorType.SUBMISSION_FAILED,
+                message="mystery",
+            ),
+        ],
+        state,
+        scope,
+    )
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.harvested_datasets == 0
+    assert entry.failed_datasets == len(state.submitted_ids)
+    by_id = {f.record_id: f.message for f in entry.failures if f.record_id is not None}
+    assert by_id["bad-1"] == "known bad"
+    assert "cannot confirm upload success" in by_id["maybe-2"]
+    assert "cannot confirm upload success" in by_id["maybe-3"]
     assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
 
 

@@ -47,4 +47,7 @@ process_investigations()
 5. **Outcome application after `harvest_arcs` returns**
    — Scope updates (harvested / failed / composition / harvest id) are
    applied from `HarvestResult.errors` and stream-state metadata, not
-   per-yield success callbacks.
+   per-yield success callbacks. Errors without a mappable `arc_id` become
+   repository issues; remaining submits that are not already attributed
+   failures are recorded as failed (not harvested) so every submission is
+   accounted for without inventing success.

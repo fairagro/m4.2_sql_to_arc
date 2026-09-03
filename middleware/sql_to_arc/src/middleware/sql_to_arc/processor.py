@@ -105,7 +105,13 @@ def _investigation_id_for_error(state: ArcStreamState, arc_id: str | None) -> st
 
 
 def _apply_upload_outcomes(errors: list[HarvestError], state: ArcStreamState, scope: RepositoryScope) -> None:
-    """Apply harvest_arcs per-item errors and successes to the repository scope."""
+    """Apply harvest_arcs per-item errors and successes to the repository scope.
+
+    When any error cannot be mapped to a submitted investigation, remaining
+    submits (not already failed via an attributed error) are recorded as
+    failed rather than harvested: we cannot confirm which ARC succeeded, and
+    must not inflate harvested counts or leave submissions unaccounted.
+    """
     failed_ids: set[str] = set()
     has_unattributed_error = False
     for err in errors:
@@ -119,12 +125,14 @@ def _apply_upload_outcomes(errors: list[HarvestError], state: ArcStreamState, sc
         scope.record_failed(message, record_id=record_id)
         failed_ids.add(record_id)
 
-    if has_unattributed_error:
-        # Do not inflate harvested_datasets when some failures could not be mapped to an ARC.
-        return
-
     for inv_id in state.submitted_ids:
         if inv_id in failed_ids:
+            continue
+        if has_unattributed_error:
+            scope.record_failed(
+                "Harvest reported unattributed error(s); cannot confirm upload success",
+                record_id=inv_id,
+            )
             continue
         scope.record_harvested()
         composition = state.compositions.get(inv_id)
