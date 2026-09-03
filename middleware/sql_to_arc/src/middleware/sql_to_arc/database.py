@@ -36,9 +36,6 @@ from middleware.sql_to_arc.models import (
 logger = logging.getLogger(__name__)
 RowModel = TypeVar("RowModel", bound=BaseRow)
 
-# ``SELECT *`` has no static column shape in SQLAlchemy; ``Any`` is required here.
-type SelectStar = sqlalchemy.Select[Any]
-
 
 class SchemaValidator:
     """Validator for database schema and structural integrity."""
@@ -231,12 +228,13 @@ class Database:
             async with self.engine.connect() as conn:
                 # Use literal_column("*") to ensure SQLAlchemy generates 'SELECT *'
                 # instead of '"vInvestigation"."*"' which can cause issues with some dialects
-                query: SelectStar = (
+                # SELECT * has no static column shape; Select[Any] is required.
+                query: sqlalchemy.Select[Any] = (
                     select(sqlalchemy.literal_column("*"))
                     .select_from(table(view_name))
                     .execution_options(stream_results=True)
                 )
-                stream_stmt: SelectStar = query.limit(limit) if limit is not None else query
+                stream_stmt: sqlalchemy.Select[Any] = query.limit(limit) if limit is not None else query
 
                 # Execute stream to use server-side cursor (prevents loading all rows into RAM)
                 result = await conn.stream(stream_stmt)
@@ -273,7 +271,8 @@ class Database:
             async with self.engine.connect() as conn:
                 # Use literal_column("*") to select all columns
                 c_inv_ref: ColumnElement[str] = column("investigation_ref")
-                stream_stmt: SelectStar = (
+                # SELECT * has no static column shape; Select[Any] is required.
+                stream_stmt: sqlalchemy.Select[Any] = (
                     select(sqlalchemy.literal_column("*"))
                     .select_from(table(view_name))
                     .where(c_inv_ref.in_(investigation_ids))
