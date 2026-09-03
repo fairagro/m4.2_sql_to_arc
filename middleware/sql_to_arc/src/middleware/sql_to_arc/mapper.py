@@ -30,13 +30,11 @@ def _make_oa(term: str | None, uri: str | None, _version: str | None) -> Ontolog
     return OntologyAnnotation(name=term, tan=uri or "", tsr="")
 
 
-def _format_date(d: datetime | str | None) -> str | None:
+def _format_date(d: datetime | None) -> str | None:
     """Format dates as ISO strings."""
-    if isinstance(d, datetime):
-        return d.isoformat()
-    if isinstance(d, str):
-        return d
-    return None
+    if d is None:
+        return None
+    return d.isoformat()
 
 
 def map_investigation(row: InvestigationRow) -> ArcInvestigation:
