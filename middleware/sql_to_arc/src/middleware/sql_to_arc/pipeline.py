@@ -143,9 +143,7 @@ def _spawn_investigation_task(
     )
 
     inv_info = f"Investigation {idx}"
-    task: asyncio.Task[None] = asyncio.create_task(
-        res.process_investigation(ctx, investigation, inv_info, res)
-    )
+    task: asyncio.Task[None] = asyncio.create_task(res.process_investigation(ctx, investigation, inv_info, res))
     running_tasks.add(task)
 
     def _on_task_done(done: asyncio.Task[None]) -> None:
