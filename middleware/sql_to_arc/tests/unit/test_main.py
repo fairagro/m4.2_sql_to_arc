@@ -6,26 +6,92 @@ and workflow logic in the sql_to_arc pipeline.
 
 import asyncio
 import concurrent.futures
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
-from middleware.api_client import ApiClient, ApiClientError
+from middleware.api_client import (
+    ApiClient,
+    ApiClientError,
+    HarvestError,
+    HarvestErrorType,
+    HarvestResult,
+    HarvestStatus,
+)
+from middleware.shared.json_types import RoCrateContent
 from middleware.shared.report import HarvestReport, JsonLdReportSerializer, RepositoryScope
 from middleware.sql_to_arc.builder import DuplicateAssayRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
+from middleware.sql_to_arc.database import Database
 from middleware.sql_to_arc.main import main, parse_args
-from middleware.sql_to_arc.models import InvestigationRow
+from middleware.sql_to_arc.models import AssayRow, InvestigationRow, StudyRow
+from middleware.sql_to_arc.pipeline import BuiltArc, CompositionCounts, WorkerResources, enqueue_queue_sentinel
 from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 from middleware.sql_to_arc.processor import (
+    ArcStreamState,
+    _apply_upload_outcomes,
     process_investigation,
     process_investigations,
 )
+
+
+def _empty_related_batch() -> RelatedDataBatch:
+    return RelatedDataBatch(
+        studies_by_inv={},
+        assays_by_inv={},
+        contacts_by_inv={},
+        pubs_by_inv={},
+        anns_by_inv={},
+        study_count=1,
+        assay_count=0,
+    )
+
+
+def _harvest_ok(rdi: str = "test", harvest_id: str = "harvest-1") -> HarvestResult:
+    return HarvestResult(
+        harvest_id=harvest_id,
+        rdi=rdi,
+        status=HarvestStatus.COMPLETED,
+        started_at="2026-01-01T00:00:00Z",
+        completed_at="2026-01-01T00:01:00Z",
+    )
+
+
+async def _consume_arcs(arcs: AsyncIterator[RoCrateContent]) -> list[RoCrateContent]:
+    collected: list[RoCrateContent] = []
+    async for arc in arcs:
+        collected.append(arc)
+    return collected
+
+
+def _make_worker_res(
+    *,
+    client: ApiClient,
+    scope: RepositoryScope,
+    pool_holder: ProcessPoolHolder,
+    built_queue: asyncio.Queue[BuiltArc | None],
+    rdi: str = "test_rdi",
+) -> WorkerResources:
+    config = MagicMock(spec=Config)
+    config.rdi = rdi
+    config.max_concurrent_arc_builds = 1
+    config.max_concurrent_tasks = 1
+    config.arc_generation_timeout_minutes = 1
+    config.max_studies = 5000
+    config.max_assays = 10000
+    return WorkerResources(
+        client=client,
+        config=config,
+        scope=scope,
+        pool_holder=pool_holder,
+        semaphore=asyncio.Semaphore(1),
+        built_queue=built_queue,
+        process_investigation=process_investigation,
+    )
 
 
 class TestParseArgs:
@@ -47,18 +113,17 @@ class TestParseArgs:
 
 
 @pytest.mark.asyncio
-async def test_process_investigation_builds_and_uploads(monkeypatch: pytest.MonkeyPatch) -> None:
-    """process_investigation should build ARC via executor and upload it."""
+async def test_process_investigation_builds_and_enqueues(monkeypatch: pytest.MonkeyPatch) -> None:
+    """process_investigation should build ARC via executor and enqueue it for harvest."""
     mock_client = AsyncMock(spec=ApiClient)
-    mock_client.create_or_update_arc.return_value = MagicMock(arcs=[MagicMock(id="1")])
 
     investigation = InvestigationRow(identifier="1", title="Inv", description_text="Desc")
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
-    semaphore = asyncio.Semaphore(1)
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
 
     loop_future: asyncio.Future[str] = asyncio.Future()
-    loop_future.set_result('{"Identifier": "1"}')
+    loop_future.set_result('{"identifier": "1"}')
 
     loop_mock = MagicMock()
     loop_mock.run_in_executor.return_value = loop_future
@@ -81,74 +146,38 @@ async def test_process_investigation_builds_and_uploads(monkeypatch: pytest.Monk
         arc_generation_timeout_minutes=1,
     )
 
-    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    await process_investigation(
+        ctx,
+        investigation,
+        "Inv 1",
+        _make_worker_res(client=mock_client, scope=scope, pool_holder=pool_holder, built_queue=built_queue),
+    )
     report.finish()
 
     loop_mock.run_in_executor.assert_called_once_with(injected_executor, build_single_arc_task, ANY)
-    mock_client.create_or_update_arc.assert_called_once()
-    entry = report.repository_reports[0]
-    assert entry.harvested_datasets == 1
-    assert entry.total_studies == 1
-    assert entry.total_assays == 2  # noqa: PLR2004
-
-
-@pytest.mark.asyncio
-async def test_process_investigation_upload_failure_records_failed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Upload failures must record failed with investigation id, not harvested."""
-    mock_client = AsyncMock(spec=ApiClient)
-    mock_client.create_or_update_arc.side_effect = ApiClientError("nope")
-
-    investigation = InvestigationRow(identifier="inv-x", title="Inv", description_text="Desc")
-    report = HarvestReport()
-    scope = report.open_repository("test_rdi")
-    semaphore = asyncio.Semaphore(1)
-
-    loop_future: asyncio.Future[str] = asyncio.Future()
-    loop_future.set_result('{"Identifier": "inv-x"}')
-    loop_mock = MagicMock()
-    loop_mock.run_in_executor.return_value = loop_future
-    monkeypatch.setattr("asyncio.get_running_loop", MagicMock(return_value=loop_mock))
-
-    pool_holder = ProcessPoolHolder(1, inject_executor=MagicMock(spec=concurrent.futures.ProcessPoolExecutor))
-    ctx = WorkerContext(
-        client=mock_client,
-        rdi="test_rdi",
-        studies_by_inv={},
-        assays_by_inv={},
-        contacts_by_inv={},
-        pubs_by_inv={},
-        anns_by_inv={},
-        worker_id=1,
-        total_workers=1,
-        pool_holder=pool_holder,
-        arc_generation_timeout_minutes=1,
-    )
-
-    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
-    report.finish()
-
+    assert built_queue.qsize() == 1
+    built = await built_queue.get()
+    assert built is not None
+    assert built.investigation_id == "1"
+    assert built.composition.studies == 1
+    assert built.composition.assays == 2  # noqa: PLR2004
+    mock_client.harvest_arcs.assert_not_called()
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 0
-    assert entry.failed_datasets == 1
-    assert entry.failures[0].record_id == "inv-x"
-    assert entry.failures[0].kind.value == "dataset"
-    assert entry.total_studies is None
-    assert entry.total_assays is None
+    assert entry.failed_datasets == 0
 
 
 @pytest.mark.asyncio
 async def test_process_investigation_invalid_arc_json_records_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Malformed ARC JSON must record failed with investigation id, not harvested."""
+    """Malformed ARC JSON must record failed with investigation id, not enqueue."""
     mock_client = AsyncMock(spec=ApiClient)
 
     investigation = InvestigationRow(identifier="inv-bad-json", title="Inv", description_text="Desc")
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
-    semaphore = asyncio.Semaphore(1)
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
 
     loop_future: asyncio.Future[str] = asyncio.Future()
     loop_future.set_result("not-json")
@@ -171,16 +200,22 @@ async def test_process_investigation_invalid_arc_json_records_failed(
         arc_generation_timeout_minutes=1,
     )
 
-    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    await process_investigation(
+        ctx,
+        investigation,
+        "Inv 1",
+        _make_worker_res(client=mock_client, scope=scope, pool_holder=pool_holder, built_queue=built_queue),
+    )
     report.finish()
 
+    assert built_queue.empty()
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 0
     assert entry.failed_datasets == 1
     assert entry.failures[0].record_id == "inv-bad-json"
     assert entry.failures[0].kind.value == "dataset"
     assert "Invalid ARC JSON" in entry.failures[0].message
-    mock_client.create_or_update_arc.assert_not_called()
+    mock_client.harvest_arcs.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -193,7 +228,7 @@ async def test_process_investigation_bare_exception_records_failed(
     investigation = InvestigationRow(identifier="inv-dup", title="Inv", description_text="Desc")
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
-    semaphore = asyncio.Semaphore(1)
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
 
     loop_future: asyncio.Future[str] = asyncio.Future()
     loop_future.set_exception(
@@ -221,16 +256,22 @@ async def test_process_investigation_bare_exception_records_failed(
         arc_generation_timeout_minutes=1,
     )
 
-    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    await process_investigation(
+        ctx,
+        investigation,
+        "Inv 1",
+        _make_worker_res(client=mock_client, scope=scope, pool_holder=pool_holder, built_queue=built_queue),
+    )
     report.finish()
 
+    assert built_queue.empty()
     entry = report.repository_reports[0]
     assert entry.harvested_datasets == 0
     assert entry.failed_datasets == 1
     assert entry.failures[0].record_id == "inv-dup"
     assert entry.failures[0].kind.value == "dataset"
     assert "Build failed" in entry.failures[0].message
-    mock_client.create_or_update_arc.assert_not_called()
+    mock_client.harvest_arcs.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -242,7 +283,7 @@ async def test_process_investigation_duplicate_assay_includes_fields(
     investigation = InvestigationRow(identifier="inv-conflict", title="Inv", description_text="Desc")
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
-    semaphore = asyncio.Semaphore(1)
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
 
     loop_future: asyncio.Future[str] = asyncio.Future()
     loop_future.set_exception(DuplicateAssayRowError("assay-xyz", ["title", "measurement_type_term"]))
@@ -265,9 +306,15 @@ async def test_process_investigation_duplicate_assay_includes_fields(
         arc_generation_timeout_minutes=1,
     )
 
-    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    await process_investigation(
+        ctx,
+        investigation,
+        "Inv 1",
+        _make_worker_res(client=mock_client, scope=scope, pool_holder=pool_holder, built_queue=built_queue),
+    )
     report.finish()
 
+    assert built_queue.empty()
     failure = report.repository_reports[0].failures[0]
     assert failure.kind.value == "dataset"
     assert "assay-xyz" in failure.message
@@ -276,12 +323,12 @@ async def test_process_investigation_duplicate_assay_includes_fields(
 
 @pytest.mark.asyncio
 async def test_process_investigation_skips_when_study_limit_exceeded() -> None:
-    """Investigations above max_studies are skipped without build or upload."""
+    """Investigations above max_studies are skipped without build or enqueue."""
     mock_client = AsyncMock(spec=ApiClient)
     investigation = InvestigationRow(identifier="inv-big", title="Inv", description_text="Desc")
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
-    semaphore = asyncio.Semaphore(1)
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
 
     pool_holder = ProcessPoolHolder(1, inject_executor=MagicMock(spec=concurrent.futures.ProcessPoolExecutor))
     ctx = WorkerContext(
@@ -300,25 +347,31 @@ async def test_process_investigation_skips_when_study_limit_exceeded() -> None:
         max_assays=10000,
     )
 
-    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    await process_investigation(
+        ctx,
+        investigation,
+        "Inv 1",
+        _make_worker_res(client=mock_client, scope=scope, pool_holder=pool_holder, built_queue=built_queue),
+    )
     report.finish()
 
+    assert built_queue.empty()
     entry = report.repository_reports[0]
     assert entry.skipped_datasets == 1
     assert entry.harvested_datasets == 0
     assert entry.failed_datasets == 0
     assert entry.failures == ()
-    mock_client.create_or_update_arc.assert_not_called()
+    mock_client.harvest_arcs.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_process_investigation_skips_when_assay_limit_exceeded() -> None:
-    """Investigations above max_assays are skipped without build or upload."""
+    """Investigations above max_assays are skipped without build or enqueue."""
     mock_client = AsyncMock(spec=ApiClient)
     investigation = InvestigationRow(identifier="inv-assays", title="Inv", description_text="Desc")
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
-    semaphore = asyncio.Semaphore(1)
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
 
     pool_holder = ProcessPoolHolder(1, inject_executor=MagicMock(spec=concurrent.futures.ProcessPoolExecutor))
     ctx = WorkerContext(
@@ -337,24 +390,34 @@ async def test_process_investigation_skips_when_assay_limit_exceeded() -> None:
         max_assays=1,
     )
 
-    await process_investigation(ctx, investigation, scope, "Inv 1", semaphore)
+    await process_investigation(
+        ctx,
+        investigation,
+        "Inv 1",
+        _make_worker_res(client=mock_client, scope=scope, pool_holder=pool_holder, built_queue=built_queue),
+    )
     report.finish()
 
+    assert built_queue.empty()
     entry = report.repository_reports[0]
     assert entry.skipped_datasets == 1
     assert entry.harvested_datasets == 0
     assert entry.failed_datasets == 0
     assert entry.failures == ()
-    mock_client.create_or_update_arc.assert_not_called()
+    mock_client.harvest_arcs.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test full process_investigations flow with batching and streaming."""
+    """Test full process_investigations flow with batching and harvest_arcs."""
     mock_db = MagicMock()
     mock_db.count_investigations = AsyncMock(return_value=2)
 
-    async def mock_gen(**_kwargs: Any) -> AsyncGenerator[Any, None]:
+    async def mock_gen(
+        scope: RepositoryScope | None = None,
+        limit: int | None = None,
+    ) -> AsyncGenerator[InvestigationRow, None]:
+        _ = (scope, limit)
         data = [
             InvestigationRow(identifier="1", title="T1", description_text="D1"),
             InvestigationRow(identifier="2", title="T2", description_text="D2"),
@@ -364,20 +427,26 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
 
     mock_db.stream_investigations.side_effect = mock_gen
 
-    async def mock_fetch_related(*_args: Any, **_kwargs: Any) -> RelatedDataBatch:
-        return RelatedDataBatch(
-            studies_by_inv={},
-            assays_by_inv={},
-            contacts_by_inv={},
-            pubs_by_inv={},
-            anns_by_inv={},
-            study_count=1,
-            assay_count=0,
-        )
+    async def mock_fetch_related(db: Database, investigation_ids: list[str]) -> RelatedDataBatch:
+        _ = (db, investigation_ids)
+        return _empty_related_batch()
 
-    monkeypatch.setattr("middleware.sql_to_arc.processor._fetch_and_group_related_data", mock_fetch_related)
+    monkeypatch.setattr("middleware.sql_to_arc.pipeline._fetch_and_group_related_data", mock_fetch_related)
 
     mock_client = AsyncMock(spec=ApiClient)
+
+    async def mock_harvest_arcs(
+        *,
+        rdi: str,
+        arcs: AsyncIterator[RoCrateContent],
+        expected_datasets: int | None = None,
+    ) -> HarvestResult:
+        await _consume_arcs(arcs)
+        assert expected_datasets == 2  # noqa: PLR2004
+        return _harvest_ok(rdi=rdi)
+
+    mock_client.harvest_arcs.side_effect = mock_harvest_arcs
+
     mock_config = MagicMock(spec=Config)
     mock_config.configure_mock(
         max_concurrent_arc_builds=2,
@@ -390,8 +459,13 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
         max_assays=10000,
     )
 
-    async def mock_process_inv(*_args: Any, **_kwargs: Any) -> None:
-        pass
+    async def mock_process_inv(
+        ctx: WorkerContext,
+        investigation: InvestigationRow,
+        inv_info: str,
+        res: WorkerResources,
+    ) -> None:
+        _ = (ctx, investigation, inv_info, res)
 
     monkeypatch.setattr("middleware.sql_to_arc.processor.process_investigation", mock_process_inv)
 
@@ -400,10 +474,322 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     assert isinstance(report, HarvestReport)
     assert len(report.repository_reports) == 1
     assert report.repository_reports[0].expected_datasets == 2  # noqa: PLR2004
+    assert report.repository_reports[0].harvest_id == "harvest-1"
+    mock_client.harvest_arcs.assert_called_once()
     mock_db.stream_investigations.assert_called()
     call_kwargs = mock_db.stream_investigations.call_args.kwargs
     assert isinstance(call_kwargs["scope"], RepositoryScope)
     assert call_kwargs["limit"] == 10  # noqa: PLR2004
+    mock_client.create_or_update_arc.assert_not_called()
+
+
+def test_enqueue_queue_sentinel_does_not_block_on_full_queue() -> None:
+    """Abort-path sentinel must displace items instead of blocking."""
+    queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue(maxsize=1)
+    queue.put_nowait(
+        BuiltArc(
+            arc_payload={"identifier": "full-1"},
+            investigation_id="full-1",
+            inv_info="Inv",
+            composition=CompositionCounts(studies=0, assays=0),
+        )
+    )
+    displaced = enqueue_queue_sentinel(queue)
+    assert len(displaced) == 1
+    assert displaced[0].investigation_id == "full-1"
+    assert queue.get_nowait() is None
+
+
+def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> None:
+    """Unattributed errors become repository issues; other submits still record harvested."""
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    state = ArcStreamState()
+    state.submitted_ids.append("ok-1")
+    state.compositions["ok-1"] = CompositionCounts(studies=1, assays=0)
+    state.arc_id_to_investigation["ok-1"] = "ok-1"
+
+    _apply_upload_outcomes(
+        [
+            HarvestError(
+                arc_id=None,
+                error_type=HarvestErrorType.SUBMISSION_FAILED,
+                message="mystery",
+            )
+        ],
+        state,
+        scope,
+    )
+    report.finish()
+
+    entry = report.repository_reports[0]
+    # ok-1 has no matching error → still harvested
+    assert entry.harvested_datasets == 1
+    assert entry.failed_datasets == 0
+    assert entry.total_studies == 1
+    assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
+
+
+def test_apply_upload_outcomes_unmapped_arc_id_is_repository_issue() -> None:
+    """Unknown arc_id becomes repository issue; the actual inv is still harvested."""
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    state = ArcStreamState()
+    state.submitted_ids.append("inv-1")
+    state.compositions["inv-1"] = CompositionCounts(studies=2, assays=1)
+    state.arc_id_to_investigation["inv-1"] = "inv-1"
+
+    _apply_upload_outcomes(
+        [
+            HarvestError(
+                arc_id="foreign-arc-id",
+                error_type=HarvestErrorType.SUBMISSION_FAILED,
+                message="not in map",
+            )
+        ],
+        state,
+        scope,
+    )
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.harvested_datasets == 1
+    assert entry.failed_datasets == 0
+    assert all(f.record_id is None for f in entry.failures)
+    assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
+
+
+def test_apply_upload_outcomes_mixed_attributed_and_unattributed() -> None:
+    """Attributed fails record_failed; unattributed becomes repository issue; rest harvested."""
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    state = ArcStreamState()
+    state.submitted_ids.extend(["bad-1", "ok-2"])
+    for inv_id in ("bad-1", "ok-2"):
+        state.arc_id_to_investigation[inv_id] = inv_id
+        state.compositions[inv_id] = CompositionCounts(studies=1, assays=0)
+
+    _apply_upload_outcomes(
+        [
+            HarvestError(
+                arc_id="bad-1",
+                error_type=HarvestErrorType.SUBMISSION_FAILED,
+                message="known bad",
+            ),
+            HarvestError(
+                arc_id=None,
+                error_type=HarvestErrorType.SUBMISSION_FAILED,
+                message="mystery",
+            ),
+        ],
+        state,
+        scope,
+    )
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.harvested_datasets == 1  # ok-2
+    assert entry.failed_datasets == 1  # bad-1
+    by_id = {f.record_id: f.message for f in entry.failures if f.record_id is not None}
+    assert by_id["bad-1"] == "known bad"
+    assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
+
+
+@pytest.mark.asyncio
+async def test_process_investigations_records_harvest_item_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Per-item harvest errors must record_failed; remaining submits record_harvested."""
+    mock_db = MagicMock()
+    mock_db.count_investigations = AsyncMock(return_value=2)
+
+    async def mock_gen(
+        scope: RepositoryScope | None = None,
+        limit: int | None = None,
+    ) -> AsyncGenerator[InvestigationRow, None]:
+        _ = (scope, limit)
+        for item in (
+            InvestigationRow(identifier="ok-1", title="T1", description_text="D1"),
+            InvestigationRow(identifier="bad-1", title="T2", description_text="D2"),
+        ):
+            yield item
+
+    mock_db.stream_investigations.side_effect = mock_gen
+
+    async def mock_fetch_related(db: Database, investigation_ids: list[str]) -> RelatedDataBatch:
+        _ = (db, investigation_ids)
+        return RelatedDataBatch(
+            studies_by_inv={
+                "ok-1": [StudyRow(identifier="s1", investigation_ref="ok-1", title="S")],
+                "bad-1": [StudyRow(identifier="s2", investigation_ref="bad-1", title="S")],
+            },
+            assays_by_inv={
+                "ok-1": [
+                    AssayRow(
+                        identifier="a1",
+                        investigation_ref="ok-1",
+                        study_ref=["s1"],
+                    )
+                ],
+                "bad-1": [],
+            },
+            contacts_by_inv={},
+            pubs_by_inv={},
+            anns_by_inv={},
+            study_count=2,
+            assay_count=1,
+        )
+
+    monkeypatch.setattr("middleware.sql_to_arc.pipeline._fetch_and_group_related_data", mock_fetch_related)
+
+    async def mock_process_inv(
+        _ctx: WorkerContext,
+        investigation: InvestigationRow,
+        inv_info: str,
+        res: WorkerResources,
+    ) -> None:
+        inv_id = str(investigation.identifier)
+        await res.built_queue.put(
+            BuiltArc(
+                arc_payload={"identifier": inv_id},
+                investigation_id=inv_id,
+                inv_info=inv_info,
+                composition=CompositionCounts(studies=1, assays=0),
+            )
+        )
+
+    monkeypatch.setattr("middleware.sql_to_arc.processor.process_investigation", mock_process_inv)
+
+    mock_client = AsyncMock(spec=ApiClient)
+
+    async def mock_harvest_arcs(
+        *,
+        rdi: str,
+        arcs: AsyncIterator[RoCrateContent],
+        expected_datasets: int | None = None,
+    ) -> HarvestResult:
+        _ = expected_datasets
+        await _consume_arcs(arcs)
+        result = _harvest_ok(rdi=rdi)
+        return result.model_copy(
+            update={
+                "errors": [
+                    HarvestError(
+                        arc_id="bad-1",
+                        error_type=HarvestErrorType.SUBMISSION_FAILED,
+                        message="nope",
+                    )
+                ]
+            }
+        )
+
+    mock_client.harvest_arcs.side_effect = mock_harvest_arcs
+
+    mock_config = MagicMock(spec=Config)
+    mock_config.configure_mock(
+        max_concurrent_arc_builds=2,
+        max_concurrent_tasks=4,
+        db_batch_size=10,
+        rdi="test",
+        debug_limit=None,
+        arc_generation_timeout_minutes=30,
+        max_studies=5000,
+        max_assays=10000,
+    )
+
+    report = await process_investigations(mock_db, mock_client, mock_config)
+    entry = report.repository_reports[0]
+    assert entry.harvest_id == "harvest-1"
+    assert entry.harvested_datasets == 1
+    assert entry.failed_datasets == 1
+    assert entry.failures[0].record_id == "bad-1"
+    assert entry.total_studies == 1
+    mock_client.create_or_update_arc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_investigations_aborted_harvest_records_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catastrophic harvest_arcs failure must fail submitted investigations without legacy fallback."""
+    mock_db = MagicMock()
+    mock_db.count_investigations = AsyncMock(return_value=1)
+
+    async def mock_gen(
+        scope: RepositoryScope | None = None,
+        limit: int | None = None,
+    ) -> AsyncGenerator[InvestigationRow, None]:
+        _ = (scope, limit)
+        yield InvestigationRow(identifier="inv-x", title="T1", description_text="D1")
+
+    mock_db.stream_investigations.side_effect = mock_gen
+
+    async def mock_fetch_related(db: Database, investigation_ids: list[str]) -> RelatedDataBatch:
+        _ = (db, investigation_ids)
+        return RelatedDataBatch(
+            studies_by_inv={},
+            assays_by_inv={},
+            contacts_by_inv={},
+            pubs_by_inv={},
+            anns_by_inv={},
+            study_count=0,
+            assay_count=0,
+        )
+
+    monkeypatch.setattr("middleware.sql_to_arc.pipeline._fetch_and_group_related_data", mock_fetch_related)
+
+    async def mock_process_inv(
+        _ctx: WorkerContext,
+        investigation: InvestigationRow,
+        inv_info: str,
+        res: WorkerResources,
+    ) -> None:
+        inv_id = str(investigation.identifier)
+        await res.built_queue.put(
+            BuiltArc(
+                arc_payload={"identifier": inv_id},
+                investigation_id=inv_id,
+                inv_info=inv_info,
+                composition=CompositionCounts(studies=0, assays=0),
+            )
+        )
+
+    monkeypatch.setattr("middleware.sql_to_arc.processor.process_investigation", mock_process_inv)
+
+    mock_client = AsyncMock(spec=ApiClient)
+
+    async def mock_harvest_arcs(
+        *,
+        rdi: str,
+        arcs: AsyncIterator[RoCrateContent],
+        expected_datasets: int | None = None,
+    ) -> HarvestResult:
+        _ = rdi
+        _ = expected_datasets
+        await _consume_arcs(arcs)
+        raise ApiClientError("nope")
+
+    mock_client.harvest_arcs.side_effect = mock_harvest_arcs
+
+    mock_config = MagicMock(spec=Config)
+    mock_config.configure_mock(
+        max_concurrent_arc_builds=1,
+        max_concurrent_tasks=2,
+        db_batch_size=10,
+        rdi="test",
+        debug_limit=None,
+        arc_generation_timeout_minutes=30,
+        max_studies=5000,
+        max_assays=10000,
+    )
+
+    report = await process_investigations(mock_db, mock_client, mock_config)
+    entry = report.repository_reports[0]
+    assert entry.harvested_datasets == 0
+    assert entry.failed_datasets == 1
+    assert entry.failures[0].record_id == "inv-x"
+    assert "Harvest upload failed" in entry.failures[0].message
+    mock_client.create_or_update_arc.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -1,11 +1,14 @@
 """FAIRagro Middleware API configuration module."""
 
-from typing import Annotated, Any
+from __future__ import annotations
+
+from typing import Annotated
 
 from pydantic import Field, SecretStr, model_validator
 
 from middleware.api_client.config import Config as ApiClientConfig
 from middleware.shared.config.config_base import ConfigBase
+from middleware.shared.json_types import JsonObject, JsonValue
 
 
 class Config(ConfigBase):
@@ -64,13 +67,30 @@ class Config(ConfigBase):
     ] = 30
     api_client: Annotated[ApiClientConfig, Field(description="API Client configuration")]
 
+    @staticmethod
+    def _as_positive_int(value: JsonValue | int, fallback: int) -> int:
+        # bool is a subclass of int (True == 1); reject before the int path.
+        if isinstance(value, bool):
+            return fallback
+        if isinstance(value, (int, float, str)):
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                return fallback
+            if parsed >= 1:
+                return parsed
+        return fallback
+
     @model_validator(mode="before")
     @classmethod
-    def set_default_max_concurrent_tasks(cls, data: Any) -> Any:
+    def set_default_max_concurrent_tasks(cls, data: JsonObject | Config) -> JsonObject | Config:
         """Set default max_concurrent_tasks if not provided."""
         if isinstance(data, dict) and ("max_concurrent_tasks" not in data or data["max_concurrent_tasks"] is None):
             field_info = cls.model_fields.get("max_concurrent_arc_builds")
             default_max_builds = getattr(field_info, "default", 5)
-            max_builds = data.get("max_concurrent_arc_builds", default_max_builds)
-            data["max_concurrent_tasks"] = int(max_builds) * 4
+            max_builds = cls._as_positive_int(
+                data.get("max_concurrent_arc_builds", default_max_builds),
+                int(default_max_builds),
+            )
+            data["max_concurrent_tasks"] = max_builds * 4
         return data

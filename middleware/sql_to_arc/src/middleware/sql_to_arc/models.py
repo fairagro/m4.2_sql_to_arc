@@ -7,11 +7,13 @@ from typing import Any, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, Json, model_validator
 from pydantic_core import PydanticUndefined
 
-# JSON types representing the expected structure after parsing
-type JsonList = list[Any]
+from middleware.shared.json_types import JsonValue
+
+# JSON array values as stored/parsed for Json[T] view fields
+type JsonList = list[JsonValue]
 
 
-def _is_plain_study_ref_string(value: Any) -> bool:
+def _is_plain_study_ref_string(value: JsonValue) -> bool:
     """Return whether study_ref is a single ID string, not a JSON array per view spec."""
     if value is None or not isinstance(value, str):
         return False
@@ -19,14 +21,14 @@ def _is_plain_study_ref_string(value: Any) -> bool:
     return bool(stripped) and stripped[0] not in "[{"
 
 
-def _coerce_parsed_json_to_string(value: Any) -> Any:
+def _coerce_parsed_json_to_string(value: JsonValue) -> JsonValue:
     """Serialize native JSON (list/dict) from DB drivers for Json[T] fields."""
     if isinstance(value, (list, dict)):
         return json.dumps(value)
     return value
 
 
-def _coerce_json_array_string(value: Any) -> Any:
+def _coerce_json_array_string(value: JsonValue) -> JsonValue:
     """Wrap a plain identifier as a JSON array string for Json[JsonList] fields."""
     if value is None or not isinstance(value, str):
         return value
@@ -43,7 +45,11 @@ def spec_field(
     default: Any = PydanticUndefined,
     **kwargs: Any,
 ) -> Any:
-    """Define database-mapped fields with ARC spec metadata."""
+    """Define database-mapped fields with ARC spec metadata.
+
+    ``Any`` is required here: Pydantic ``Field()`` accepts heterogeneous kwargs and
+    is used as a field specifier in annotations (not a concrete ``FieldInfo`` value).
+    """
     # We store the explicitly provided value (True, False, or None)
     # The model validator will infer the value if it stays None
     return Field(

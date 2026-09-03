@@ -1,12 +1,4 @@
-# API Upload
-
-## Purpose
-
-Publish finished ARC RO-Crate JSON-LD documents to the FAIRagro
-Middleware API. Upload is the final I/O step of a conversion run and is
-the only operation that reaches outside the local machine at runtime.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Upload Via ApiClient
 
@@ -66,13 +58,7 @@ repository scope.
 - **AND** failed is recorded once per per-item error
 - **AND** the harvest id from the result is set on the repository scope when present
 
-#### Scenario: Unattributed per-item harvest error
-
-- **GIVEN** ARCs were submitted and the harvest result includes a per-item
-  error with a missing or unmapped `arc_id`
-- **WHEN** upload outcomes are applied
-- **THEN** a repository issue is recorded for the unattributed error
-- **AND** investigations without a matching per-item error are still recorded as harvested
+## ADDED Requirements
 
 ### Requirement: Built ARCs Feed The Harvest Stream
 
@@ -86,58 +72,3 @@ results MUST NOT be submitted into the harvest.
 - **WHEN** the harvest stream is produced
 - **THEN** that investigation is recorded as failed on the repository scope
 - **AND** no ARC payload for it is yielded to `harvest_arcs`
-
-### Requirement: Per-Investigation Upload Logging
-
-The system MUST log per-investigation upload progress when an ARC enters the
-harvest stream, and MUST log overall harvest completion (or failure) for the
-run. Logging MUST reflect harvest-session outcomes, not a separate
-per-investigation upload RPC.
-
-#### Scenario: ARC queued for harvest
-
-- **GIVEN** an investigation built successfully
-- **WHEN** its ARC payload is yielded into `harvest_arcs`
-- **THEN** an INFO log is written for that investigation
-
-#### Scenario: Harvest finished
-
-- **GIVEN** `harvest_arcs` returns a result
-- **WHEN** outcomes have been applied
-- **THEN** an INFO log summarizes the harvest id and submitted/error counts
-
-### Requirement: Reuse ApiClient Instance
-
-The system MUST reuse the same `ApiClient` instance across all uploads
-within a run. Connection details come from `ApiClientConfig`
-(`config.api_client`); the converter MUST NOT reinterpret those values.
-
-#### Scenario: Many uploads in one run
-
-- **GIVEN** dozens of investigations succeed builds
-- **WHEN** each is uploaded
-- **THEN** they share one `ApiClient` instance for the run
-
-### Requirement: No Startup Connectivity Pre-Check
-
-If the API is unreachable at startup, the first upload attempt MUST fail
-normally; the converter MUST NOT pre-check connectivity.
-
-#### Scenario: API down at start
-
-- **GIVEN** the Middleware API is unreachable when the converter starts
-- **WHEN** the first upload is attempted
-- **THEN** that attempt fails and is recorded
-- **AND** no separate pre-flight connectivity check ran
-
-### Requirement: Skip Upload When Build Returned Nothing
-
-If `arc_json` is `None` (build returned nothing), the system MUST log an
-error, mark the investigation failed, and skip the upload entirely.
-
-#### Scenario: Empty build result
-
-- **GIVEN** the worker returned `None` for `arc_json`
-- **WHEN** the upload step is reached
-- **THEN** no API call is made
-- **AND** the investigation is marked failed with an error log

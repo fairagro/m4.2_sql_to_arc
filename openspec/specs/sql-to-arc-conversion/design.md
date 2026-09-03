@@ -35,9 +35,18 @@ Main process (async event loop)
    in a worker process.
 6. The worker builds the ARC, serializes it to a JSON-LD string, calls
    `gc.collect()`, and returns the string.
-7. The main process uploads the JSON string to the API; no ARC object
-   crosses the process boundary.
-8. `ProcessingStats` is updated atomically per investigation.
+7. Successfully built payloads are validated and enqueued; an async
+   generator feeds them into `ApiClient.harvest_arcs` (one harvest per RDI
+   run). Build failures never enter the stream.
+8. After `harvest_arcs` returns, the repository scope is updated from
+   harvest outcomes (`HarvestReport` / `RepositoryScope`).
+
+## Module Split
+
+- `processor.py` keeps investigation-level build semantics and harvest outcome
+  application.
+- `pipeline.py` owns technical plumbing: queue management, backpressure,
+  task lifecycle, DB-batch fan-out, and queue draining on abort.
 
 ## Key Decisions
 
@@ -46,10 +55,11 @@ Main process (async event loop)
    true parallelism with threads. Separate OS processes give each worker
    a dedicated core.
 
-2. **Semaphore scope wraps the full lifecycle (data → build → upload)**
+2. **Semaphore scope wraps the build lifecycle (data → build → enqueue)**
    — A narrower scope (e.g. only around the CPU step) would let the event
    loop queue thousands of "waiting" tasks, each holding its DB rows in RAM.
-   The semaphore prevents the backlog from growing unboundedly.
+   The semaphore prevents the backlog from growing unboundedly. Upload runs
+   as one `harvest_arcs` call consuming the build queue in parallel.
 
 3. **IPC via JSON string, not pickled ARC object**
    — ARC objects carry .NET interop state that does not survive pickling
@@ -61,8 +71,8 @@ Main process (async event loop)
    One bulk `ANY()` query per entity type per batch keeps DB load constant.
 
 5. **`max_concurrent_tasks` defaults to 4 × `max_concurrent_arc_builds`**
-   — While `k` workers build ARCs, the remaining slots keep the HTTP
-   upload pipeline busy without overloading RAM.
+   — While `k` workers build ARCs, extra task slots keep the queue fed so
+   `harvest_arcs` can submit without stalling behind a single build wave.
 
 6. **Schema validation before the loop starts**
    — Fail fast with a clear diagnostic if the DB schema doesn't match

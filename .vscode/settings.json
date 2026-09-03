@@ -34,11 +34,12 @@
     "${workspaceFolder}/pyproject.toml"
   ],
 
-  // Ruff Extension Settings - ensure consistency with pyproject.toml
-  "ruff.configuration": "./pyproject.toml",
-  "ruff.path": ["uv", "run", "ruff"],
+  // Ruff: same binary as `uv run ruff` / pre-commit / CI (see openspec/specs/tooling-consistency).
+  // Prefer the workspace venv executable — do not mix bundled Ruff with `uv run` argv.
+  "ruff.configuration": "${workspaceFolder}/pyproject.toml",
+  "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"],
   "ruff.importStrategy": "fromEnvironment",
-  "ruff.lint.preview": true,
+  // preview is already set in pyproject.toml [tool.ruff]; do not override per-editor.
 
   // Pylint Extension Settings
   "pylint.args": [

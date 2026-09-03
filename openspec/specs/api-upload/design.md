@@ -2,39 +2,51 @@
 
 ## API Contract
 
-The converter calls `ApiClient.create_or_update_arc(rdi, arc_dict)` from
-`processor.py`. The exact HTTP endpoint, request/response shape, and
-authentication are fully encapsulated in the `middleware.api_client` shared
-library and are **not a concern of this component**.
+The converter calls `ApiClient.harvest_arcs(rdi, arcs, expected_datasets=…)`
+from `processor.py`. The client owns create → parallel submit → complete (or
+`fail_harvest` on catastrophic errors). Exact HTTP paths, request/response
+shapes, and authentication stay inside `middleware.api_client` and are **not
+a concern of this component**. Application code MUST NOT call
+`create_or_update_arc`.
 
 ## Lifecycle in the Converter
 
 ```text
-_upload_and_update_stats()
-  ├── json.loads(arc_json)         → arc_dict (re-parse for API client)
-  ├── ctx.client.create_or_update_arc(rdi, arc_dict)
-  └── on success: log INFO
-      on error:   stats.failed_datasets += 1
-                  stats.failed_ids.append(investigation_id)
+process_investigations()
+  ├── build workers enqueue BuiltArc (validated JSON) on a queue
+  ├── async generator yields ARC dicts into harvest_arcs
+  │     (ArcStreamState tracks investigation id + study/assay counts)
+  ├── client.harvest_arcs(rdi, stream, expected_datasets=…)
+  └── on HarvestResult:
+        set_harvest_id; record_failed per item error;
+        record_harvested + add_studies/add_assays for the rest
+      on catastrophic abort:
+        record_failed / repository issue for submitted items;
+        no create_or_update_arc fallback
 ```
 
 ## Key Decisions
 
-1. **JSON string → dict round-trip**
-   — The worker returns a JSON string (to keep IPC clean). The main process
-   parses it back to a dict for the API client. The overhead is negligible
-   and keeps the worker/main interface unambiguous.
+1. **`harvest_arcs`, not per-investigation create/update**
+   — Aligns with the shared Middleware harvester. The client owns parallel
+   submit, retries, and per-item vs catastrophic error classification.
 
-2. **Single `ApiClient` for the entire run**
-   — `ApiClient` is used as an async context manager in `main.py`.
-   Connection pooling amortises TLS handshake cost across all uploads.
+2. **JSON string → dict at enqueue / stream boundary**
+   — Workers return a JSON string (clean IPC). The main process validates
+   and parses before enqueue so invalid JSON never enters the harvest
+   stream.
 
-3. **OpenTelemetry span per upload**
-   — Each upload is wrapped in a `tracer.start_as_current_span("upload_arc")`
-   span with `rdi`, `worker_id`, and `investigation_id` attributes. This
-   makes per-investigation latency visible in any OTel-compatible backend.
+3. **Single `ApiClient` for the entire run**
+   — `ApiClient` is used as an async context manager in `main.py`. One
+   harvest session covers the RDI run.
 
-4. **Error scope: `(ConnectionError, TimeoutError, ApiClientError)`**
-   — Only network-level and API-level errors are caught here. Programming
-   errors (e.g. bad JSON) propagate upward so they are visible in the run
-   report as unexpected failures.
+4. **OpenTelemetry span around harvest upload**
+   — The upload phase is wrapped in a `harvest_upload` span (plus existing
+   per-build spans). Finer per-ARC API spans, if any, live inside the client.
+
+5. **Outcome application after `harvest_arcs` returns**
+   — Scope updates (harvested / failed / composition / harvest id) are
+   applied from `HarvestResult.errors` and stream-state metadata, not
+   per-yield success callbacks. Errors without a mappable `arc_id` become
+   repository issues; investigations without a matching per-item error are
+   recorded as harvested.
