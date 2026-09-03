@@ -41,6 +41,13 @@ Main process (async event loop)
 8. After `harvest_arcs` returns, the repository scope is updated from
    harvest outcomes (`HarvestReport` / `RepositoryScope`).
 
+## Module Split
+
+- `processor.py` keeps investigation-level build semantics and harvest outcome
+  application.
+- `pipeline.py` owns technical plumbing: queue management, backpressure,
+  task lifecycle, DB-batch fan-out, and queue draining on abort.
+
 ## Key Decisions
 
 1. **ProcessPoolExecutor, not ThreadPoolExecutor**

@@ -26,8 +26,9 @@ from middleware.sql_to_arc.models import (
     PublicationRow,
     StudyRow,
 )
+from middleware.sql_to_arc.pipeline import BuiltArc, WorkerResources
 from middleware.sql_to_arc.process_pool import ProcessPoolHolder
-from middleware.sql_to_arc.processor import BuiltArc, WorkerResources, process_investigation
+from middleware.sql_to_arc.processor import process_investigation
 
 
 class MockExecutor(ThreadPoolExecutor):
@@ -326,6 +327,7 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
             pool_holder=pool_holder,
             semaphore=asyncio.Semaphore(1),
             built_queue=built_queue,
+            process_investigation=process_investigation,
         )
         for i, inv in enumerate(investigation_rows):
             inv_info = f"Investigation {i + 1}"
@@ -336,7 +338,7 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
     for _ in range(2):
         built = await built_queue.get()
         assert built is not None
-        payload = json.loads(built.arc_json)
+        payload = built.arc_payload
         assert isinstance(payload, dict)
         assert "@graph" in payload
     mock_api_client.harvest_arcs.assert_not_called()

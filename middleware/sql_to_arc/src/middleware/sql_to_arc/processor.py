@@ -7,10 +7,8 @@ import concurrent.futures
 import json
 import logging
 import multiprocessing
-from collections import defaultdict
-from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Protocol, TypeVar, cast
+from typing import cast
 
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
@@ -20,25 +18,20 @@ from middleware.shared.json_types import RoCrateContent
 from middleware.shared.report import HarvestReport, RepositoryScope
 from middleware.sql_to_arc.builder import DuplicateAssayRowError, DuplicateStudyRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
-from middleware.sql_to_arc.context import (
-    ArcBuildData,
-    RelatedDataBatch,
-    WorkerContext,
-)
+from middleware.sql_to_arc.context import ArcBuildData, WorkerContext
 from middleware.sql_to_arc.database import Database
 from middleware.sql_to_arc.models import InvestigationRow
+from middleware.sql_to_arc.pipeline import (
+    BuiltArc,
+    CompositionCounts,
+    WorkerResources,
+    drain_unsubmitted_arcs,
+    drive_builds,
+    stream_arcs_from_queue,
+)
 from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 
 logger = logging.getLogger(__name__)
-
-
-class _HasInvestigationRef(Protocol):
-    """Row models that can be grouped by investigation."""
-
-    investigation_ref: str
-
-
-TRow = TypeVar("TRow", bound=_HasInvestigationRef)
 
 
 def _apply_expected_datasets(scope: RepositoryScope, count: int | None, debug_limit: int | None) -> None:
@@ -47,25 +40,6 @@ def _apply_expected_datasets(scope: RepositoryScope, count: int | None, debug_li
         return
     expected = min(count, debug_limit) if isinstance(debug_limit, int) else count
     scope.set_expected_datasets(expected)
-
-
-@dataclass(frozen=True, slots=True)
-class CompositionCounts:
-    """Study/assay counts for one successfully built investigation."""
-
-    studies: int
-    assays: int
-
-
-@dataclass(frozen=True, slots=True)
-class BuiltArc:
-    """A successfully built ARC waiting to be submitted in the harvest stream."""
-
-    arc_json: str
-    arc_payload: RoCrateContent
-    investigation_id: str
-    inv_info: str
-    composition: CompositionCounts
 
 
 @dataclass
@@ -92,47 +66,21 @@ class ArcStreamState:
         self.arc_id_to_investigation.setdefault(built.investigation_id, built.investigation_id)
 
 
-def _investigation_id_for_error(state: ArcStreamState, arc_id: str | None) -> str | None:
-    """Resolve a harvest error arc_id to the investigation id used for reporting.
-
-    Returns ``None`` when ``arc_id`` is missing or not present in the stream
-    mapping so the caller treats it as unattributed instead of inventing a
-    record id that is not a known investigation.
-    """
-    if not isinstance(arc_id, str) or not arc_id:
-        return None
-    return state.arc_id_to_investigation.get(arc_id)
-
-
 def _apply_upload_outcomes(errors: list[HarvestError], state: ArcStreamState, scope: RepositoryScope) -> None:
-    """Apply harvest_arcs per-item errors and successes to the repository scope.
-
-    When any error cannot be mapped to a submitted investigation, remaining
-    submits (not already failed via an attributed error) are recorded as
-    failed rather than harvested: we cannot confirm which ARC succeeded, and
-    must not inflate harvested counts or leave submissions unaccounted.
-    """
+    """Apply harvest_arcs per-item errors and successes to the repository scope."""
     failed_ids: set[str] = set()
-    has_unattributed_error = False
     for err in errors:
-        record_id = _investigation_id_for_error(state, err.arc_id)
-        message = err.message
+        arc_id = err.arc_id
+        record_id = state.arc_id_to_investigation.get(arc_id) if isinstance(arc_id, str) and arc_id else None
         if record_id is None:
-            # Cannot attribute to a dataset; avoid a null dataset failure and keep applying peers.
-            scope.record_repository_issue(f"Unattributed harvest error: {message}")
-            has_unattributed_error = True
+            # Cannot attribute to a dataset — record as repository issue, not a dataset failure.
+            scope.record_repository_issue(f"Unattributed harvest error: {err.message}")
             continue
-        scope.record_failed(message, record_id=record_id)
+        scope.record_failed(err.message, record_id=record_id)
         failed_ids.add(record_id)
 
     for inv_id in state.submitted_ids:
         if inv_id in failed_ids:
-            continue
-        if has_unattributed_error:
-            scope.record_failed(
-                "Harvest reported unattributed error(s); cannot confirm upload success",
-                record_id=inv_id,
-            )
             continue
         scope.record_harvested()
         composition = state.compositions.get(inv_id)
@@ -157,66 +105,6 @@ def _apply_upload_aborted(
         scope.record_failed(detail, record_id=inv_id)
 
 
-def _fail_drained_queue(
-    built_queue: asyncio.Queue[BuiltArc | None],
-    scope: RepositoryScope,
-    detail: str,
-    *,
-    already_recorded: set[str],
-) -> None:
-    """Mark ARCs left on the build queue as failed after a harvest abort."""
-    while True:
-        try:
-            item = built_queue.get_nowait()
-        except asyncio.QueueEmpty:
-            break
-        if item is None:
-            continue
-        if item.investigation_id in already_recorded:
-            continue
-        scope.record_failed(detail, record_id=item.investigation_id)
-        already_recorded.add(item.investigation_id)
-
-
-def _enqueue_queue_sentinel(built_queue: asyncio.Queue[BuiltArc | None]) -> list[BuiltArc]:
-    """
-    Enqueue the end-of-stream sentinel without blocking (abort path only).
-
-    If the bounded queue is full because the harvest consumer stopped after an
-    abort, displace existing ``BuiltArc`` items so ``put_nowait(None)`` can
-    succeed and the build driver cannot deadlock waiting for queue space.
-
-    On the normal success path, use ``await built_queue.put(None)`` instead so
-    already-built ARCs are not dropped.
-    """
-    displaced: list[BuiltArc] = []
-    while True:
-        try:
-            built_queue.put_nowait(None)
-            return displaced
-        except asyncio.QueueFull:
-            try:
-                item = built_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                continue
-            if item is None:
-                # Sentinel already present; treat as closed.
-                return displaced
-            displaced.append(item)
-
-
-async def _close_built_queue(
-    built_queue: asyncio.Queue[BuiltArc | None],
-    *,
-    displace_if_full: bool,
-) -> list[BuiltArc]:
-    """Close the build queue with a sentinel; displace only when aborting."""
-    if displace_if_full:
-        return _enqueue_queue_sentinel(built_queue)
-    await built_queue.put(None)
-    return []
-
-
 def _built_arc_from_json(
     arc_json: str,
     *,
@@ -229,13 +117,7 @@ def _built_arc_from_json(
     try:
         payload = json.loads(arc_json)
     except json.JSONDecodeError as e:
-        logger.error(
-            "%s: Invalid ARC JSON for investigation %s: %s",
-            inv_info,
-            inv_id,
-            e,
-            exc_info=True,
-        )
+        logger.error("%s: Invalid ARC JSON for investigation %s: %s", inv_info, inv_id, e, exc_info=True)
         scope.record_failed(f"Invalid ARC JSON: {e}", record_id=inv_id)
         return None
     if not isinstance(payload, dict):
@@ -244,106 +126,11 @@ def _built_arc_from_json(
         return None
     logger.info("%s: ARC JSON created: size=%.2fKB", inv_info, len(arc_json.encode("utf-8")) / 1024)
     return BuiltArc(
-        arc_json=arc_json,
         arc_payload=cast(RoCrateContent, payload),
         investigation_id=inv_id,
         inv_info=inv_info,
         composition=composition,
     )
-
-
-def _record_duplicate_entity_failure(
-    exc: DuplicateAssayRowError | DuplicateStudyRowError,
-    *,
-    inv_info: str,
-    inv_id: str,
-    scope: RepositoryScope,
-) -> None:
-    """Record a conflicting duplicate study/assay row as a failed investigation."""
-    if isinstance(exc, DuplicateAssayRowError):
-        fields = ", ".join(exc.fields)
-        logger.error(
-            "%s: Conflicting duplicate vAssay rows for assay %s (fields: %s) in investigation %s",
-            inv_info,
-            exc.assay_id,
-            fields,
-            inv_id,
-        )
-        scope.record_failed(
-            f"Conflicting duplicate vAssay rows for assay {exc.assay_id} (fields: {fields})",
-            record_id=inv_id,
-        )
-        return
-
-    fields = ", ".join(exc.fields)
-    logger.error(
-        "%s: Conflicting duplicate vStudy rows for study %s (fields: %s) in investigation %s",
-        inv_info,
-        exc.study_id,
-        fields,
-        inv_id,
-    )
-    scope.record_failed(
-        f"Conflicting duplicate vStudy rows for study {exc.study_id} (fields: {fields})",
-        record_id=inv_id,
-    )
-
-
-async def _execute_arc_build(
-    ctx: WorkerContext,
-    build_data: ArcBuildData,
-    *,
-    inv_id: str,
-    inv_info: str,
-    scope: RepositoryScope,
-) -> BuiltArc | None:
-    """Run the process-pool build and map known failures onto ``scope``."""
-    loop = asyncio.get_running_loop()
-    executor = ctx.pool_holder.get_executor()
-    try:
-        arc_json = await asyncio.wait_for(
-            loop.run_in_executor(executor, build_single_arc_task, build_data),
-            timeout=getattr(ctx, "arc_generation_timeout_minutes", 30) * 60,
-        )
-
-        if arc_json is None:
-            logger.error("%s: Build returned None for investigation %s", inv_info, inv_id)
-            scope.record_failed("Build returned no ARC JSON", record_id=inv_id)
-            return None
-
-        return _built_arc_from_json(
-            arc_json,
-            inv_id=inv_id,
-            inv_info=inv_info,
-            composition=CompositionCounts(
-                studies=len(build_data.studies),
-                assays=len(build_data.assays),
-            ),
-            scope=scope,
-        )
-
-    except TimeoutError:
-        logger.error("%s: ARC generation timed out for investigation %s", inv_info, inv_id)
-        scope.record_failed("ARC generation timed out", record_id=inv_id)
-    except (DuplicateAssayRowError, DuplicateStudyRowError) as e:
-        _record_duplicate_entity_failure(e, inv_info=inv_info, inv_id=inv_id, scope=scope)
-    except concurrent.futures.BrokenExecutor as e:
-        logger.error(
-            "%s: Worker process died while building investigation %s "
-            "(likely OOM or crash in arctrl; process pool was reset): %s",
-            inv_info,
-            inv_id,
-            e,
-            exc_info=True,
-        )
-        ctx.pool_holder.recreate(executor)
-        scope.record_failed(f"Worker process died: {e}", record_id=inv_id)
-    except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
-        # arctrl often raises bare Exception (e.g. duplicate study names); keep the run going.
-        # asyncio.CancelledError is BaseException (3.8+) and is not caught here.
-        logger.error("%s: Failed to build ARC for investigation %s: %s", inv_info, inv_id, e, exc_info=True)
-        scope.record_failed(f"Build failed: {e}", record_id=inv_id)
-    return None
 
 
 async def _build_single_arc(
@@ -354,8 +141,7 @@ async def _build_single_arc(
     inv_info: str,
     semaphore: asyncio.Semaphore,
 ) -> BuiltArc | None:
-    """
-    Build one ARC in the process pool.
+    """Build one ARC in the process pool.
 
     Returns a ``BuiltArc`` on success. Build/skip failures are recorded on
     ``scope`` and return ``None`` so they never enter the harvest stream.
@@ -388,7 +174,9 @@ async def _build_single_arc(
 
         if assays and not studies:
             logger.warning(
-                "%s: Investigation %s has assays but no studies. This is allowed but unusual.", inv_info, inv_id
+                "%s: Investigation %s has assays but no studies. This is allowed but unusual.",
+                inv_info,
+                inv_id,
             )
 
         build_data = ArcBuildData(
@@ -399,26 +187,72 @@ async def _build_single_arc(
             publications=ctx.pubs_by_inv.get(inv_id, []),
             annotations=ctx.anns_by_inv.get(inv_id, []),
         )
-        return await _execute_arc_build(
-            ctx,
-            build_data,
-            inv_id=inv_id,
-            inv_info=inv_info,
-            scope=scope,
-        )
 
-
-@dataclass(slots=True)
-class WorkerResources:
-    """Orchestration resources shared across investigation tasks."""
-
-    client: ApiClient
-    config: Config
-    scope: RepositoryScope
-    pool_holder: ProcessPoolHolder
-    semaphore: asyncio.Semaphore
-    built_queue: asyncio.Queue[BuiltArc | None]
-    displaced_arcs: list[BuiltArc] = field(default_factory=list)
+        loop = asyncio.get_running_loop()
+        executor = ctx.pool_holder.get_executor()
+        try:
+            arc_json = await asyncio.wait_for(
+                loop.run_in_executor(executor, build_single_arc_task, build_data),
+                timeout=getattr(ctx, "arc_generation_timeout_minutes", 30) * 60,
+            )
+            if arc_json is None:
+                logger.error("%s: Build returned None for investigation %s", inv_info, inv_id)
+                scope.record_failed("Build returned no ARC JSON", record_id=inv_id)
+                return None
+            return _built_arc_from_json(
+                arc_json,
+                inv_id=inv_id,
+                inv_info=inv_info,
+                composition=CompositionCounts(studies=len(studies), assays=len(assays)),
+                scope=scope,
+            )
+        except TimeoutError:
+            logger.error("%s: ARC generation timed out for investigation %s", inv_info, inv_id)
+            scope.record_failed("ARC generation timed out", record_id=inv_id)
+        except (DuplicateAssayRowError, DuplicateStudyRowError) as e:
+            if isinstance(e, DuplicateAssayRowError):
+                fields = ", ".join(e.fields)
+                logger.error(
+                    "%s: Conflicting duplicate vAssay rows for assay %s (fields: %s) in investigation %s",
+                    inv_info,
+                    e.assay_id,
+                    fields,
+                    inv_id,
+                )
+                scope.record_failed(
+                    f"Conflicting duplicate vAssay rows for assay {e.assay_id} (fields: {fields})",
+                    record_id=inv_id,
+                )
+            else:
+                fields = ", ".join(e.fields)
+                logger.error(
+                    "%s: Conflicting duplicate vStudy rows for study %s (fields: %s) in investigation %s",
+                    inv_info,
+                    e.study_id,
+                    fields,
+                    inv_id,
+                )
+                scope.record_failed(
+                    f"Conflicting duplicate vStudy rows for study {e.study_id} (fields: {fields})",
+                    record_id=inv_id,
+                )
+        except concurrent.futures.BrokenExecutor as e:
+            logger.error(
+                "%s: Worker process died while building investigation %s "
+                "(likely OOM or crash in arctrl; process pool was reset): %s",
+                inv_info,
+                inv_id,
+                e,
+                exc_info=True,
+            )
+            ctx.pool_holder.recreate(executor)
+            scope.record_failed(f"Worker process died: {e}", record_id=inv_id)
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+            # arctrl often raises bare Exception (e.g. duplicate study names); keep the run going.
+            # asyncio.CancelledError is BaseException (3.8+) and is not caught here.
+            logger.error("%s: Failed to build ARC for investigation %s: %s", inv_info, inv_id, e, exc_info=True)
+            scope.record_failed(f"Build failed: {e}", record_id=inv_id)
+        return None
 
 
 async def process_investigation(
@@ -430,9 +264,6 @@ async def process_investigation(
     """Build a single investigation and enqueue it for harvest upload."""
     tracer = trace.get_tracer(__name__)
     inv_id = str(investigation.identifier)
-    scope = res.scope
-    semaphore = res.semaphore
-    built_queue = res.built_queue
 
     with tracer.start_as_current_span(
         "build_investigation",
@@ -443,210 +274,15 @@ async def process_investigation(
             built = await _build_single_arc(
                 ctx,
                 investigation,
-                scope=scope,
+                scope=res.scope,
                 inv_info=inv_info,
-                semaphore=semaphore,
+                semaphore=res.semaphore,
             )
             if built is not None:
-                await built_queue.put(built)
+                await res.built_queue.put(built)
         except asyncio.CancelledError:
-            scope.record_failed("Build cancelled after harvest abort", record_id=inv_id)
+            res.scope.record_failed("Build cancelled after harvest abort", record_id=inv_id)
             raise
-
-
-async def _fetch_and_group_related_data(db: Database, investigation_ids: list[str]) -> RelatedDataBatch:
-    """Fetch related data in bulk and group by investigation ID."""
-    logger.info("Fetching related data (studies, assays, contacts, etc.)...")
-
-    async def group_stream(
-        gen: AsyncGenerator[TRow, None],
-    ) -> tuple[dict[str, list[TRow]], int]:
-        """Consume an async generator and group items by investigation reference."""
-        m: dict[str, list[TRow]] = defaultdict(list)
-        count = 0
-        async for r in gen:
-            m[str(r.investigation_ref)].append(r)
-            count += 1
-        return dict(m), count
-
-    studies_by_inv, study_count = await group_stream(db.stream_studies(investigation_ids))
-    assays_by_inv, assay_count = await group_stream(db.stream_assays(investigation_ids))
-    contacts_by_inv, _ = await group_stream(db.stream_contacts(investigation_ids))
-    pubs_by_inv, _ = await group_stream(db.stream_publications(investigation_ids))
-    anns_by_inv, _ = await group_stream(db.stream_annotation_tables(investigation_ids))
-
-    return RelatedDataBatch(
-        studies_by_inv=studies_by_inv,
-        assays_by_inv=assays_by_inv,
-        contacts_by_inv=contacts_by_inv,
-        pubs_by_inv=pubs_by_inv,
-        anns_by_inv=anns_by_inv,
-        study_count=study_count,
-        assay_count=assay_count,
-    )
-
-
-def _spawn_investigation_task(
-    investigation: InvestigationRow,
-    idx: int,
-    batch_data: RelatedDataBatch,
-    res: WorkerResources,
-    running_tasks: set[asyncio.Task[None]],
-) -> None:
-    """Create worker context and spawn a processing task."""
-    ctx = WorkerContext(
-        client=res.client,
-        rdi=res.config.rdi,
-        studies_by_inv=batch_data.studies_by_inv,
-        assays_by_inv=batch_data.assays_by_inv,
-        contacts_by_inv=batch_data.contacts_by_inv,
-        pubs_by_inv=batch_data.pubs_by_inv,
-        anns_by_inv=batch_data.anns_by_inv,
-        worker_id=idx % res.config.max_concurrent_arc_builds,
-        total_workers=res.config.max_concurrent_arc_builds,
-        pool_holder=res.pool_holder,
-        arc_generation_timeout_minutes=res.config.arc_generation_timeout_minutes,
-        max_studies=res.config.max_studies,
-        max_assays=res.config.max_assays,
-    )
-
-    inv_info = f"Investigation {idx}"
-    task = asyncio.create_task(process_investigation(ctx, investigation, inv_info, res))
-    running_tasks.add(task)
-
-    def _on_task_done(done: asyncio.Task[None]) -> None:
-        running_tasks.discard(done)
-        if done.cancelled():
-            return
-        exc = done.exception()
-        if exc is not None:
-            # Should be rare: process_investigation is expected to swallow per-investigation failures.
-            logger.error("%s: Unhandled task failure: %s", inv_info, exc, exc_info=exc)
-
-    task.add_done_callback(_on_task_done)
-
-
-async def _cancel_running_builds(running_tasks: set[asyncio.Task[None]]) -> None:
-    """Cancel outstanding investigation build tasks and wait for them to finish."""
-    if not running_tasks:
-        return
-    for task in running_tasks:
-        task.cancel()
-    await asyncio.gather(*running_tasks, return_exceptions=True)
-    running_tasks.clear()
-
-
-async def _wait_for_build_slot(
-    running_tasks: set[asyncio.Task[None]],
-    max_concurrent_tasks: int,
-) -> None:
-    """Block until fewer than ``max_concurrent_tasks`` builds are in flight.
-
-    Snapshots the task set before ``asyncio.wait`` so a done-callback that
-    empties ``running_tasks`` between the length check and the wait cannot
-    raise ``ValueError: Set of Tasks/Futures is empty``.
-    """
-    while len(running_tasks) >= max_concurrent_tasks:
-        pending = set(running_tasks)
-        if not pending:
-            break
-        await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-
-
-async def _finalize_drive_builds(
-    investigation_gen: AsyncGenerator[InvestigationRow, None],
-    running_tasks: set[asyncio.Task[None]],
-    res: WorkerResources,
-) -> None:
-    """Close the DB stream, cancel leftover builds, and close the build queue."""
-    try:
-        await investigation_gen.aclose()
-    finally:
-        # Always cancel builds and close the queue, even if aclose() raised —
-        # otherwise harvest_arcs can wait forever for the end-of-stream sentinel.
-        current = asyncio.current_task()
-        aborting = current is not None and current.cancelling() > 0
-        if aborting:
-            # Abort path: enqueue the sentinel synchronously first. An ``await``
-            # here can raise CancelledError before the body runs and leave the
-            # harvest consumer blocked without an end-of-stream marker.
-            res.displaced_arcs.extend(_enqueue_queue_sentinel(res.built_queue))
-            await _cancel_running_builds(running_tasks)
-        else:
-            await _cancel_running_builds(running_tasks)
-            # Success path: block until there is room so built ARCs are not dropped.
-            res.displaced_arcs.extend(await _close_built_queue(res.built_queue, displace_if_full=False))
-
-
-async def _drive_builds(
-    db: Database,
-    config: Config,
-    res: WorkerResources,
-) -> None:
-    """Stream DB batches, build ARCs concurrently, and enqueue successful builds."""
-    running_tasks: set[asyncio.Task[None]] = set()
-    inv_idx = 0
-    investigation_gen = db.stream_investigations(scope=res.scope, limit=config.debug_limit)
-
-    try:
-        while True:
-            batch = []
-            try:
-                for _ in range(config.db_batch_size):
-                    try:
-                        batch.append(await anext(investigation_gen))
-                    except StopAsyncIteration:
-                        break
-            except (RuntimeError, OSError, ConnectionError) as e:
-                logger.error("Database or connection error while fetching investigations: %s", e, exc_info=True)
-                raise
-            except Exception as e:
-                logger.error("Unexpected error while fetching investigations: %s", e, exc_info=True)
-                raise
-
-            if not batch:
-                break
-
-            # Wait for a free build slot before prefetching related data so a
-            # full pipeline does not hold an extra batch in memory.
-            await _wait_for_build_slot(running_tasks, config.max_concurrent_tasks)
-            batch_data = await _fetch_and_group_related_data(db, [str(inv.identifier) for inv in batch])
-
-            for investigation in batch:
-                await _wait_for_build_slot(running_tasks, config.max_concurrent_tasks)
-                inv_idx += 1
-                _spawn_investigation_task(
-                    investigation,
-                    inv_idx,
-                    batch_data,
-                    res,
-                    running_tasks,
-                )
-
-        if running_tasks:
-            logger.info("Waiting for %d remaining build tasks to complete...", len(running_tasks))
-            await asyncio.gather(*running_tasks)
-    finally:
-        await _finalize_drive_builds(investigation_gen, running_tasks, res)
-
-
-async def _arc_stream_from_queue(
-    built_queue: asyncio.Queue[BuiltArc | None],
-    state: ArcStreamState,
-) -> AsyncGenerator[RoCrateContent, None]:
-    """Yield ARC dicts for harvest_arcs from the build queue."""
-    while True:
-        item = await built_queue.get()
-        if item is None:
-            return
-        state.track(item)
-        logger.info(
-            "%s: Queued ARC %s for harvest upload (%.2f KB)",
-            item.inv_info,
-            item.investigation_id,
-            len(item.arc_json.encode("utf-8")) / 1024,
-        )
-        yield item.arc_payload
 
 
 async def _run_harvest_upload(
@@ -663,7 +299,7 @@ async def _run_harvest_upload(
         try:
             result = await res.client.harvest_arcs(
                 rdi=res.config.rdi,
-                arcs=_arc_stream_from_queue(res.built_queue, state),
+                arcs=stream_arcs_from_queue(res.built_queue, state),
                 expected_datasets=expected_datasets,
             )
             harvest_id = result.harvest_id
@@ -717,7 +353,7 @@ async def _finalize_build_pipeline(
             continue
         res.scope.record_failed(upload_error, record_id=item.investigation_id)
         already_recorded.add(item.investigation_id)
-    _fail_drained_queue(
+    drain_unsubmitted_arcs(
         res.built_queue,
         res.scope,
         upload_error,
@@ -765,8 +401,9 @@ async def process_investigations(
             pool_holder=pool_holder,
             semaphore=asyncio.Semaphore(config.max_concurrent_tasks),
             built_queue=built_queue,
+            process_investigation=process_investigation,
         )
-        build_task = asyncio.create_task(_drive_builds(db, config, worker_res))
+        build_task = asyncio.create_task(drive_builds(db, config, worker_res))
         upload_error: str | None = None
 
         try:

@@ -54,12 +54,9 @@ silently falling back to `create_or_update_arc`.
 After a harvest completes (or returns with mixed per-item results), the
 system MUST record one harvested dataset on the shared repository scope for
 each ARC that was submitted without a corresponding per-item error.
-Harvested MUST NOT be recorded for ARCs that failed submission. When a
-per-item error cannot be mapped to a submitted investigation (missing or
-unknown `arc_id`), the system MUST record a repository issue and MUST
-record failed (not harvested) for every remaining submitted investigation
-that is not already covered by an attributed error. When the client returns
-a harvest identifier, the system MUST set it on the repository scope.
+Harvested MUST NOT be recorded for ARCs that failed submission. When the
+client returns a harvest identifier, the system MUST set it on the
+repository scope.
 
 #### Scenario: Mixed harvest outcomes
 
@@ -75,10 +72,7 @@ a harvest identifier, the system MUST set it on the repository scope.
   error with a missing or unmapped `arc_id`
 - **WHEN** upload outcomes are applied
 - **THEN** a repository issue is recorded for the unattributed error
-- **AND** each attributed per-item error still records failed for its investigation
-- **AND** every remaining submitted investigation is recorded as failed
-  (cannot confirm upload success)
-- **AND** harvested is not recorded for those remaining investigations
+- **AND** investigations without a matching per-item error are still recorded as harvested
 
 ### Requirement: Built ARCs Feed The Harvest Stream
 

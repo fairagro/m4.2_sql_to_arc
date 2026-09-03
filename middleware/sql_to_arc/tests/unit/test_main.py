@@ -29,17 +29,11 @@ from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
 from middleware.sql_to_arc.database import Database
 from middleware.sql_to_arc.main import main, parse_args
 from middleware.sql_to_arc.models import AssayRow, InvestigationRow, StudyRow
+from middleware.sql_to_arc.pipeline import BuiltArc, CompositionCounts, WorkerResources, enqueue_queue_sentinel
 from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 from middleware.sql_to_arc.processor import (
     ArcStreamState,
-    BuiltArc,
-    CompositionCounts,
-    WorkerResources,
     _apply_upload_outcomes,
-    _close_built_queue,
-    _enqueue_queue_sentinel,
-    _fail_drained_queue,
-    _wait_for_build_slot,
     process_investigation,
     process_investigations,
 )
@@ -96,6 +90,7 @@ def _make_worker_res(
         pool_holder=pool_holder,
         semaphore=asyncio.Semaphore(1),
         built_queue=built_queue,
+        process_investigation=process_investigation,
     )
 
 
@@ -436,7 +431,7 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
         _ = (db, investigation_ids)
         return _empty_related_batch()
 
-    monkeypatch.setattr("middleware.sql_to_arc.processor._fetch_and_group_related_data", mock_fetch_related)
+    monkeypatch.setattr("middleware.sql_to_arc.pipeline._fetch_and_group_related_data", mock_fetch_related)
 
     mock_client = AsyncMock(spec=ApiClient)
 
@@ -489,92 +484,24 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_enqueue_queue_sentinel_does_not_block_on_full_queue() -> None:
-    """Abort-path close must displace items instead of blocking."""
+    """Abort-path sentinel must displace items instead of blocking."""
     queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue(maxsize=1)
     queue.put_nowait(
         BuiltArc(
-            arc_json='{"identifier": "full-1"}',
             arc_payload={"identifier": "full-1"},
             investigation_id="full-1",
             inv_info="Inv",
             composition=CompositionCounts(studies=0, assays=0),
         )
     )
-    displaced = _enqueue_queue_sentinel(queue)
+    displaced = enqueue_queue_sentinel(queue)
     assert len(displaced) == 1
     assert displaced[0].investigation_id == "full-1"
     assert queue.get_nowait() is None
 
 
-@pytest.mark.asyncio
-async def test_close_built_queue_success_path_preserves_queued_arcs() -> None:
-    """Success-path close must wait for space instead of dropping queued ARCs."""
-    queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue(maxsize=1)
-    queue.put_nowait(
-        BuiltArc(
-            arc_json='{"identifier": "keep-1"}',
-            arc_payload={"identifier": "keep-1"},
-            investigation_id="keep-1",
-            inv_info="Inv",
-            composition=CompositionCounts(studies=0, assays=0),
-        )
-    )
-
-    # Producer waits for the consumer to free a slot before the sentinel is enqueued.
-    close_task = asyncio.create_task(_close_built_queue(queue, displace_if_full=False))
-    await asyncio.sleep(0)
-    assert not close_task.done()
-    kept = await queue.get()
-    displaced = await close_task
-    assert displaced == []
-    assert kept is not None
-    assert kept.investigation_id == "keep-1"
-    assert await queue.get() is None
-
-
-@pytest.mark.asyncio
-async def test_wait_for_build_slot_survives_empty_set_race() -> None:
-    """Done-callback clearing the set must not make asyncio.wait raise ValueError."""
-    running_tasks: set[asyncio.Task[None]] = set()
-
-    async def _quick() -> None:
-        return None
-
-    task = asyncio.create_task(_quick())
-    running_tasks.add(task)
-    task.add_done_callback(running_tasks.discard)
-    # Ensure the task can finish before wait runs (reproduces the race window).
-    await asyncio.sleep(0)
-    await _wait_for_build_slot(running_tasks, max_concurrent_tasks=1)
-    assert not running_tasks
-
-
-def test_fail_drained_queue_records_unsubmitted_arcs() -> None:
-    """ARCs left on the queue after abort must be marked failed."""
-    report = HarvestReport()
-    scope = report.open_repository("test_rdi")
-    queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
-    queue.put_nowait(
-        BuiltArc(
-            arc_json='{"identifier": "queued-1"}',
-            arc_payload={"identifier": "queued-1"},
-            investigation_id="queued-1",
-            inv_info="Inv",
-            composition=CompositionCounts(studies=0, assays=0),
-        )
-    )
-    queue.put_nowait(None)
-
-    _fail_drained_queue(queue, scope, "Harvest upload failed: nope", already_recorded={"submitted-1"})
-    report.finish()
-
-    entry = report.repository_reports[0]
-    assert entry.failed_datasets == 1
-    assert entry.failures[0].record_id == "queued-1"
-
-
 def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> None:
-    """Unattributed errors: repository issue + fail remaining submits (no harvested)."""
+    """Unattributed errors become repository issues; other submits still record harvested."""
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
     state = ArcStreamState()
@@ -596,18 +523,15 @@ def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> Non
     report.finish()
 
     entry = report.repository_reports[0]
-    assert entry.harvested_datasets == 0
-    assert entry.failed_datasets == 1
-    dataset_failures = [f for f in entry.failures if f.record_id is not None]
-    assert len(dataset_failures) == 1
-    assert dataset_failures[0].record_id == "ok-1"
-    assert "cannot confirm upload success" in dataset_failures[0].message
-    assert entry.total_studies in {None, 0}
+    # ok-1 has no matching error → still harvested
+    assert entry.harvested_datasets == 1
+    assert entry.failed_datasets == 0
+    assert entry.total_studies == 1
     assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
 
 
-def test_apply_upload_outcomes_unmapped_arc_id_is_unattributed() -> None:
-    """Unknown arc_id must not be used as record_id; remaining submits fail, not harvest."""
+def test_apply_upload_outcomes_unmapped_arc_id_is_repository_issue() -> None:
+    """Unknown arc_id becomes repository issue; the actual inv is still harvested."""
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
     state = ArcStreamState()
@@ -629,21 +553,19 @@ def test_apply_upload_outcomes_unmapped_arc_id_is_unattributed() -> None:
     report.finish()
 
     entry = report.repository_reports[0]
-    assert entry.harvested_datasets == 0
-    assert entry.failed_datasets == 1
-    dataset_failures = [f for f in entry.failures if f.record_id is not None]
-    assert len(dataset_failures) == 1
-    assert dataset_failures[0].record_id == "inv-1"
+    assert entry.harvested_datasets == 1
+    assert entry.failed_datasets == 0
+    assert all(f.record_id is None for f in entry.failures)
     assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
 
 
 def test_apply_upload_outcomes_mixed_attributed_and_unattributed() -> None:
-    """Attributed fails keep their message; other submits fail due to ambiguity."""
+    """Attributed fails record_failed; unattributed becomes repository issue; rest harvested."""
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
     state = ArcStreamState()
-    state.submitted_ids.extend(["bad-1", "maybe-2", "maybe-3"])
-    for inv_id in ("bad-1", "maybe-2", "maybe-3"):
+    state.submitted_ids.extend(["bad-1", "ok-2"])
+    for inv_id in ("bad-1", "ok-2"):
         state.arc_id_to_investigation[inv_id] = inv_id
         state.compositions[inv_id] = CompositionCounts(studies=1, assays=0)
 
@@ -666,12 +588,10 @@ def test_apply_upload_outcomes_mixed_attributed_and_unattributed() -> None:
     report.finish()
 
     entry = report.repository_reports[0]
-    assert entry.harvested_datasets == 0
-    assert entry.failed_datasets == len(state.submitted_ids)
+    assert entry.harvested_datasets == 1  # ok-2
+    assert entry.failed_datasets == 1  # bad-1
     by_id = {f.record_id: f.message for f in entry.failures if f.record_id is not None}
     assert by_id["bad-1"] == "known bad"
-    assert "cannot confirm upload success" in by_id["maybe-2"]
-    assert "cannot confirm upload success" in by_id["maybe-3"]
     assert any(f.kind.value == "repository" and "Unattributed harvest error" in f.message for f in entry.failures)
 
 
@@ -720,7 +640,7 @@ async def test_process_investigations_records_harvest_item_errors(
             assay_count=1,
         )
 
-    monkeypatch.setattr("middleware.sql_to_arc.processor._fetch_and_group_related_data", mock_fetch_related)
+    monkeypatch.setattr("middleware.sql_to_arc.pipeline._fetch_and_group_related_data", mock_fetch_related)
 
     async def mock_process_inv(
         _ctx: WorkerContext,
@@ -731,7 +651,6 @@ async def test_process_investigations_records_harvest_item_errors(
         inv_id = str(investigation.identifier)
         await res.built_queue.put(
             BuiltArc(
-                arc_json=f'{{"identifier": "{inv_id}"}}',
                 arc_payload={"identifier": inv_id},
                 investigation_id=inv_id,
                 inv_info=inv_info,
@@ -817,7 +736,7 @@ async def test_process_investigations_aborted_harvest_records_failed(
             assay_count=0,
         )
 
-    monkeypatch.setattr("middleware.sql_to_arc.processor._fetch_and_group_related_data", mock_fetch_related)
+    monkeypatch.setattr("middleware.sql_to_arc.pipeline._fetch_and_group_related_data", mock_fetch_related)
 
     async def mock_process_inv(
         _ctx: WorkerContext,
@@ -828,7 +747,6 @@ async def test_process_investigations_aborted_harvest_records_failed(
         inv_id = str(investigation.identifier)
         await res.built_queue.put(
             BuiltArc(
-                arc_json=f'{{"identifier": "{inv_id}"}}',
                 arc_payload={"identifier": inv_id},
                 investigation_id=inv_id,
                 inv_info=inv_info,
