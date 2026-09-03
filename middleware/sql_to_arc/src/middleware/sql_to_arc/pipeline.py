@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import Protocol, TypeVar
 
@@ -20,7 +20,10 @@ from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 
 logger = logging.getLogger(__name__)
 
-ProcessInvestigation = Callable[[WorkerContext, InvestigationRow, str, "WorkerResources"], Awaitable[None]]
+ProcessInvestigation = Callable[
+    [WorkerContext, InvestigationRow, str, "WorkerResources"],
+    Coroutine[object, object, None],
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,7 +143,9 @@ def _spawn_investigation_task(
     )
 
     inv_info = f"Investigation {idx}"
-    task = asyncio.create_task(res.process_investigation(ctx, investigation, inv_info, res))
+    task: asyncio.Task[None] = asyncio.create_task(
+        res.process_investigation(ctx, investigation, inv_info, res)
+    )
     running_tasks.add(task)
 
     def _on_task_done(done: asyncio.Task[None]) -> None:
