@@ -39,6 +39,7 @@ from middleware.sql_to_arc.processor import (
     _close_built_queue,
     _enqueue_queue_sentinel,
     _fail_drained_queue,
+    _wait_for_build_slot,
     process_investigation,
     process_investigations,
 )
@@ -529,6 +530,23 @@ async def test_close_built_queue_success_path_preserves_queued_arcs() -> None:
     assert kept is not None
     assert kept.investigation_id == "keep-1"
     assert await queue.get() is None
+
+
+@pytest.mark.asyncio
+async def test_wait_for_build_slot_survives_empty_set_race() -> None:
+    """Done-callback clearing the set must not make asyncio.wait raise ValueError."""
+    running_tasks: set[asyncio.Task[None]] = set()
+
+    async def _quick() -> None:
+        return None
+
+    task = asyncio.create_task(_quick())
+    running_tasks.add(task)
+    task.add_done_callback(running_tasks.discard)
+    # Ensure the task can finish before wait runs (reproduces the race window).
+    await asyncio.sleep(0)
+    await _wait_for_build_slot(running_tasks, max_concurrent_tasks=1)
+    assert not running_tasks
 
 
 def test_fail_drained_queue_records_unsubmitted_arcs() -> None:

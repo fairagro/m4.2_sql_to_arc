@@ -536,6 +536,23 @@ async def _cancel_running_builds(running_tasks: set[asyncio.Task[None]]) -> None
     running_tasks.clear()
 
 
+async def _wait_for_build_slot(
+    running_tasks: set[asyncio.Task[None]],
+    max_concurrent_tasks: int,
+) -> None:
+    """Block until fewer than ``max_concurrent_tasks`` builds are in flight.
+
+    Snapshots the task set before ``asyncio.wait`` so a done-callback that
+    empties ``running_tasks`` between the length check and the wait cannot
+    raise ``ValueError: Set of Tasks/Futures is empty``.
+    """
+    while len(running_tasks) >= max_concurrent_tasks:
+        pending = set(running_tasks)
+        if not pending:
+            break
+        await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+
+
 async def _finalize_drive_builds(
     investigation_gen: AsyncGenerator[InvestigationRow, None],
     running_tasks: set[asyncio.Task[None]],
@@ -590,11 +607,13 @@ async def _drive_builds(
             if not batch:
                 break
 
+            # Wait for a free build slot before prefetching related data so a
+            # full pipeline does not hold an extra batch in memory.
+            await _wait_for_build_slot(running_tasks, config.max_concurrent_tasks)
             batch_data = await _fetch_and_group_related_data(db, [str(inv.identifier) for inv in batch])
 
             for investigation in batch:
-                while len(running_tasks) >= config.max_concurrent_tasks:
-                    await asyncio.wait(running_tasks, return_when=asyncio.FIRST_COMPLETED)
+                await _wait_for_build_slot(running_tasks, config.max_concurrent_tasks)
                 inv_idx += 1
                 _spawn_investigation_task(
                     investigation,
