@@ -69,7 +69,8 @@ class Config(ConfigBase):
 
     @staticmethod
     def _as_positive_int(value: JsonValue | int, fallback: int) -> int:
-        if isinstance(value, bool) or value is None:
+        # bool is a subclass of int (True == 1); reject before the int path.
+        if isinstance(value, bool):
             return fallback
         if isinstance(value, (int, float, str)):
             try:
