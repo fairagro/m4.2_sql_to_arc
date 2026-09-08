@@ -19,22 +19,34 @@ This file contains critical context about the FAIRagro SQL-to-ARC Converter proj
 ```text
 .agents/
 └── skills/                # Agent Skills (agentskills.io standard)
-    ├── arctrl/            # arctrl Python library reference
-    └── config-wrapper/    # ConfigWrapper / ConfigBase pattern
+    ├── arctrl/            # Shared first-party arctrl reference (synced from Devinfra)
+    ├── config-wrapper/    # ConfigWrapper / ConfigBase pattern (local)
+    ├── create-issue/      # `/create-issue` (synced)
+    ├── issue-fixer/       # `/issue-fixer` (synced)
+    ├── review-fixer/      # `/review-fixer` (synced)
+    ├── gh/, docker/, hadolint/, uv/  # Vendor pins (`gh skill`; do not hand-edit)
 
-.cursor/                   # Cursor OpenSpec commands + skills (opsx-*)
+.cursor/                   # Cursor OpenSpec commands + skills (opsx-*) + fixer commands
+.cursor/BUGBOT.md          # Bugbot entry → docs/ai_review_policy.md
 .github/
-├── prompts/               # GitHub Copilot OpenSpec prompts (opsx-*)
+├── prompts/               # GitHub Copilot OpenSpec + fixer prompts
+├── copilot-instructions.md  # Copilot → principles.global + review policy
 └── skills/                # GitHub Copilot OpenSpec skills
 
 docs/
 ├── ai_workflow.md         # AI agent workflow documentation
+├── ai_review_policy.md    # Copilot/Bugbot policy (synced)
+├── surface-quality-bar.global.md  # Default path→surface map (synced)
+├── surface-quality-bar.md # Product path rows (local)
+├── synced-paths.global.md # Devinfra sync allowlist (synced — do not hand-edit)
 └── sql_to_arc_database_views.md  # Authoritative DB view / schema contract
 
 openspec/                  # OpenSpec source of truth + changes
+├── principles.global.md   # Shared foundation (synced — do not hand-edit)
+├── principles.md          # Product overlay (stack, modules, converter constraints)
 ├── config.yaml            # Project context for OpenSpec artifacts
 ├── specs/                 # Current behavior by domain
-│   ├── principles/
+│   ├── principles/        # Behavioral RFC 2119 foundation (domain spec)
 │   ├── configuration/
 │   ├── demo-environment/
 │   ├── tooling-consistency/
@@ -55,6 +67,8 @@ middleware/
         └── integration/   # Integration tests with database
 
 scripts/
+├── ai/                            # m42-ai (synced): uv run --project scripts/ai m42-ai …
+├── bin/gh                         # PATH wrapper + personal GH_TOKEN (thin Auth-B)
 ├── load-env.sh                    # Per-shell env (PATH, aliases, SOPS); sourced from bashrc
 ├── uv-sync-dev.sh                 # One-time uv sync (devcontainer postCreate)
 ├── install-dev-hooks.sh           # One-time pre-commit + Git LFS hooks
@@ -76,6 +90,11 @@ dev_environment/
 └── config.dev.yaml       # Development configuration for the converter
 ```
 
+**Principles split:** `openspec/principles.global.md` (synced shared foundation) +
+`openspec/principles.md` (product overlay). Domain requirements remain under
+`openspec/specs/principles/` — do not confuse the agent overlay with that
+behavioral spec.
+
 ## Important Commands
 
 ### Always use `uv` for Python
@@ -93,6 +112,10 @@ uv run bandit -r middleware/sql_to_arc/src/
 
 # Install all dependencies (including external shared/api_client via git)
 uv sync --dev --all-packages
+
+# m42-ai (not a root uv workspace member)
+uv run --project scripts/ai m42-ai --help
+uv run --project scripts/ai m42-ai auth-status
 ```
 
 ### OpenSpec
@@ -140,9 +163,18 @@ Before generating or modifying code, read the relevant OpenSpec domain under
 `openspec/specs/`. Prefer an active change under `openspec/changes/` when one
 exists for the work in progress.
 
+**Agent entry / shared foundation:**
+
+- **[`openspec/principles.global.md`](openspec/principles.global.md)** — Synced shared principles (do not hand-edit).
+- **[`openspec/principles.md`](openspec/principles.md)** — Product overlay (stack, modules, converter constraints).
+- **[`docs/ai_review_policy.md`](docs/ai_review_policy.md)** — Review policy (synced).
+- **[`docs/synced-paths.global.md`](docs/synced-paths.global.md)** — Synced-path allowlist (do not patch in consumers).
+- **[`docs/surface-quality-bar.global.md`](docs/surface-quality-bar.global.md)** +
+  **[`docs/surface-quality-bar.md`](docs/surface-quality-bar.md)** — path→surface map.
+
 **Cross-cutting domains:**
 
-- **[`openspec/specs/principles/`](openspec/specs/principles/)** — Foundation contract and project values (start here).
+- **[`openspec/specs/principles/`](openspec/specs/principles/)** — Behavioral foundation contract (RFC 2119; start here for requirements).
 - **[`openspec/specs/configuration/`](openspec/specs/configuration/)** — Config loading, env overrides, secrets.
 - **[`openspec/specs/demo-environment/`](openspec/specs/demo-environment/)** — Local demo / deployment setup.
 - **[`openspec/specs/tooling-consistency/`](openspec/specs/tooling-consistency/)** — VS Code, pre-commit, and CI must report identical results.
@@ -199,5 +231,5 @@ When editing files:
 
 ---
 
-**Last Updated**: 2026-07-30
-**Maintainer Notes**: Spec-driven workflow uses OpenSpec (`openspec/`). High-level architecture involves converting SQL views into ARC files.
+**Last Updated**: 2026-09-08
+**Maintainer Notes**: Spec-driven workflow uses OpenSpec (`openspec/`). High-level architecture involves converting SQL views into ARC files. AI review / fixer stack synced from Devinfra Wave A (see issue #93).
