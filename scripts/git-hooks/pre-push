@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Combined pre-push hook: Git LFS + pre-commit
-# This file is version-controlled and should be installed via scripts/setup-git-hooks.sh
+# Combined pre-push: Git LFS (product overlay) then pre-commit push stage.
+# This file is version-controlled and should be installed via scripts/setup-git-lfs.sh
+# (see docs/git-lfs.md). Wave B: keep LFS first; swap only the pre-commit half.
 
 # Git LFS pre-push hook
 command -v git-lfs >/dev/null 2>&1 || {

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# One-time dev setup: pre-commit and Git LFS hooks. Run from devcontainer postCreate
-# or manually after clone (local or container).
+# One-time dev setup: pre-commit (commit stage) + product Git LFS overlay.
+# Run from Dev Container postCreate or manually after clone.
+#
+# Order matters for Wave B: if a shared Devinfra setup-git-hooks.sh is adopted,
+# run it before setup-git-lfs.sh (or fold that order here). Shared setup alone
+# removes LFS post-* hooks — see docs/git-lfs.md.
 
 set -euo pipefail
 
@@ -28,7 +32,7 @@ else
     echo "✅ pre-commit hook already installed"
 fi
 
-echo "🔧 Setting up Git LFS hooks..."
+echo "🔧 Setting up Git LFS hooks (product overlay)..."
 bash "${script_dir}/setup-git-lfs.sh"
 
 echo "✅ Dev hooks installed"

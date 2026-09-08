@@ -39,6 +39,7 @@ docs/
 ├── surface-quality-bar.global.md  # Default path→surface map (synced)
 ├── surface-quality-bar.md # Product path rows (local)
 ├── synced-paths.global.md # Devinfra sync allowlist (synced — do not hand-edit)
+├── git-lfs.md             # Product Git LFS overlay (install + Wave B compose)
 └── sql_to_arc_database_views.md  # Authoritative DB view / schema contract
 
 openspec/                  # OpenSpec source of truth + changes
@@ -198,13 +199,16 @@ This project depends on `shared` and `api_client` libraries, which are hosted in
 
 ### Git LFS Integration
 
-**Setup Process**:
+Product overlay (not in Devinfra). See [`docs/git-lfs.md`](docs/git-lfs.md).
 
-1. `scripts/load-env.sh` is sourced during development.
-2. This script calls `scripts/setup-git-lfs.sh`.
-3. Git LFS hooks are installed from `scripts/git-hooks/`.
+**Setup:** `scripts/install-dev-hooks.sh` (Dev Container `postCreate` / after
+clone) installs commit-stage pre-commit, then runs
+`scripts/setup-git-lfs.sh`, which copies `scripts/git-hooks/{pre-push,post-*}`
+into `.git/hooks`. `load-env.sh` does **not** install LFS.
 
-**Files Tracked by LFS**: `*.sql` (configured in `.gitattributes`).
+**Tracked:** `*.sql` (`.gitattributes`). **Wave B:** always re-apply
+`setup-git-lfs.sh` after any shared `setup-git-hooks.sh` (shared installer
+removes LFS `post-*` hooks).
 
 ## Security Notes
 

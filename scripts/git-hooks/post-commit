@@ -1,6 +1,6 @@
 #!/bin/sh
 # Git LFS post-commit hook
-# This file is version-controlled and should be installed via scripts/setup-git-hooks.sh
+# This file is version-controlled and should be installed via scripts/setup-git-lfs.sh (docs/git-lfs.md)
 
 command -v git-lfs >/dev/null 2>&1 || {
     echo >&2 "\nThis repository is configured for Git LFS but 'git-lfs' was not found on your path."
