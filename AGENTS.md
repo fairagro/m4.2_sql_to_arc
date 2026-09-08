@@ -38,6 +38,7 @@ docs/
 ├── ai_review_policy.md    # Copilot/Bugbot policy (synced)
 ├── surface-quality-bar.global.md  # Default path→surface map (synced)
 ├── surface-quality-bar.md # Product path rows (local)
+├── synced-paths.global.md # Devinfra sync allowlist (synced — do not hand-edit)
 └── sql_to_arc_database_views.md  # Authoritative DB view / schema contract
 
 openspec/                  # OpenSpec source of truth + changes
@@ -167,6 +168,7 @@ exists for the work in progress.
 - **[`openspec/principles.global.md`](openspec/principles.global.md)** — Synced shared principles (do not hand-edit).
 - **[`openspec/principles.md`](openspec/principles.md)** — Product overlay (stack, modules, converter constraints).
 - **[`docs/ai_review_policy.md`](docs/ai_review_policy.md)** — Review policy (synced).
+- **[`docs/synced-paths.global.md`](docs/synced-paths.global.md)** — Synced-path allowlist (do not patch in consumers).
 - **[`docs/surface-quality-bar.global.md`](docs/surface-quality-bar.global.md)** +
   **[`docs/surface-quality-bar.md`](docs/surface-quality-bar.md)** — path→surface map.
 

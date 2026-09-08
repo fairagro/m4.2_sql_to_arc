@@ -42,10 +42,28 @@ Do not hand-edit synced files after copy.
 **Reason:** Fleet SoT; avoids drift vs API/harvester.  
 **Alternatives:** Wait for #13; cherry-pick with local edits (rejected).
 
-**Pin policy:** Start from provisional `906870bd18fa7fef3c5593f75440291e04ceb43e`
-(pilot). Before merge here, re-read the **merged** pilot PR and use that
-SHA if it changed. **Apply (2026-09-08):** pilot #374 still OPEN → synced at
-provisional pin.
+**Pin policy:** Prefer the same SHA as the **merged** middleware_api pilot
+(F1). **Apply refresh (2026-09-08):** include closed Devinfra
+[#45](https://github.com/fairagro/m4.2_middleware_devinfra/issues/45) /
+[#46](https://github.com/fairagro/m4.2_middleware_devinfra/issues/46) → pin
+`d8a22b90babf766fc15cdac5f41ad6b26326fa27` (merge of #48). Pilot #374 still
+OPEN on older `906870bd…`; this follower adopt intentionally leads until
+the pilot retargets. Do **not** sync Wave B/C paths that also landed
+between pins (e.g. `docker/Dockerfile.product-app.base`).
+
+### D1b: Synced-path guard (#45) + m42-ai parent relation (#46)
+
+Re-sync allowlisted Wave A files so product checkouts get:
+
+- `docs/synced-paths.global.md` + review-fixer / policy rules: never
+  locally `fix` synced trees; upstream or overlay only.
+- `scripts/ai/README.md` consumer `--project scripts/ai` layout.
+- Atomic `scripts/dev-tokens.sh` write.
+- `m42-ai` `relation="linked"` when `--parent` attach fails after create.
+
+**Reason:** Avoid repeating the pilot’s Copilot drift on synced files;
+ship the upstream fixes in the same adopt PR.  
+**Alternatives:** Stay on pilot pin (rejected — user asked for #45/#46).
 
 ### D2: A + thin Auth-B in one PR
 

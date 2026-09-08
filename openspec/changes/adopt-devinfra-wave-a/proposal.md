@@ -5,7 +5,9 @@
 Shared Devinfra Wave A (AI review / agent stack) is extracted and closed
 upstream ([fairagro/m4.2_middleware_devinfra](https://github.com/fairagro/m4.2_middleware_devinfra)
 #4–#6, #14–#16, [#32](https://github.com/fairagro/m4.2_middleware_devinfra/issues/32),
-[#35](https://github.com/fairagro/m4.2_middleware_devinfra/issues/35)). This repo
+[#35](https://github.com/fairagro/m4.2_middleware_devinfra/issues/35),
+[#45](https://github.com/fairagro/m4.2_middleware_devinfra/issues/45),
+[#46](https://github.com/fairagro/m4.2_middleware_devinfra/issues/46)). This repo
 still lacks the shared stack (`scripts/ai` / `m42-ai`, review/issue fixer
 skills, `principles.global.md`, surface-bar `.global.md`, vendor skills) and
 carries a **local** `.agents/skills/arctrl/` that has drifted from the
@@ -14,18 +16,24 @@ asks to adopt the same stack as the fleet follower after the middleware_api
 pilot ([#366](https://github.com/fairagro/m4.2_advanced_middleware_api/issues/366)
 / draft PR [#374](https://github.com/fairagro/m4.2_advanced_middleware_api/pull/374)).
 
-**Provisional pin (same as pilot):** `906870bd18fa7fef3c5593f75440291e04ceb43e`.
-Re-confirm against the **merged** pilot PR before opening the adopt PR here
-(F1: same Devinfra SHA).
+**Pinned Devinfra SHA:** `d8a22b90babf766fc15cdac5f41ad6b26326fa27`
+(includes closed [#45](https://github.com/fairagro/m4.2_middleware_devinfra/issues/45) /
+[#46](https://github.com/fairagro/m4.2_middleware_devinfra/issues/46); ahead of
+pilot #374’s older pin until that PR retargets — intentional for this
+follower adopt).
 
 ## What Changes
 
 - Sync Wave A paths verbatim from the pinned Devinfra SHA: policy,
-  `docs/surface-quality-bar.global.md`, Bugbot/Copilot entries,
-  `/review-fixer` + `/create-issue` + `/issue-fixer`
+  `docs/surface-quality-bar.global.md`, `docs/synced-paths.global.md`,
+  Bugbot/Copilot entries, `/review-fixer` + `/create-issue` + `/issue-fixer`
   skills/commands/prompts, thin fixer docs, vendor skills
   `{gh,docker,hadolint,uv}`, `scripts/ai/` / `m42-ai`,
   `openspec/principles.global.md`, first-party `.agents/skills/arctrl/`.
+  Includes [#45](https://github.com/fairagro/m4.2_middleware_devinfra/issues/45)
+  (review-fixer must not patch synced consumer paths; README + atomic
+  tokens) and [#46](https://github.com/fairagro/m4.2_middleware_devinfra/issues/46)
+  (`m42-ai` `relation=linked` on parent-attach failure).
 - **Thin Auth-B** in the same change: `scripts/bin/gh`,
   `scripts/dev-tokens.sh`, `scripts/set-dev-tokens.sh`.
 - **P3:** add `.global` verbatim; create local `openspec/principles.md` as a
@@ -65,12 +73,13 @@ Re-confirm against the **merged** pilot PR before opening the adopt PR here
 
 ## Impact
 
-- **Synced:** `docs/` (policy, surface-bar `.global`, fixer docs),
-  `.cursor/`, `.github/` (copilot + fixer prompts), `.agents/skills/`
-  (fixer + vendor + `arctrl`), `scripts/ai/`,
+- **Synced:** `docs/` (policy, surface-bar `.global`, `synced-paths.global`,
+  fixer docs), `.cursor/`, `.github/` (copilot + fixer prompts),
+  `.agents/skills/` (fixer + vendor + `arctrl`), `scripts/ai/`,
   `openspec/principles.global.md`, thin Auth-B scripts.
 - **Local:** `openspec/principles.md`, `docs/surface-quality-bar.md`,
   `AGENTS.md`; keep `config-wrapper` skill.
 - **Unchanged:** `middleware/**`, domain specs/designs, OpenSpec `opsx-*`
   commands/skills already present.
-- **Fleet:** decision matrix on #93 mirrors #366; pin SHA from pilot.
+- **Fleet:** decision matrix on #93 mirrors #366; pin includes Devinfra
+  #45/#46 (may lead pilot #374 until that PR retargets).
