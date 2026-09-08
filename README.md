@@ -35,7 +35,7 @@ While it is possible to develop without the Dev Container (see next steps below)
 - **Python 3.12+**
 - **[uv](https://github.com/astral-sh/uv)** (Dependency Management & Workspace Orchestration)
 - **Docker & Docker Compose**
-- **Git LFS** (installed via `./scripts/setup-git-lfs.sh`)
+- **Git LFS** for `*.sql` — `./scripts/install-dev-hooks.sh` (or `./scripts/setup-git-lfs.sh`); see [`docs/git-lfs.md`](docs/git-lfs.md)
 
 ### 2. Environment Setup
 

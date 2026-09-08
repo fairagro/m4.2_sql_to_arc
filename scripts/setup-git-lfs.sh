@@ -1,7 +1,13 @@
-#!/bin/bash
-# Git LFS Hooks Setup Script
-# This script installs Git LFS hooks that are compatible with pre-commit
-# Run this script after cloning the repository or when setting up a development environment
+#!/usr/bin/env bash
+# Product Git LFS overlay: local `git lfs install` + copy version-controlled LFS hooks.
+#
+# Called from scripts/install-dev-hooks.sh (Dev Container postCreate / after clone).
+# Not part of Devinfra — Wave B shared setup-git-hooks.sh must NOT replace this;
+# always re-run this script after any shared hook installer (shared setup removes
+# LFS post-* hooks). See docs/git-lfs.md.
+#
+# Usage (from any cwd):
+#   ./scripts/setup-git-lfs.sh
 
 set -e
 
