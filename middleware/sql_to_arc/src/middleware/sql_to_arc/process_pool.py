@@ -3,6 +3,7 @@
 import concurrent.futures
 import logging
 import multiprocessing
+from types import TracebackType
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class ProcessPoolHolder:
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
-        exc_tb: object,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Shut down the process pool when leaving the context."""
         self.shutdown()

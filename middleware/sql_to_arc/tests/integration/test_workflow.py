@@ -2,17 +2,17 @@
 
 import asyncio
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from multiprocessing.context import BaseContext
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from arctrl import ARC
 
-from middleware.api_client import ApiClient, ArcMetadata, ArcResult, ArcStatus
-from middleware.api_client.models import ArcLifecycleStatus
+from middleware.api_client import ApiClient, HarvestResult, HarvestStatus
 from middleware.shared.config.config_base import OtelConfig
+from middleware.shared.json_types import JsonObject, JsonValue, RoCrateContent
 from middleware.shared.report import HarvestReport
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import WorkerContext
@@ -20,11 +20,13 @@ from middleware.sql_to_arc.main import main
 from middleware.sql_to_arc.models import (
     AnnotationTableRow,
     AssayRow,
+    BaseRow,
     ContactRow,
     InvestigationRow,
     PublicationRow,
     StudyRow,
 )
+from middleware.sql_to_arc.pipeline import BuiltArc, WorkerResources
 from middleware.sql_to_arc.process_pool import ProcessPoolHolder
 from middleware.sql_to_arc.processor import process_investigation
 
@@ -32,10 +34,22 @@ from middleware.sql_to_arc.processor import process_investigation
 class MockExecutor(ThreadPoolExecutor):
     """Mock ThreadPoolExecutor to prevent multiprocessing."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        max_workers: int | None = None,
+        thread_name_prefix: str = "",
+        initializer: Callable[[], None] | None = None,
+        initargs: tuple[()] = (),
+        mp_context: BaseContext | None = None,
+    ) -> None:
         """Initialize the mock executor."""
-        kwargs.pop("mp_context", None)
-        super().__init__(*args, **kwargs)
+        _ = mp_context
+        super().__init__(
+            max_workers=max_workers,
+            thread_name_prefix=thread_name_prefix,
+            initializer=initializer,
+            initargs=initargs,
+        )
 
 
 @pytest.fixture
@@ -61,18 +75,27 @@ def mock_db_connection(mock_db_cursor: AsyncMock) -> AsyncMock:
 
 @pytest.fixture
 def mock_api_client() -> AsyncMock:
-    """Mock API client."""
+    """Mock API client with a default successful harvest_arcs implementation."""
     client = AsyncMock(spec=ApiClient)
-    client.create_or_update_arc.return_value = ArcResult(
-        arc_id="test",
-        status=ArcStatus.CREATED,
-        metadata=ArcMetadata(
-            arc_hash="",
-            status=ArcLifecycleStatus.ACTIVE,
-            first_seen="2026-01-01T00:00:00Z",
-            last_seen="2026-01-01T00:00:00Z",
-        ),
-    )
+
+    async def _empty_harvest(
+        *,
+        rdi: str,
+        arcs: AsyncIterator[RoCrateContent],
+        expected_datasets: int | None = None,
+    ) -> HarvestResult:
+        _ = expected_datasets
+        async for _arc in arcs:
+            pass
+        return HarvestResult(
+            harvest_id="harvest-test",
+            rdi=rdi,
+            status=HarvestStatus.COMPLETED,
+            started_at="2026-01-01T00:00:00Z",
+            completed_at="2026-01-01T00:01:00Z",
+        )
+
+    client.harvest_arcs.side_effect = _empty_harvest
     return client
 
 
@@ -128,54 +151,57 @@ class WorkflowTester:
         mocker.patch("middleware.sql_to_arc.main.Config.from_config_wrapper", return_value=self.mock_config)
         mocker.patch("middleware.sql_to_arc.main.configure_logging")
 
-        # Capture ARCs on API call
-        async def capture_arc(rdi: str, arc: Any) -> ArcResult:
-            serialized_arc = arc
-            if isinstance(arc, dict):
-                # Convert back to ARC object for test compatibility
-                # processor.py sends a dict, but legacy tests expect an ARC object
-                serialized_arc = ARC.from_rocrate_json_string(json.dumps(arc))
-
-            self.captured_arcs.append(serialized_arc)
-            return ArcResult(
-                arc_id=rdi,
-                status=ArcStatus.CREATED,
-                metadata=ArcMetadata(
-                    arc_hash="",
-                    status=ArcLifecycleStatus.ACTIVE,
-                    first_seen="2026-01-01T00:00:00Z",
-                    last_seen="2026-01-01T00:00:00Z",
-                ),
+        # Capture ARCs yielded into harvest_arcs
+        async def capture_harvest(
+            *,
+            rdi: str,
+            arcs: AsyncIterator[RoCrateContent],
+            expected_datasets: int | None = None,
+        ) -> HarvestResult:
+            _ = expected_datasets
+            async for arc in arcs:
+                serialized_arc = arc
+                if isinstance(arc, dict):
+                    serialized_arc = ARC.from_rocrate_json_string(json.dumps(arc))
+                self.captured_arcs.append(serialized_arc)
+            return HarvestResult(
+                harvest_id="harvest-test",
+                rdi=rdi,
+                status=HarvestStatus.COMPLETED,
+                started_at="2026-01-01T00:00:00Z",
+                completed_at="2026-01-01T00:01:00Z",
             )
 
-        self.api_client.create_or_update_arc.side_effect = capture_arc
+        self.api_client.harvest_arcs.side_effect = capture_harvest
 
     @staticmethod
-    def _as_gen(data: list[dict[str, Any]], model_cls: type[Any] | None = None) -> AsyncGenerator[Any, None]:
-        async def gen() -> AsyncGenerator[Any, None]:
+    def _as_gen[RowT: BaseRow](data: list[JsonObject], model_cls: type[RowT]) -> AsyncGenerator[RowT, None]:
+        async def gen() -> AsyncGenerator[RowT, None]:
             for item in data:
-                yield model_cls.model_validate(item) if model_cls else item
+                yield model_cls.model_validate(item)
 
         return gen()
 
     def set_db_content(  # noqa: PLR0913, PLR0917
         self,
-        investigations: list[dict[str, Any]] | None = None,
-        studies: list[dict[str, Any]] | None = None,
-        assays: list[dict[str, Any]] | None = None,
-        contacts: list[dict[str, Any]] | None = None,
-        publications: list[dict[str, Any]] | None = None,
-        annotations: list[dict[str, Any]] | None = None,
+        investigations: Sequence[Mapping[str, JsonValue]] | None = None,
+        studies: Sequence[Mapping[str, JsonValue]] | None = None,
+        assays: Sequence[Mapping[str, JsonValue]] | None = None,
+        contacts: Sequence[Mapping[str, JsonValue]] | None = None,
+        publications: Sequence[Mapping[str, JsonValue]] | None = None,
+        annotations: Sequence[Mapping[str, JsonValue]] | None = None,
     ) -> None:
         """Mock the database streaming methods with provided data."""
 
-        def _prepare_data(data: list[dict[str, Any]] | None, target_cls: type[Any] | None) -> list[dict[str, Any]]:
+        def _prepare_data(
+            data: Sequence[Mapping[str, JsonValue]] | None, target_cls: type[BaseRow] | None
+        ) -> list[JsonObject]:
             if not data or not target_cls:
-                return data or []
-            prepared = []
+                return [dict(item) for item in data] if data else []
+            prepared: list[JsonObject] = []
             model_fields = target_cls.model_fields.keys()
             for item in data:
-                new_item = item.copy()
+                new_item: JsonObject = dict(item)
                 # Rename description to description_text if needed
                 if "description" in new_item and "description_text" in model_fields:
                     new_item["description_text"] = new_item.pop("description")
@@ -246,8 +272,8 @@ def workflow_tester(mocker: MagicMock, mock_api_client: AsyncMock) -> WorkflowTe
 
 @pytest.mark.asyncio
 async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None:
-    """Test worker investigations processing."""
-    investigation_rows: list[dict[str, Any]] = [
+    """Test worker investigations build and enqueue ARC payloads for harvest."""
+    investigation_rows: list[JsonObject] = [
         {
             "identifier": 1,
             "title": "Test 1",
@@ -264,11 +290,12 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
         },
     ]
     studies_by_investigation: dict[str, list[StudyRow]] = {
-        "1": [StudyRow.model_validate(study) for study in list[dict[str, Any]]()],
-        "2": [StudyRow.model_validate(study) for study in list[dict[str, Any]]()],
+        "1": [],
+        "2": [],
     }
-    assays_by_study: dict[str, list[dict[str, Any]]] = {}
+    assays_by_study: dict[str, list[JsonObject]] = {}
 
+    built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
     with ThreadPoolExecutor(max_workers=5) as executor:
         pool_holder = ProcessPoolHolder(5, inject_executor=executor)
         ctx = WorkerContext(
@@ -288,21 +315,34 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
             total_workers=1,
             pool_holder=pool_holder,
         )
-        semaphore = asyncio.Semaphore(1)
         report = HarvestReport()
         scope = report.open_repository("edaphobase")
+        config = MagicMock(spec=Config)
+        config.rdi = "edaphobase"
+        config.max_concurrent_arc_builds = 1
+        worker_res = WorkerResources(
+            client=mock_api_client,
+            config=config,
+            scope=scope,
+            pool_holder=pool_holder,
+            semaphore=asyncio.Semaphore(1),
+            built_queue=built_queue,
+            process_investigation=process_investigation,
+        )
         for i, inv in enumerate(investigation_rows):
             inv_info = f"Investigation {i + 1}"
-            await process_investigation(ctx, InvestigationRow.model_validate(inv), scope, inv_info, semaphore)
+            await process_investigation(ctx, InvestigationRow.model_validate(inv), inv_info, worker_res)
         report.finish()
 
-    assert mock_api_client.create_or_update_arc.called
-    # There should be two calls, each with one ARC (since batch size is always 1)
-    assert mock_api_client.create_or_update_arc.call_count == 2  # noqa: PLR2004
-    for call in mock_api_client.create_or_update_arc.call_args_list:
-        assert call.kwargs["rdi"] == "edaphobase"
-        assert isinstance(call.kwargs["arc"], dict)
-        assert "@graph" in call.kwargs["arc"]
+    assert built_queue.qsize() == 2  # noqa: PLR2004
+    for _ in range(2):
+        built = await built_queue.get()
+        assert built is not None
+        payload = built.arc_payload
+        assert isinstance(payload, dict)
+        assert "@graph" in payload
+    mock_api_client.harvest_arcs.assert_not_called()
+    mock_api_client.create_or_update_arc.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -331,6 +371,8 @@ async def test_main_workflow(workflow_tester: WorkflowTester) -> None:
     assert len(arcs) == 2  # noqa: PLR2004
     identifiers = {arc.Identifier for arc in arcs}
     assert identifiers == {"1", "2"}
+    workflow_tester.api_client.harvest_arcs.assert_called()
+    workflow_tester.api_client.create_or_update_arc.assert_not_called()
 
     # Spot check deep property
     arc1 = next(a for a in arcs if a.Identifier == "1")
@@ -657,7 +699,7 @@ async def test_assay_with_annotations(workflow_tester: WorkflowTester) -> None:
 
     # Example annotation rows representing a table
     # These rows logically form a table 'Sample Metadata' with 2 rows and 2 columns
-    annotations = [
+    annotations: list[JsonObject] = [
         {
             "investigation_ref": inv_id,
             "target_type": "assay",
@@ -738,7 +780,7 @@ async def test_comprehensive_annotation_flow(workflow_tester: WorkflowTester) ->
     studies = [{"identifier": study_id, "investigation_ref": inv_id, "title": "Study Flow"}]
     assays = [{"identifier": assay_id, "investigation_ref": inv_id, "study_ref": json.dumps([study_id])}]
 
-    annotations = [
+    annotations: list[JsonObject] = [
         # --- Study Table: "Samples" ---
         {
             "investigation_ref": inv_id,

@@ -1,10 +1,10 @@
 """Tests for validation fixes and spec overrides."""
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import ValidationError
+from pytest_mock import MockerFixture
 
 import middleware.sql_to_arc.database
 from middleware.sql_to_arc.database import SchemaValidator
@@ -39,7 +39,7 @@ def test_investigation_row_no_override_fails() -> None:
 
 
 @pytest.mark.asyncio
-async def test_schema_validator_warnings_on_null_with_override(mocker: Any) -> None:
+async def test_schema_validator_warnings_on_null_with_override(mocker: MockerFixture) -> None:
     """Test that SchemaValidator issues a warning when required fields contain NULL but allow override."""
     mock_engine = MagicMock()
     mock_conn = AsyncMock()

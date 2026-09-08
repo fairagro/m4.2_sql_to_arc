@@ -12,6 +12,7 @@ from arctrl import (
 )
 from pydantic import ValidationError
 
+from middleware.shared.json_types import JsonValue
 from middleware.sql_to_arc.mapper import (
     map_assay,
     map_contact,
@@ -178,7 +179,7 @@ def test_map_publication() -> None:
 
 def test_contact_row_accepts_parsed_roles_list() -> None:
     """Edaphobase may return roles as native JSON instead of a JSON string."""
-    roles_list = [
+    roles_list: list[JsonValue] = [
         {
             "term": "Autor, Author",
             "uri": "http://purl.obolibrary.org/obo/NCIT_C42781",
