@@ -13,6 +13,11 @@
     ".cursor/skills/openspec-*/**",
     ".github/prompts/opsx-*.prompt.md",
     ".github/skills/openspec-*/**",
+    // Vendor agent skills (`gh skill install`; do not hand-edit).
+    ".agents/skills/gh/**",
+    ".agents/skills/docker/**",
+    ".agents/skills/hadolint/**",
+    ".agents/skills/uv/**",
     "dev_environment/demo_output/**"
   ],
   "config": {

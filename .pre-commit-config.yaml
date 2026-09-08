@@ -12,8 +12,10 @@ repos:
     hooks:
       - id: trailing-whitespace
         stages: [manual, pre-push]
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv)/
       - id: end-of-file-fixer
         stages: [manual, pre-push]
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv)/
       - id: check-yaml
         exclude: ^helmchart/[^/]+/templates/.*\.ya?ml$
       - id: check-added-large-files

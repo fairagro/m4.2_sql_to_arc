@@ -44,7 +44,8 @@ Do not hand-edit synced files after copy.
 
 **Pin policy:** Start from provisional `906870bd18fa7fef3c5593f75440291e04ceb43e`
 (pilot). Before merge here, re-read the **merged** pilot PR and use that
-SHA if it changed.
+SHA if it changed. **Apply (2026-09-08):** pilot #374 still OPEN → synced at
+provisional pin.
 
 ### D2: A + thin Auth-B in one PR
 
