@@ -6,7 +6,7 @@
 # always re-run this script after any shared hook installer (shared setup removes
 # LFS post-* hooks). See docs/git-lfs.md.
 #
-# Usage (from any cwd):
+# Usage (from the repository root):
 #   ./scripts/setup-git-lfs.sh
 
 set -e
