@@ -5,7 +5,6 @@ contacts, publications, and annotation tables using mocked database connections.
 """
 
 from collections.abc import AsyncIterable, Iterable
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,18 +13,18 @@ from middleware.shared.report import HarvestReport
 from middleware.sql_to_arc.database import Database
 
 
-class AsyncIterator:
+class AsyncIterator[T]:
     """Helper to mock an async iterator."""
 
-    def __init__(self, data: Iterable[Any]) -> None:
+    def __init__(self, data: Iterable[T]) -> None:
         """Initialize the async iterator with the given data."""
         self.data = iter(data)
 
-    def __aiter__(self) -> "AsyncIterator":
+    def __aiter__(self) -> "AsyncIterator[T]":
         """Return the async iterator."""
         return self
 
-    async def __anext__(self) -> Any:
+    async def __anext__(self) -> T:
         """Return the next value in the iterator."""
         try:
             return next(self.data)
@@ -33,7 +32,7 @@ class AsyncIterator:
             raise StopAsyncIteration from exc
 
 
-async def collect_gen(gen: AsyncIterable[Any]) -> list[Any]:
+async def collect_gen[T](gen: AsyncIterable[T]) -> list[T]:
     """Collect async generator results."""
     return [row async for row in gen]
 

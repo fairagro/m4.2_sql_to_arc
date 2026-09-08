@@ -3,11 +3,11 @@
 import json
 import logging
 import pickle
-from typing import Any
 
 import pytest
 from arctrl import CompositeHeader, IOType
 
+from middleware.shared.json_types import JsonObject, JsonValue
 from middleware.sql_to_arc.builder import (
     _IO_TYPE_MAP,
     DuplicateAssayRowError,
@@ -28,7 +28,7 @@ from middleware.sql_to_arc.models import (
 
 
 @pytest.fixture
-def sample_investigation() -> dict[str, Any]:
+def sample_investigation() -> JsonObject:
     """Return a sample investigation dictionary."""
     return {
         "identifier": "inv1",
@@ -40,7 +40,7 @@ def sample_investigation() -> dict[str, Any]:
 
 
 @pytest.fixture
-def sample_studies() -> list[dict[str, Any]]:
+def sample_studies() -> list[JsonObject]:
     """Return a list of sample study dictionaries."""
     return [
         {
@@ -55,7 +55,7 @@ def sample_studies() -> list[dict[str, Any]]:
 
 
 @pytest.fixture
-def sample_assays() -> list[dict[str, Any]]:
+def sample_assays() -> list[JsonObject]:
     """Return a list of sample assay dictionaries."""
     return [
         {
@@ -73,7 +73,7 @@ def sample_assays() -> list[dict[str, Any]]:
 
 
 @pytest.fixture
-def sample_contacts() -> list[dict[str, Any]]:
+def sample_contacts() -> list[JsonObject]:
     """Return a list of sample contact dictionaries."""
     return [
         {
@@ -94,7 +94,7 @@ def sample_contacts() -> list[dict[str, Any]]:
 
 
 @pytest.fixture
-def sample_publications() -> list[dict[str, Any]]:
+def sample_publications() -> list[JsonObject]:
     """Return a list of sample publication dictionaries."""
     return [
         {
@@ -112,7 +112,7 @@ def sample_publications() -> list[dict[str, Any]]:
     ]
 
 
-def test_build_simple_arc(sample_investigation: dict[str, Any]) -> None:
+def test_build_simple_arc(sample_investigation: JsonObject) -> None:
     """Test building a basic ARC structure from investigation data."""
     arc_data = ArcBuildData(
         investigation_row=InvestigationRow.model_validate(sample_investigation),
@@ -134,7 +134,7 @@ def test_build_simple_arc(sample_investigation: dict[str, Any]) -> None:
 
 
 def test_build_arc_deduplicates_assay_rows_per_study_link(
-    sample_investigation: dict[str, Any],
+    sample_investigation: JsonObject,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Duplicate vAssay rows (same identifier, different study_ref) must not call AddAssay twice."""
@@ -186,7 +186,7 @@ def test_build_arc_deduplicates_assay_rows_per_study_link(
 
 
 def test_build_arc_deduplicates_study_rows(
-    sample_investigation: dict[str, Any],
+    sample_investigation: JsonObject,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Duplicate vStudy rows with the same identifier must not call AddRegisteredStudy twice."""
@@ -225,7 +225,7 @@ def test_build_arc_deduplicates_study_rows(
 
 
 def test_build_arc_raises_on_conflicting_duplicate_study_rows(
-    sample_investigation: dict[str, Any],
+    sample_investigation: JsonObject,
 ) -> None:
     """Duplicate study identifiers with conflicting metadata must raise."""
     shared_study_id = "dup-study"
@@ -256,7 +256,7 @@ def test_build_arc_raises_on_conflicting_duplicate_study_rows(
 
 
 def test_build_arc_warns_on_missing_first_name(
-    sample_investigation: dict[str, Any],
+    sample_investigation: JsonObject,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Contacts without first_name must serialize with an aggregated warning."""
@@ -291,7 +291,7 @@ def test_build_arc_warns_on_missing_first_name(
 
 
 def test_build_arc_warns_on_native_json_roles(
-    sample_investigation: dict[str, Any],
+    sample_investigation: JsonObject,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Native JSON roles from Edaphobase must be coerced with one aggregated warning."""
@@ -340,7 +340,7 @@ def test_duplicate_assay_row_error_pickle_roundtrip() -> None:
 
 
 def test_build_arc_raises_on_conflicting_duplicate_assay_rows(
-    sample_investigation: dict[str, Any],
+    sample_investigation: JsonObject,
 ) -> None:
     """Duplicate identifier with differing metadata must fail the investigation build."""
     shared_assay_id = "assay-conflict"
@@ -372,7 +372,7 @@ def test_build_arc_raises_on_conflicting_duplicate_assay_rows(
 
 
 def test_build_arc_with_study_and_assay(
-    sample_investigation: dict[str, Any], sample_studies: list[dict[str, Any]], sample_assays: list[dict[str, Any]]
+    sample_investigation: JsonObject, sample_studies: list[JsonObject], sample_assays: list[JsonObject]
 ) -> None:
     """Test building an ARC with nested study and assay structures."""
     arc_data = ArcBuildData(
@@ -396,10 +396,10 @@ def test_build_arc_with_study_and_assay(
 
 
 def test_build_arc_with_contacts_and_pubs(
-    sample_investigation: dict[str, Any],
-    sample_studies: list[dict[str, Any]],
-    sample_contacts: list[dict[str, Any]],
-    sample_publications: list[dict[str, Any]],
+    sample_investigation: JsonObject,
+    sample_studies: list[JsonObject],
+    sample_contacts: list[JsonObject],
+    sample_publications: list[JsonObject],
 ) -> None:
     """Test building an ARC with contacts and publications at both investigation and study levels."""
     arc_data = ArcBuildData(
@@ -422,7 +422,7 @@ def test_build_arc_with_contacts_and_pubs(
     assert smith is not None
 
 
-def test_build_ignores_irrelevant_data(sample_investigation: dict[str, Any]) -> None:
+def test_build_ignores_irrelevant_data(sample_investigation: JsonObject) -> None:
     """Test that data linked to other investigations is correctly filtered out."""
     # Data for other investigation
     other_study = {
@@ -453,9 +453,9 @@ def test_build_ignores_irrelevant_data(sample_investigation: dict[str, Any]) -> 
 # ---------------------------------------------------------------------------
 
 
-def _ann_row(**overrides: Any) -> dict[str, Any]:
+def _ann_row(**overrides: JsonValue) -> JsonObject:
     """Return a minimal AnnotationTableRow dict, optionally overriding any field."""
-    base: dict[str, Any] = {
+    base: JsonObject = {
         "investigation_ref": "inv1",
         "target_type": "study",
         "target_ref": "sty1",
@@ -476,7 +476,7 @@ def _ann_row(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def _row(data: dict[str, Any]) -> AnnotationTableRow:
+def _row(data: JsonObject) -> AnnotationTableRow:
     """Validate a dict into an AnnotationTableRow."""
     return AnnotationTableRow.model_validate(data)
 
