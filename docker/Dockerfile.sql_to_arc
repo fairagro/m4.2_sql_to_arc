@@ -1,6 +1,9 @@
 # ---- Package Build Stage ----
 FROM python:3.12.14-alpine3.24 AS package-builder
 
+# Alpine ash: enable pipefail for RUN lines that pipe (hadolint DL4006).
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+
 WORKDIR /build
 
 # Copy project files needed for package build
@@ -17,8 +20,8 @@ RUN pip install --no-cache-dir --upgrade pip==26.2.1 uv==0.12.9
 ARG APP_VERSION=0.0.0
 RUN set -eu; \
     case "${APP_VERSION}" in \
-      *-*) _pep440="${APP_VERSION%%-*}+$(printf '%s' "${APP_VERSION#*-}" | tr '-' '.')" ;; \
-      *) _pep440="${APP_VERSION}" ;; \
+    *-*) _pep440="${APP_VERSION%%-*}+$(printf '%s' "${APP_VERSION#*-}" | tr '-' '.')" ;; \
+    *) _pep440="${APP_VERSION}" ;; \
     esac; \
     echo "APP_VERSION=${APP_VERSION} → PEP440=${_pep440}"; \
     export SETUPTOOLS_SCM_PRETEND_VERSION="${_pep440}"; \
@@ -29,9 +32,12 @@ RUN set -eu; \
 # ---- Binary Build Stage ----
 FROM python:3.12.14-alpine3.24 AS binary-builder
 
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+
 # Install build tools for PyInstaller and native DB drivers.
 # Do not apk-install python3-dev: Alpine 3.24 ships Python 3.14, while this
 # image already provides CPython 3.12.14 headers under /usr/local/include.
+# Pre-download Microsoft ODBC Driver 18 for Alpine (kept for runtime stage; -L follows redirects).
 RUN apk add --no-cache \
     build-base=0.5-r4 \
     libffi-dev=3.5.2-r1 \
@@ -40,11 +46,8 @@ RUN apk add --no-cache \
     cargo=1.96.1-r0 \
     git=2.54.0-r0 \
     unixodbc-dev=2.3.14-r1 \
-    curl=8.22.0-r0
-
-# Pre-download Microsoft ODBC Driver 18 for Alpine (kept for runtime stage)
-# Use -L to follow redirects
-RUN curl -L -O https://download.microsoft.com/download/9dcab408-e0d4-4571-a81a-5a0951e3445f/msodbcsql18_18.6.1.1-1_amd64.apk
+    curl=8.22.0-r0 && \
+    curl -L -O https://download.microsoft.com/download/9dcab408-e0d4-4571-a81a-5a0951e3445f/msodbcsql18_18.6.1.1-1_amd64.apk
 
 WORKDIR /build
 
@@ -55,8 +58,8 @@ RUN pip install --no-cache-dir --upgrade pip==26.2.1 uv==0.12.9
 ARG APP_VERSION=0.0.0
 RUN set -eu; \
     case "${APP_VERSION}" in \
-      *-*) _pep440="${APP_VERSION%%-*}+$(printf '%s' "${APP_VERSION#*-}" | tr '-' '.')" ;; \
-      *) _pep440="${APP_VERSION}" ;; \
+    *-*) _pep440="${APP_VERSION%%-*}+$(printf '%s' "${APP_VERSION#*-}" | tr '-' '.')" ;; \
+    *) _pep440="${APP_VERSION}" ;; \
     esac; \
     printf '%s' "${_pep440}" > /tmp/app_version_pep440
 
@@ -80,14 +83,11 @@ RUN set -eu; \
     export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_SQL_TO_ARC="${_pep440}"; \
     uv sync --no-dev --no-install-workspace
 
-# Install the application wheel and PyInstaller.
-# This replaces the editable install from 'uv sync' with the optimized wheel.
-RUN uv pip install /tmp/wheels/*.whl pyinstaller
-
-# Build standalone binary using the .venv's context.
-# We point PyInstaller to the 'main.py' INSTALLED in site-packages.
-# --copy-metadata is still needed because the code checks its own version at runtime.
-RUN . .venv/bin/activate && \
+# Install the application wheel + PyInstaller, then build the standalone binary.
+# Point PyInstaller at main.py in site-packages; --copy-metadata is needed because
+# the code checks its own version at runtime. Use .venv/bin/python directly (no
+# `source activate`) so shellcheck/hadolint can analyze the RUN.
+RUN uv pip install /tmp/wheels/*.whl pyinstaller && \
     .venv/bin/python -m PyInstaller --onedir \
     --name sql_to_arc \
     --copy-metadata sql_to_arc \
@@ -107,10 +107,10 @@ WORKDIR /middleware
 COPY --from=binary-builder /msodbcsql18_18.6.1.1-1_amd64.apk /tmp/
 
 RUN apk add --no-cache --upgrade \
-        unixodbc=2.3.14-r1 \
-        libstdc++=15.2.0-r5 \
-        gcompat=1.1.0-r4 \
-        zlib=1.3.2-r0 && \
+    unixodbc=2.3.14-r1 \
+    libstdc++=15.2.0-r5 \
+    gcompat=1.1.0-r4 \
+    zlib=1.3.2-r0 && \
     apk add --no-cache --allow-untrusted /tmp/msodbcsql18_18.6.1.1-1_amd64.apk && \
     rm /tmp/msodbcsql18_*.apk
 
