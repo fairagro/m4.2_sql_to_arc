@@ -1,0 +1,80 @@
+name: Feature Pull Request
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - "main"
+
+concurrency:
+  group: feature-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dorny/paths-filter@v4
+        id: changes
+        with:
+          filters: |
+            code:
+              - 'middleware/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'docker/**'
+              - 'docker-bake.hcl'
+              - '.github/**'
+              - 'scripts/**'
+              - 'stubs/**'
+              - '.pre-commit-config.yaml'
+              - '.bandit'
+              - 'dev_environment/**'
+              - 'versions.env'
+
+  code-quality:
+    name: Code Quality
+    needs: [detect-changes]
+    # Pin until Devinfra #72 (mypy_path / pylint_source_roots) merges → then @main.
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-code-quality.yml@a061d6fb85afc8dfd54083ff58bf788744dcdca8
+    with:
+      python_package_root: middleware
+      components: '["sql_to_arc"]'
+      mypy_path: stubs:middleware/sql_to_arc/src
+      skip: ${{ needs.detect-changes.outputs.code != 'true' }}
+    secrets: inherit
+
+  build:
+    name: Build
+    needs: [detect-changes]
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-build.yml@main
+    with:
+      components: '["sql_to_arc"]'
+      image_base_name: fairagro-advanced-middleware
+      skip: ${{ needs.detect-changes.outputs.code != 'true' }}
+    secrets: inherit
+
+  check:
+    name: Check
+    needs: [detect-changes, build]
+    if: always() && needs.detect-changes.result == 'success'
+    # Local until Devinfra #74: omit Trivy licence-check (Alpine GPL noise).
+    uses: ./.github/workflows/reusable-check-local.yml
+    with:
+      version: ${{ needs.build.outputs.version }}
+      components: '["sql_to_arc"]'
+      image_base_name: fairagro-advanced-middleware
+      skip: ${{ needs.detect-changes.outputs.code != 'true' || needs.build.result != 'success' }}
+    secrets: inherit

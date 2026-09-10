@@ -23,16 +23,29 @@ fi
 
 # Extract Alpine major.minor from builder or runtime base images.
 # Matches e.g. "FROM python:3.12.14-alpine3.24" or "FROM alpine:3.24.1" → "3.24"
+# Wave C last stage is FROM alpine:${ALPINE_VERSION}; the pin is versions.env ALPINE_MINOR.
 ALPINE_VERSION=$(
   grep -E '^FROM ' "$DOCKERFILE" | grep -oE 'alpine[0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+' | head -1
 )
 if [[ -z "$ALPINE_VERSION" ]]; then
-  ALPINE_VERSION=$(
+  extracted=$(
     grep -m1 '^FROM alpine:' "$DOCKERFILE" | sed -E 's/.*:([0-9]+\.[0-9]+).*/\1/'
   )
+  if [[ "$extracted" =~ ^[0-9]+\.[0-9]+$ ]]; then
+    ALPINE_VERSION="$extracted"
+  fi
 fi
 if [[ -z "$ALPINE_VERSION" ]]; then
-  echo "❌ Could not extract Alpine version from $DOCKERFILE" >&2
+  ALPINE_VERSION="$(
+    set -a
+    # shellcheck disable=SC1091
+    source "${PROJECT_DIR}/versions.env"
+    set +a
+    printf '%s' "${ALPINE_MINOR:-}"
+  )"
+fi
+if [[ ! "$ALPINE_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+  echo "❌ Could not extract Alpine version from $DOCKERFILE or versions.env ALPINE_MINOR" >&2
   exit 1
 fi
 echo "🏔️  Detected Alpine version: $ALPINE_VERSION"

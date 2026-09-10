@@ -135,6 +135,16 @@ openspec validate <change>     # Validate a change folder
 In Cursor chat: `/opsx-explore`, `/opsx-propose`, `/opsx-apply`, `/opsx-archive`.
 In GitHub Copilot: the matching `opsx-*` prompts under `.github/prompts/`.
 
+### CI (Wave C)
+
+Callers: `.github/workflows/feature-pull-request.yml`, `pre-release.yml`,
+`release.yml` → Devinfra reusables (`docs/ci.md`). Temporary
+`reusable-check-local.yml` omits Trivy licence scan until Devinfra #74 — do not
+hand-edit synced trees. CQ pin SHA until Devinfra #72 merges (`mypy_path`).
+
+Bake: `docker-bake.hcl` targets `sql_to_arc-base` + `sql_to_arc` (synced
+`Dockerfile.product-app.base` + thin last stage).
+
 ### Dev Container
 
 | IDE | How to open |
