@@ -49,7 +49,8 @@ deferred (reusable CI `uses:` / full Bake base).
 - [x] 4.1 `bash -n` on touched scripts; hook install order smoke
 - [x] 4.2 Focused `uv run pytest` unit; `ruff check`; `MYPYPATH=stubs:… mypy`
       (clean)
-- [ ] 4.3 Full `quality-check.sh` / Dev Container rebuild / CST bake — user
-      after commit
+- [x] 4.3 Full `quality-check.sh` (ggshield skipped — no `GITGUARDIAN_API_KEY`
+      in agent env) + CST bake (`sql_to_arc` → 13/13 PASS). Dev Container
+      image rebuild remains an operator step after commit / reopen.
 - [x] 4.4 Diff synced paths vs pin (overlays excepted); golden-rule audit +
       harvester #180 gap fill
