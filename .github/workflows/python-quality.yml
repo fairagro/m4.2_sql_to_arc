@@ -53,20 +53,22 @@ jobs:
       if: inputs.run_checks
       run: |
         # Check formatting (do not auto-format), then check linting
-        uv run ruff format --check --diff middleware/
-        uv run ruff check middleware/
+        uv run ruff format --check --diff --config ruff.toml middleware/
+        uv run ruff check --config ruff.toml middleware/
       continue-on-error: false
 
     - name: Linting with pylint
       if: inputs.run_checks
       run: |
-        uv run pylint middleware/ --fail-under=8.0 --output-format=colorized
+        uv run pylint --rcfile .pylintrc middleware/sql_to_arc --fail-under=8.0 --output-format=colorized
       continue-on-error: false
 
     - name: Type checking with mypy
       if: inputs.run_checks
+      env:
+        MYPYPATH: stubs:middleware/sql_to_arc/src
       run: |
-        uv run mypy middleware/
+        uv run mypy --config-file mypy.ini middleware/
       continue-on-error: false
 
     - name: Security check with bandit

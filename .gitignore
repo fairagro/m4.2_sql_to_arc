@@ -146,9 +146,12 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+node_modules/
 
 # Allow encrypted .env.integration.enc but ignore any unencrypted .env files
 !.env.integration.enc
+# Dev Container compose reads versions via symlink (synced Wave B contract).
+!.devcontainer/.env
 
 # Spyder project settings
 .spyderproject

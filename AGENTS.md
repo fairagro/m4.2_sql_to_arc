@@ -38,8 +38,9 @@ docs/
 ├── ai_review_policy.md    # Copilot/Bugbot policy (synced)
 ├── surface-quality-bar.global.md  # Default path→surface map (synced)
 ├── surface-quality-bar.md # Product path rows (local)
-├── synced-paths.global.md # Devinfra sync allowlist (synced — do not hand-edit)
+├── synced-paths.yaml      # Devinfra sync allowlist (synced — do not hand-edit)
 ├── git-lfs.md             # Product Git LFS overlay (install + Wave B compose)
+├── quality.md / sync.md / devcontainer.md  # Synced Devinfra DX docs
 └── sql_to_arc_database_views.md  # Authoritative DB view / schema contract
 
 openspec/                  # OpenSpec source of truth + changes
@@ -69,19 +70,20 @@ middleware/
 
 scripts/
 ├── ai/                            # m42-ai (synced): uv run --project scripts/ai m42-ai …
-├── bin/gh                         # PATH wrapper + personal GH_TOKEN (thin Auth-B)
-├── load-env.sh                    # Per-shell env (PATH, aliases, SOPS); sourced from bashrc
-├── uv-sync-dev.sh                 # One-time uv sync (devcontainer postCreate)
-├── install-dev-hooks.sh           # One-time pre-commit + Git LFS hooks
-├── import-public-gpg-keys.sh      # Import public_gpg_keys/*.asc (devcontainer / local)
-├── setup-git-lfs.sh               # Git LFS hook installation
-├── quality-check.sh               # Run all quality checks (pre-commit push stage)
-├── quality-fix.sh                 # Run auto-formatters (ruff)
-└── git-hooks/                     # Version-controlled hooks
-    ├── pre-push          # Combined: Git LFS + pre-commit
-    ├── post-checkout
-    ├── post-commit
-    └── post-merge
+├── bin/gh, bin/git                # PATH wrappers + personal tokens (synced)
+├── load-env.sh                    # Per-shell env (PATH, aliases, SOPS); product-local
+├── load-versions-env.sh           # Synced versions.env loader
+├── uv-sync-dev.sh                 # Product: uv sync --dev --all-packages
+├── install-dev-hooks.sh           # Product: pre-commit + setup-git-hooks + setup-git-lfs
+├── setup-git-hooks.sh             # Synced quality pre-push installer (no LFS)
+├── setup-git-lfs.sh               # Product Git LFS overlay
+├── devcontainer-post-create.sh    # Synced shared postCreate
+├── import-public-gpg-keys.sh      # Product: public_gpg_keys/*.asc
+├── quality-*.sh / CST runner      # Synced quality scripts
+├── git-hooks/                     # Synced quality pre-push only (verbatim)
+├── git-lfs-hooks/                 # Product: combined LFS+quality pre-push; LFS post-*
+
+stubs/                             # Product-local arctrl/fable stubs until Devinfra #67
 
 dev_environment/
 ├── start-demo.sh         # Start full local demo (DB + Converter + Mock API)
@@ -104,12 +106,14 @@ behavioral spec.
 # Run tests for the converter
 uv run pytest middleware/sql_to_arc/tests/ -v
 
-# Run individual quality tools (never run quality-check.sh — it runs everything and is too slow)
-uv run ruff check .
-uv run ruff format .
-uv run mypy middleware/sql_to_arc/
-uv run pylint middleware/sql_to_arc/
-uv run bandit -r middleware/sql_to_arc/src/
+# Quality checks (synced: ruff.toml, mypy.ini, .pylintrc — see docs/quality.md)
+# Never run quality-check.sh from agents — it runs everything and is too slow.
+uv run ruff format --check --config ruff.toml middleware/
+uv run ruff check --config ruff.toml middleware/
+MYPYPATH=stubs:middleware/sql_to_arc/src \
+  uv run mypy --config-file mypy.ini middleware/
+uv run pylint --rcfile .pylintrc middleware/sql_to_arc
+uv run bandit -r middleware/ -c .bandit -ll
 
 # Install all dependencies (including external shared/api_client via git)
 uv sync --dev --all-packages
@@ -138,7 +142,11 @@ In GitHub Copilot: the matching `opsx-*` prompts under `.github/prompts/`.
 | **VS Code** | **Reopen in Container** → `.devcontainer/devcontainer.json` |
 | **Cursor** | **Dev Containers: Reopen in Container** → `.devcontainer/devcontainer.json` |
 
-Shared image: `.devcontainer/Dockerfile` (pinned tools, **linux/amd64 only**) + DinD feature. `devcontainer.json` sets `--platform=linux/amd64`. One-time setup runs in `postCreateCommand` (`uv-sync-dev.sh`, `install-dev-hooks.sh`, `import-public-gpg-keys.sh`). Per-shell: `scripts/load-env.sh` (sourced from `~/.bashrc`).
+Shared image: `.devcontainer/Dockerfile` (synced from Devinfra) + compose overlay.
+`devcontainer.json` is product-owned (name / workspaceFolder / volumes). postCreate:
+shared `devcontainer-post-create.sh` then product `uv-sync-dev.sh` /
+`install-dev-hooks.sh` (hooks + LFS) / `import-public-gpg-keys.sh`. Per-shell:
+`scripts/load-env.sh` (bashrc). Toolchain pins: `versions.env`.
 
 ### Development Environment
 
@@ -169,7 +177,7 @@ exists for the work in progress.
 - **[`openspec/principles.global.md`](openspec/principles.global.md)** — Synced shared principles (do not hand-edit).
 - **[`openspec/principles.md`](openspec/principles.md)** — Product overlay (stack, modules, converter constraints).
 - **[`docs/ai_review_policy.md`](docs/ai_review_policy.md)** — Review policy (synced).
-- **[`docs/synced-paths.global.md`](docs/synced-paths.global.md)** — Synced-path allowlist (do not patch in consumers).
+- **[`docs/synced-paths.yaml`](docs/synced-paths.yaml)** — Synced-path allowlist (do not patch in consumers).
 - **[`docs/surface-quality-bar.global.md`](docs/surface-quality-bar.global.md)** +
   **[`docs/surface-quality-bar.md`](docs/surface-quality-bar.md)** — path→surface map.
 
@@ -202,8 +210,8 @@ This project depends on `shared` and `api_client` libraries, which are hosted in
 Product overlay (not in Devinfra). See [`docs/git-lfs.md`](docs/git-lfs.md).
 
 **Setup:** `scripts/install-dev-hooks.sh` (Dev Container `postCreate` / after
-clone) installs commit-stage pre-commit, then runs
-`scripts/setup-git-lfs.sh`, which copies `scripts/git-hooks/{pre-push,post-*}`
+clone) installs commit-stage pre-commit, shared `setup-git-hooks.sh`, then
+`setup-git-lfs.sh`, which copies `scripts/git-lfs-hooks/{pre-push,post-*}`
 into `.git/hooks`. `load-env.sh` does **not** install LFS.
 
 **Tracked:** `*.sql` (`.gitattributes`). **Wave B:** always re-apply

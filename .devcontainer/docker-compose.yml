@@ -1,0 +1,33 @@
+# Build-arg substitution (${UV_VERSION}, etc.) reads .env in this directory —
+# a symlink to ../versions.env (single source of truth).
+# Product overlay: volume workspace path only (Devinfra compose shape).
+services:
+  devcontainer:
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+      args:
+        DEVCONTAINER_BASE_IMAGE: ${DEVCONTAINER_BASE_IMAGE}
+        PYTHON_VERSION: ${PYTHON_VERSION}
+        UV_VERSION: ${UV_VERSION}
+        KUBECTL_VERSION: ${KUBECTL_VERSION}
+        HELM_VERSION: ${HELM_VERSION}
+        MINIKUBE_VERSION: ${MINIKUBE_VERSION}
+        SOPS_VERSION: ${SOPS_VERSION}
+        AGE_VERSION: ${AGE_VERSION}
+        STARSHIP_VERSION: ${STARSHIP_VERSION}
+        YQ_VERSION: ${YQ_VERSION}
+        XQ_VERSION: ${XQ_VERSION}
+        YAMLFMT_VERSION: ${YAMLFMT_VERSION}
+        HADOLINT_VERSION: ${HADOLINT_VERSION}
+        CST_VERSION: ${CST_VERSION}
+        TRIVY_VERSION: ${TRIVY_VERSION}
+        RENOVATE_VERSION: ${RENOVATE_VERSION}
+        NODE_VERSION: ${NODE_VERSION}
+        OPENSPEC_VERSION: ${OPENSPEC_VERSION}
+        PRETTIER_VERSION: ${PRETTIER_VERSION}
+        MARKDOWNLINT_CLI2_VERSION: ${MARKDOWNLINT_CLI2_VERSION}
+    volumes:
+      - ..:/workspaces/m4.2_sql_to_arc-cursor:cached
+    command: sleep infinity

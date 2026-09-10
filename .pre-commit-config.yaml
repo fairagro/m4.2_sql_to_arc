@@ -1,93 +1,116 @@
-# Pre-commit configuration
-# See https://pre-commit.com for more information
-# See https://pre-commit.com/hooks.html for more hooks
-#
-# All hooks use 'uv run --no-sync' to execute tools defined in pyproject.toml.
-# --no-sync avoids lockfile checks / network sync during commits (offline-safe).
+# Pre-commit configuration — PRODUCT-OWNED until Devinfra #63 moves this path off
+# the sync allowlist (or splits .global + product). Last-resort local fork of the
+# Devinfra skeleton; do not treat as a synced file. Fleet contract:
+# https://github.com/fairagro/m4.2_middleware_devinfra/issues/63
+# Local deltas: MYPYPATH (stubs + sql_to_arc src), pylint package path, helm YAML
+# exclude, markdownlint OpenSpec globs, unit-test pre-push scope, CST Bake target.
 
 repos:
-  # Built-in hooks (no dependencies needed)
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        stages: [manual, pre-push]
-        exclude: ^\.agents/skills/(gh|docker|hadolint|uv)/
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
       - id: end-of-file-fixer
-        stages: [manual, pre-push]
-        exclude: ^\.agents/skills/(gh|docker|hadolint|uv)/
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
       - id: check-yaml
-        exclude: ^helmchart/[^/]+/templates/.*\.ya?ml$
+        exclude: |
+          (?x)^(
+            \.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
+            | helmchart/[^/]+/templates/.*\.ya?ml$
+          )
       - id: check-added-large-files
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
       - id: check-merge-conflict
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
       - id: check-toml
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
       - id: debug-statements
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
 
-  # All Python quality checks using uv run (local hooks)
   - repo: local
     hooks:
-      # ggshield - secret scan (version from pyproject.toml / uv.lock)
       - id: ggshield
         name: ggshield secret scan
-        entry: uv run --no-sync ggshield secret scan pre-commit
+        entry: uv run ggshield secret scan pre-commit
         language: system
         pass_filenames: false
 
-      # Ruff - Linting
       - id: ruff
         name: ruff lint
-        entry: uv run --no-sync ruff check --no-fix
+        entry: uv run ruff check --config ruff.toml middleware/
         language: system
-        types: [python]
+        files: ^middleware/
+        pass_filenames: false
 
-      # Ruff - Formatting
+      - id: ruff-fix
+        name: ruff lint (autofix)
+        entry: uv run ruff check --fix --exit-non-zero-on-fix --config ruff.toml middleware/
+        language: system
+        files: ^middleware/
+        pass_filenames: false
+
       - id: ruff-format
         name: ruff format
-        entry: uv run --no-sync ruff format
+        entry: uv run ruff format --config ruff.toml middleware/
         language: system
-        types: [python]
-        args: [--check]
+        files: ^middleware/
+        pass_filenames: false
 
-      # mypy - Type checking
       - id: mypy
         name: mypy type check
-        entry: uv run --no-sync mypy
+        # Product path overlay via MYPYPATH (hook `env:` unsupported on this pre-commit).
+        entry: >-
+          bash -c 'export MYPYPATH=stubs:middleware/sql_to_arc/src;
+          uv run mypy --config-file mypy.ini middleware/'
         language: system
-        types: [python]
         files: ^middleware/
-        args: [--config-file, pyproject.toml]
+        pass_filenames: false
 
-      # bandit - Security linting
       - id: bandit
         name: bandit security scan
-        entry: uv run --no-sync bandit -r
+        # -ll: MEDIUM+ only (`.bandit` has no fail-on-severity; same fail bar as CI — see docs/quality.md)
+        entry: uv run bandit -r middleware/ -c .bandit -ll
         language: system
-        types: [python]
         files: ^middleware/
-        args: [--configfile, .bandit]
+        pass_filenames: false
 
-      # pylint - Code quality
       - id: pylint
         name: pylint
-        entry: uv run --no-sync pylint
+        entry: uv run pylint --rcfile .pylintrc middleware/sql_to_arc
         language: system
-        types: [python]
         files: ^middleware/
+        pass_filenames: false
 
-      # pytest - Unit tests only (runs on pre-push to keep commits fast)
-      - id: pytest-unit
-        name: pytest unit tests
-        entry: bash -c "uv run --no-sync pytest middleware/*/tests/unit/"
+      - id: markdownlint
+        name: markdownlint-cli2
+        entry: >-
+          bash -c 'markdownlint-cli2 "**/*.md"
+          "!openspec/**"
+          "!.cursor/commands/opsx-*.md"
+          "!.cursor/skills/openspec-*/**"
+          "!.cursor/rules/openspec-*.mdc"
+          "!.github/prompts/opsx-*"
+          "!.github/skills/openspec-*/**"'
         language: system
-        types: [python]
+        files: \.md$
+        pass_filenames: false
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
+
+      - id: pytest
+        name: pytest unit tests
+        entry: bash -c "uv run pytest middleware/*/tests/unit/ --override-ini='addopts='"
+        language: system
         pass_filenames: false
         always_run: true
         stages: [pre-push]
 
-      # Container Structure Test (runs on pre-push)
       - id: container-structure-test
         name: container structure test
-        entry: bash scripts/run-container-structure-test.sh
+        entry: >-
+          bash -c 'CST_BAKE_TARGET=sql_to_arc CST_IMAGE_TAG=sql-to-arc:test
+          CST_CONFIG=docker/container-structure-tests/sql_to_arc.yaml
+          bash scripts/run-container-structure-test.sh'
         language: system
         pass_filenames: false
         always_run: true

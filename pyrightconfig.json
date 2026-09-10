@@ -1,0 +1,17 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "stubPath": "stubs",
+  "extraPaths": [
+    "scripts/ai/src",
+    "middleware/sql_to_arc/src",
+    "middleware/sql_to_arc/tests"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "**/.venv",
+    "**/venv"
+  ]
+}
