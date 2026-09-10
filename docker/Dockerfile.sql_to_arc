@@ -8,7 +8,7 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY middleware ./middleware
 
 # Upgrade pip and install uv
-RUN pip install --no-cache-dir --upgrade pip==26.2.1 uv==0.12.9
+RUN pip install --no-cache-dir --upgrade pip==26.2.1 uv==0.12.12
 
 # Declare build argument for versioning.
 # GitVersion feature-branch SemVer (e.g. 1.1.1-introduce-report-lib.1) is not
@@ -49,7 +49,7 @@ RUN curl -L -O https://download.microsoft.com/download/9dcab408-e0d4-4571-a81a-5
 WORKDIR /build
 
 # Install uv core tool
-RUN pip install --no-cache-dir --upgrade pip==26.2.1 uv==0.12.9
+RUN pip install --no-cache-dir --upgrade pip==26.2.1 uv==0.12.12
 
 # Declare build argument for versioning (same PEP 440 normalization as package-builder)
 ARG APP_VERSION=0.0.0
