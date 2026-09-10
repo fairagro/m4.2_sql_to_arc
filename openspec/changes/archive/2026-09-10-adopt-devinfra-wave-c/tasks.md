@@ -26,4 +26,4 @@
 ## 5. Verify / handoff
 
 - [x] 5.1 `hadolint` clean on thin Dockerfile; bake + CST green
-- [ ] 5.2 Pause for user commit / push / draft PR `Fixes #95`
+- [x] 5.2 Pause for user commit / push / draft PR `Fixes #95`
