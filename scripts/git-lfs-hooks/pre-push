@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Product Git LFS + quality pre-push compose (NOT under synced scripts/git-hooks/).
+#
+# Devinfra installs scripts/git-hooks/pre-push (quality only) and strips LFS
+# post-* hooks. This product overlay must live outside the synced allowlist
+# (scripts/git-hooks/**) so Wave B sync stays verbatim. Installed by
+# scripts/setup-git-lfs.sh after setup-git-hooks.sh.
+#
+# Order: buffer stdin once → git lfs pre-push → synced quality pre-push.
+# See docs/git-lfs.md.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+QUALITY_PRE_PUSH="${REPO_ROOT}/scripts/git-hooks/pre-push"
+
+stdin_file="$(mktemp)"
+trap 'rm -f "${stdin_file}"' EXIT
+cat >"${stdin_file}"
+
+if command -v git-lfs >/dev/null 2>&1; then
+  # shellcheck disable=SC2094
+  git lfs pre-push "$@" <"${stdin_file}"
+else
+  echo "WARNING: git-lfs not on PATH; skipping LFS pre-push" >&2
+fi
+
+if [ ! -x "${QUALITY_PRE_PUSH}" ]; then
+  echo "ERROR: missing synced quality hook: ${QUALITY_PRE_PUSH}" >&2
+  exit 1
+fi
+
+# Synced hook re-buffers stdin for pre-commit push stage.
+"${QUALITY_PRE_PUSH}" "$@" <"${stdin_file}"

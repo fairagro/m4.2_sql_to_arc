@@ -1,59 +1,86 @@
+// PRODUCT-OWNED overlay (not a Devinfra sync overwrite target).
+// Fleet contract: https://github.com/fairagro/m4.2_middleware_devinfra/issues/65
+// Local deltas: name, workspaceFolder, volume names, postCreate extras, postStart load-env.
 {
-	"name": "Debian (DinD)",
-	"build": {
-		"dockerfile": "Dockerfile",
-		"context": ".",
-		"options": ["--platform=linux/amd64"]
-	},
-	"features": {
-		"ghcr.io/devcontainers/features/docker-in-docker:": {
-			"moby": false,
-			"disableIp6tables": true,
-			"version": "28.5.1"
-		}
-	},
-	"containerEnv": {
-		"UV_LINK_MODE": "copy"
-	},
-	"mounts": [
-		"source=sql-to-arc-bashhistory,target=/commandhistory,type=volume"
-	],
-	"customizations": {
-		"vscode": {
-			"extensions": [
-				"jeff-hykin.better-dockerfile-syntax",
-				"ms-azuretools.vscode-docker",
-				"formulahendry.docker-explorer",
-				"shipitsmarter.sops-edit",
-				"davidanson.vscode-markdownlint",
-				"samuelcolvin.jinjahtml",
-				"tamasfe.even-better-toml",
-				"ms-python.python",
-				"ms-python.vscode-pylance",
-				"ms-python.debugpy",
-				"ms-python.autopep8",
-				"ms-python.vscode-python-envs",
-				"ms-python.pylint",
-				"ms-python.mypy-type-checker",
-				"mhutchie.git-graph",
-				"donjayamanne.githistory",
-				"codezombiech.gitignore",
-				"github.copilot-chat",
-				"charliermarsh.ruff",
-				"tim-koehler.helm-intellisense",
-				"vadzimnestsiarenka.helm-template-preview-and-more",
-				"jebbs.plantuml"
-			]
-		}
-	},
-	"postCreateCommand": {
-		"fix commandhistory permissions": "sudo chown -R vscode:vscode /commandhistory",
-		"install dependencies": "bash ${containerWorkspaceFolder}/scripts/uv-sync-dev.sh",
-		"install dev hooks": "bash ${containerWorkspaceFolder}/scripts/install-dev-hooks.sh",
-		"import public gpg keys": "bash ${containerWorkspaceFolder}/scripts/import-public-gpg-keys.sh"
-	},
-	"postStartCommand": {
-		"setup bashrc": "grep -qF 'source ${containerWorkspaceFolder}/scripts/load-env.sh' ~/.bashrc || echo 'source ${containerWorkspaceFolder}/scripts/load-env.sh' >> ~/.bashrc"
-	},
-	"remoteUser": "vscode"
+  "name": "SQL-to-ARC (DinD)",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspaces/m4.2_sql_to_arc-cursor",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
+      "moby": false,
+      "disableIp6tables": true,
+      "version": "28.5.1"
+    }
+  },
+  "mounts": [
+    "source=sql-to-arc-bashhistory,target=/commandhistory,type=volume",
+    "source=sql-to-arc-gh-config,target=/home/vscode/.config/gh,type=volume"
+  ],
+  "containerEnv": {
+    "UV_LINK_MODE": "copy"
+  },
+  "remoteEnv": {
+    "PATH": "${workspaceFolder}/scripts/bin:${containerEnv:PATH}"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "jeff-hykin.better-dockerfile-syntax",
+        "ms-azuretools.vscode-docker",
+        "formulahendry.docker-explorer",
+        "exiasr.hadolint",
+        "esbenp.prettier-vscode",
+        "davidanson.vscode-markdownlint",
+        "signageos.signageos-vscode-sops",
+        "samuelcolvin.jinjahtml",
+        "redhat.vscode-yaml",
+        "tamasfe.even-better-toml",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.debugpy",
+        "ms-python.vscode-python-envs",
+        "ms-python.pylint",
+        "ms-python.mypy-type-checker",
+        "charliermarsh.ruff",
+        "mhutchie.git-graph",
+        "donjayamanne.githistory",
+        "codezombiech.gitignore",
+        "github.copilot-chat",
+        "github.vscode-github-actions",
+        "tim-koehler.helm-intellisense",
+        "vadzimnestsiarenka.helm-template-preview-and-more",
+        "jebbs.plantuml"
+      ],
+      "settings": {
+        "hadolint.hadolintPath": "/usr/local/bin/hadolint",
+        "editor.formatOnSave": true,
+        "[markdown]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[mdc]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[json]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[jsonc]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[yaml]": {
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        }
+      }
+    }
+  },
+  "postCreateCommand": {
+    "shared post-create": "bash scripts/devcontainer-post-create.sh",
+    "product uv sync": "bash scripts/uv-sync-dev.sh",
+    "product hooks + LFS": "bash scripts/install-dev-hooks.sh",
+    "import public gpg keys": "bash scripts/import-public-gpg-keys.sh"
+  },
+  "postStartCommand": {
+    "setup bashrc": "grep -qF 'source ${workspaceFolder}/scripts/load-env.sh' ~/.bashrc || echo 'source ${workspaceFolder}/scripts/load-env.sh' >> ~/.bashrc"
+  },
+  "remoteUser": "vscode"
 }

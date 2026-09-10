@@ -10,8 +10,9 @@ This repository contains the **SQL-to-ARC Converter**, a core component of the F
 | [openspec/](openspec/) | OpenSpec domain specs and change proposals (spec-driven development). |
 | [docs/](docs/) | Architectural design, database view specifications, and API documentation. |
 | [dev_environment/](dev_environment/) | Docker-based local development setup (Postgres, Mock API). |
-| [scripts/](scripts/) | Tooling for quality checks, environment setup, and Git LFS. |
+| [scripts/](scripts/) | Tooling for quality checks, Dev Container helpers, hooks, and Git LFS. |
 | [docker/](docker/) | Dockerfiles and container structure tests. |
+| [stubs/](stubs/) | Product-local type stubs (`arctrl` / `fable_library`) until Devinfra #67. |
 
 ## 🌟 Quick Start (Full Local Demo)
 
@@ -26,15 +27,16 @@ For the best **out-of-the-box experience**, you can run a complete local demonst
 
 ## 🚀 Getting Started (Development)
 
-The preferred method for working with this repository is using a **Dev Container** (VS Code or Cursor): **Reopen in Container** / **Dev Containers: Reopen in Container** uses `.devcontainer/devcontainer.json`.
+The preferred method for working with this repository is using a **Dev Container** (VS Code or Cursor): **Reopen in Container** / **Dev Containers: Reopen in Container** uses [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) — see [`docs/devcontainer.md`](docs/devcontainer.md).
 
 While it is possible to develop without the Dev Container (see next steps below), this approach is not tested and is therefore neither documented nor officially supported.
 
 ### 1. Prerequisites (for manual setups only)
 
-- **Python 3.12+**
+- **Python 3.12+** (pin in `versions.env` / `.python-version`)
 - **[uv](https://github.com/astral-sh/uv)** (Dependency Management & Workspace Orchestration)
 - **Docker & Docker Compose**
+- **Node.js 22+** (for `npm run lint:md` on host clones; installed in the Dev Container)
 - **Git LFS** for `*.sql` — `./scripts/install-dev-hooks.sh` (or `./scripts/setup-git-lfs.sh`); see [`docs/git-lfs.md`](docs/git-lfs.md)
 
 ### 2. Environment Setup
@@ -42,7 +44,8 @@ While it is possible to develop without the Dev Container (see next steps below)
 Clone the repository and install all workspace dependencies:
 
 ```bash
-uv sync --all-packages
+uv sync --dev --all-packages
+./scripts/install-dev-hooks.sh
 ```
 
 ### 3. Start Local Development Environment

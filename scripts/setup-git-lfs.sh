@@ -6,13 +6,16 @@
 # always re-run this script after any shared hook installer (shared setup removes
 # LFS post-* hooks). See docs/git-lfs.md.
 #
+# Hook sources live under scripts/git-lfs-hooks/ (product-owned), NOT under the
+# synced allowlist scripts/git-hooks/** (quality pre-push only, verbatim).
+#
 # Usage (from the repository root):
 #   ./scripts/setup-git-lfs.sh
 
 set -e
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOOKS_SOURCE_DIR="$REPO_ROOT/scripts/git-hooks"
+HOOKS_SOURCE_DIR="$REPO_ROOT/scripts/git-lfs-hooks"
 HOOKS_TARGET_DIR="$REPO_ROOT/.git/hooks"
 
 echo "🔧 Setting up Git LFS hooks for repository..."
@@ -53,7 +56,7 @@ for hook in pre-push post-checkout post-commit post-merge; do
 
     [ -f "$source_hook" ] || continue
 
-    if [ -f "$target_hook" ] && ! grep -q "version-controlled and should be installed via" "$target_hook" 2>/dev/null; then
+    if [ -f "$target_hook" ] && ! grep -q "version-controlled and should be installed via\|Product Git LFS" "$target_hook" 2>/dev/null; then
         echo "📋 Backing up existing $hook hook to $hook.backup"
         cp "$target_hook" "$target_hook.backup"
     else

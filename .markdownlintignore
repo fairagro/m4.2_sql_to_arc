@@ -1,0 +1,12 @@
+# Vendor agent skills (`gh skill install`; do not hand-edit).
+.agents/skills/gh/**
+.agents/skills/docker/**
+.agents/skills/hadolint/**
+.agents/skills/uv/**
+
+# Not Markdown documentation
+LICENSE
+
+# Third-party / local environments
+.venv/**
+node_modules/**
