@@ -9,9 +9,7 @@
 ARG ALPINE_VERSION
 FROM alpine:${ALPINE_VERSION}
 
-ARG BINARY_NAME=sql_to_arc
 ARG RUNTIME_USER=sql_to_arc
-ARG RUNTIME_WORKDIR=/middleware
 # Pinned runtime apk versions (product last-stage personality).
 ARG UNIXODBC_VERSION=2.3.14-r1
 ARG LIBSTDCXX_VERSION=15.2.0-r5
@@ -22,9 +20,7 @@ ARG MSODBCSQL_URL=https://download.microsoft.com/download/9dcab408-e0d4-4571-a81
 # Integrity pin for the Microsoft APK (not signed for Alpine's apk keys).
 ARG MSODBCSQL_SHA256=2c7ef3db6afe2be6fe45e744b116a41d2619187398b2b199bd0ee62c1e0b2924
 
-ENV BINARY_NAME=${BINARY_NAME}
-
-WORKDIR ${RUNTIME_WORKDIR}
+WORKDIR /middleware
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache --upgrade \
@@ -42,11 +38,11 @@ RUN apk add --no-cache --upgrade \
     apk del curl && \
     addgroup -S "${RUNTIME_USER}" && \
     adduser -S -H -G "${RUNTIME_USER}" "${RUNTIME_USER}" && \
-    chown "${RUNTIME_USER}:${RUNTIME_USER}" "${RUNTIME_WORKDIR}"
+    chown "${RUNTIME_USER}:${RUNTIME_USER}" /middleware
 
 # Primary onedir from shared product-app.base export-binaries
 # hadolint ignore=DL3022
-COPY --chown=${RUNTIME_USER}:${RUNTIME_USER} --from=export_bins /dist/${BINARY_NAME} ${RUNTIME_WORKDIR}/${BINARY_NAME}
+COPY --chown=${RUNTIME_USER}:${RUNTIME_USER} --from=export_bins /dist/sql_to_arc /middleware/sql_to_arc
 
 USER ${RUNTIME_USER}
 

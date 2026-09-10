@@ -46,10 +46,8 @@ target "sql_to_arc" {
     export_bins = "target:sql_to_arc-base"
   }
   args = {
-    ALPINE_VERSION  = ALPINE_VERSION
-    BINARY_NAME     = "sql_to_arc"
-    RUNTIME_USER    = "sql_to_arc"
-    RUNTIME_WORKDIR = "/middleware"
+    ALPINE_VERSION = ALPINE_VERSION
+    RUNTIME_USER   = "sql_to_arc"
   }
   tags      = [IMAGE_TAG]
   platforms = ["linux/amd64"]
