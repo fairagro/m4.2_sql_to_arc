@@ -1,0 +1,53 @@
+name: Pre Release
+
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+
+on:
+  workflow_dispatch:
+
+jobs:
+  code-quality:
+    name: Code Quality
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-code-quality.yml@a061d6fb85afc8dfd54083ff58bf788744dcdca8
+    with:
+      python_package_root: middleware
+      components: '["sql_to_arc"]'
+      mypy_path: stubs:middleware/sql_to_arc/src
+    secrets: inherit
+
+  build:
+    name: Build
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-build.yml@main
+    with:
+      version_bump: "patch"
+      components: '["sql_to_arc"]'
+      image_base_name: fairagro-advanced-middleware
+    secrets: inherit
+
+  check:
+    name: Check
+    needs: build
+    # Local until Devinfra #74: omit Trivy licence-check (Alpine GPL noise).
+    uses: ./.github/workflows/reusable-check-local.yml
+    with:
+      version: ${{ needs.build.outputs.version }}
+      components: '["sql_to_arc"]'
+      image_base_name: fairagro-advanced-middleware
+    secrets: inherit
+
+  release:
+    name: Release
+    needs: [build, check, code-quality]
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-release.yml@main
+    with:
+      version: ${{ needs.build.outputs.version }}
+      pep440_version: ${{ needs.build.outputs.pep440_version }}
+      components: '["sql_to_arc"]'
+      image_base_name: fairagro-advanced-middleware
+      release_type: "feature"
+      create_github_release: false
+      tag_prefix: "docker-v"
+    secrets: inherit
