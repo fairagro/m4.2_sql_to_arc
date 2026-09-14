@@ -1,11 +1,8 @@
-// PRODUCT-OWNED overlay (not a Devinfra sync overwrite target).
-// Fleet contract: https://github.com/fairagro/m4.2_middleware_devinfra/issues/65
-// Local deltas: name, workspaceFolder, volume names, postCreate extras, postStart load-env.
 {
-  "name": "SQL-to-ARC (DinD)",
+  "name": "${localWorkspaceFolderBasename}",
   "dockerComposeFile": "docker-compose.yml",
   "service": "devcontainer",
-  "workspaceFolder": "/workspaces/m4.2_sql_to_arc-cursor",
+  "workspaceFolder": "/workspace",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:4": {
       "moby": false,
@@ -14,19 +11,14 @@
     }
   },
   "mounts": [
-    "source=sql-to-arc-bashhistory,target=/commandhistory,type=volume",
-    "source=sql-to-arc-gh-config,target=/home/vscode/.config/gh,type=volume"
+    "source=${localWorkspaceFolderBasename}-bashhistory,target=/commandhistory,type=volume",
+    "source=${localWorkspaceFolderBasename}-gh-config,target=/home/vscode/.config/gh,type=volume"
   ],
   "containerEnv": {
     "UV_LINK_MODE": "copy"
   },
   "remoteEnv": {
-    "PATH": "${workspaceFolder}/scripts/bin:${containerEnv:PATH}",
-    // Path overlays for synced pre-commit/CI tools (do not patch .pre-commit-config.yaml).
-    "MYPYPATH": "stubs:middleware/sql_to_arc/src",
-    "CST_BAKE_TARGET": "sql_to_arc",
-    "CST_IMAGE_TAG": "sql-to-arc:test",
-    "CST_CONFIG": "docker/container-structure-tests"
+    "PATH": "${workspaceFolder}/scripts/bin:${containerEnv:PATH}"
   },
   "customizations": {
     "vscode": {
@@ -78,14 +70,6 @@
       }
     }
   },
-  "postCreateCommand": {
-    "shared post-create": "bash scripts/devcontainer-post-create.sh",
-    "product uv sync": "bash scripts/uv-sync-dev.sh",
-    "product hooks + LFS": "bash scripts/install-dev-hooks.sh",
-    "import public gpg keys": "bash scripts/import-public-gpg-keys.sh"
-  },
-  "postStartCommand": {
-    "setup bashrc": "grep -qF 'source ${workspaceFolder}/scripts/load-env.sh' ~/.bashrc || echo 'source ${workspaceFolder}/scripts/load-env.sh' >> ~/.bashrc"
-  },
+  "postCreateCommand": ["bash", "scripts/devcontainer-post-create.sh"],
   "remoteUser": "vscode"
 }
