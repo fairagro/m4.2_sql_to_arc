@@ -70,8 +70,7 @@ middleware/
 
 scripts/
 ├── ai/                            # m42-ai (synced): uv run --project scripts/ai m42-ai …
-├── bin/gh, bin/git                # PATH wrappers + personal tokens (synced)
-├── load-env.sh                    # Per-shell env (PATH, aliases, SOPS); product-local
+├── bin/gh, bin/git, bin/k, bin/d  # PATH wrappers (synced; remoteEnv prepends scripts/bin)
 ├── load-versions-env.sh           # Synced versions.env loader
 ├── uv-sync-dev.sh                 # Product: uv sync --dev --all-packages
 ├── install-dev-hooks.sh           # Product: pre-commit + setup-git-hooks + setup-git-lfs
@@ -142,7 +141,7 @@ Callers: `.github/workflows/feature-pull-request.yml`, `pre-release.yml`,
 `reusable-check-local.yml` omits Trivy licence scan until Devinfra #74 — do not
 hand-edit synced trees. CQ `@main` with product `mypy_path` /
 `pylint_source_roots`. Keep `.pre-commit-config.yaml` **verbatim**; product
-overlays via `remoteEnv` / `scripts/load-env.sh` (`MYPYPATH`, `CST_BAKE_*`).
+overlays via `.devcontainer/product.env` / CI inputs (`MYPYPATH`, `CST_*`).
 
 Bake: `docker-bake.hcl` targets `sql_to_arc-base` + `sql_to_arc` (synced
 `Dockerfile.product-app.base` + thin last stage).
@@ -154,11 +153,13 @@ Bake: `docker-bake.hcl` targets `sql_to_arc-base` + `sql_to_arc` (synced
 | **VS Code** | **Reopen in Container** → `.devcontainer/devcontainer.json` |
 | **Cursor** | **Dev Containers: Reopen in Container** → `.devcontainer/devcontainer.json` |
 
-Shared image: `.devcontainer/Dockerfile` (synced from Devinfra) + compose overlay.
-`devcontainer.json` is product-owned (name / workspaceFolder / volumes). postCreate:
-shared `devcontainer-post-create.sh` then product `uv-sync-dev.sh` /
-`install-dev-hooks.sh` (hooks + LFS) / `import-public-gpg-keys.sh`. Per-shell:
-`scripts/load-env.sh` (bashrc). Toolchain pins: `versions.env`.
+Shared image: `.devcontainer/Dockerfile` (synced from Devinfra) + compose.
+Synced `devcontainer.json` sets `remoteEnv.PATH` (`.venv/bin` + `scripts/bin`);
+optional product `.devcontainer/product.env` holds `MYPYPATH` / `CST_*`.
+postCreate: shared `devcontainer-post-create.sh` (decrypts `.env` file only; no
+bashrc). Product hooks/LFS: run `./scripts/install-dev-hooks.sh` after create when
+needed. Do **not** source a load-env from `~/.bashrc` — remove any leftover
+`source …/load-env.sh` line after rebuild. Toolchain pins: `versions.env`.
 
 ### Development Environment
 
@@ -224,7 +225,8 @@ Product overlay (not in Devinfra). See [`docs/git-lfs.md`](docs/git-lfs.md).
 **Setup:** `scripts/install-dev-hooks.sh` (Dev Container `postCreate` / after
 clone) installs commit-stage pre-commit, shared `setup-git-hooks.sh`, then
 `setup-git-lfs.sh`, which copies `scripts/git-lfs-hooks/{pre-push,post-*}`
-into `.git/hooks`. `load-env.sh` does **not** install LFS.
+into `.git/hooks`. Shell init is bashrc-free (`remoteEnv` / `product.env`); it
+does **not** install LFS.
 
 **Tracked:** `*.sql` (`.gitattributes`). **Wave B:** always re-apply
 `setup-git-lfs.sh` after any shared `setup-git-hooks.sh` (shared installer
