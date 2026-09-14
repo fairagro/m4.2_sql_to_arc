@@ -1,9 +1,11 @@
-# Pre-commit configuration — PRODUCT-OWNED until Devinfra #63 moves this path off
-# the sync allowlist (or splits .global + product). Last-resort local fork of the
-# Devinfra skeleton; do not treat as a synced file. Fleet contract:
-# https://github.com/fairagro/m4.2_middleware_devinfra/issues/63
-# Local deltas: MYPYPATH (stubs + sql_to_arc src), pylint package path, helm YAML
-# exclude, markdownlint OpenSpec globs, unit-test pre-push scope, CST Bake target.
+# Pre-commit configuration (shared Devinfra skeleton for product sync).
+# See https://pre-commit.com
+#
+# Commit stage: fast checks / autofixes.
+# Pre-push: pytest + container-structure-test (git hook install is issue #9).
+#
+# Python hooks target middleware/ (path conventions). This Devinfra repo has no
+# product middleware/ packages — those hooks no-op until synced to a product.
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -14,11 +16,7 @@ repos:
       - id: end-of-file-fixer
         exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
       - id: check-yaml
-        exclude: |
-          (?x)^(
-            \.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
-            | helmchart/[^/]+/templates/.*\.ya?ml$
-          )
+        exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
       - id: check-added-large-files
         exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
       - id: check-merge-conflict
@@ -59,13 +57,11 @@ repos:
 
       - id: mypy
         name: mypy type check
-        # Product path overlay via MYPYPATH (hook `env:` unsupported on this pre-commit).
-        entry: >-
-          bash -c 'export MYPYPATH=stubs:middleware/sql_to_arc/src;
-          uv run mypy --config-file mypy.ini middleware/'
+        entry: uv run mypy middleware/
         language: system
         files: ^middleware/
         pass_filenames: false
+        args: [--config-file, mypy.ini]
 
       - id: bandit
         name: bandit security scan
@@ -77,29 +73,22 @@ repos:
 
       - id: pylint
         name: pylint
-        entry: uv run pylint --rcfile .pylintrc middleware/sql_to_arc
+        entry: uv run pylint --rcfile .pylintrc middleware/
         language: system
         files: ^middleware/
         pass_filenames: false
 
       - id: markdownlint
         name: markdownlint-cli2
-        entry: >-
-          bash -c 'markdownlint-cli2 "**/*.md"
-          "!openspec/**"
-          "!.cursor/commands/opsx-*.md"
-          "!.cursor/skills/openspec-*/**"
-          "!.cursor/rules/openspec-*.mdc"
-          "!.github/prompts/opsx-*"
-          "!.github/skills/openspec-*/**"'
+        entry: npm run lint:md
         language: system
-        files: \.md$
+        files: \.(md|mdc)$
         pass_filenames: false
         exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
 
       - id: pytest
-        name: pytest unit tests
-        entry: bash -c "uv run pytest middleware/*/tests/unit/ --override-ini='addopts='"
+        name: pytest
+        entry: bash -c "uv run pytest"
         language: system
         pass_filenames: false
         always_run: true
@@ -107,10 +96,7 @@ repos:
 
       - id: container-structure-test
         name: container structure test
-        entry: >-
-          bash -c 'CST_BAKE_TARGET=sql_to_arc CST_IMAGE_TAG=sql-to-arc:test
-          CST_CONFIG=docker/container-structure-tests/sql_to_arc.yaml
-          bash scripts/run-container-structure-test.sh'
+        entry: bash scripts/run-container-structure-test.sh
         language: system
         pass_filenames: false
         always_run: true
