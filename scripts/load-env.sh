@@ -22,8 +22,11 @@ if [ -d "${repo_root}/.venv/bin" ]; then
     esac
 fi
 
-# Synced .pre-commit-config.yaml is verbatim (Devinfra #63). Product path overlays
-# live in process env — not in the synced YAML. Same defaults as remoteEnv.
+# Synced .pre-commit-config.yaml is verbatim (Devinfra #63). Product overlays live
+# in process env — not in the synced YAML. Same defaults as remoteEnv.
+# These are sql-to-arc product defaults and override the CST script defaults in
+# docs/quality.md / run-container-structure-test.sh (e.g. CST_IMAGE_TAG becomes
+# sql-to-arc:test instead of app:structure-test) when this file is sourced.
 export MYPYPATH="${MYPYPATH:-stubs:middleware/sql_to_arc/src}"
 export CST_BAKE_TARGET="${CST_BAKE_TARGET:-sql_to_arc}"
 export CST_IMAGE_TAG="${CST_IMAGE_TAG:-sql-to-arc:test}"
