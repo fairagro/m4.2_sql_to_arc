@@ -16,8 +16,10 @@ stay in place before and after Wave B.
 | Quality `pre-push` (synced, verbatim) | Devinfra | `scripts/git-hooks/pre-push` |
 | Combined `pre-push` + LFS `post-*` | Product | `scripts/git-lfs-hooks/*` — **outside** synced `scripts/git-hooks/**` |
 
-**Not involved:** `scripts/load-env.sh` (per-shell PATH / SOPS only). It does
-**not** install Git LFS.
+Shell init is **bashrc-free** (`remoteEnv.PATH` + optional
+`.devcontainer/product.env`). It does **not** install Git LFS. After a Dev
+Container rebuild, remove any leftover `source …/scripts/load-env.sh` line from
+`~/.bashrc` if present.
 
 Manual re-install after clone (or if hooks were overwritten):
 
@@ -26,7 +28,6 @@ Manual re-install after clone (or if hooks were overwritten):
 # or LFS only:
 ./scripts/setup-git-lfs.sh
 ```
-
 ## Hook ownership (today)
 
 ```text
