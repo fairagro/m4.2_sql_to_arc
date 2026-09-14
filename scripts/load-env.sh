@@ -27,7 +27,7 @@ fi
 export MYPYPATH="${MYPYPATH:-stubs:middleware/sql_to_arc/src}"
 export CST_BAKE_TARGET="${CST_BAKE_TARGET:-sql_to_arc}"
 export CST_IMAGE_TAG="${CST_IMAGE_TAG:-sql-to-arc:test}"
-export CST_CONFIG="${CST_CONFIG:-docker/container-structure-tests/sql_to_arc.yaml}"
+export CST_CONFIG="${CST_CONFIG:-docker/container-structure-tests}"
 
 # Setup aliases (completions: static files in image + bash-completion lazy-load)
 alias k=kubectl
