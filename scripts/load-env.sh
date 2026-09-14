@@ -22,6 +22,13 @@ if [ -d "${repo_root}/.venv/bin" ]; then
     esac
 fi
 
+# Synced .pre-commit-config.yaml is verbatim (Devinfra #63). Product path overlays
+# live in process env — not in the synced YAML. Same defaults as remoteEnv.
+export MYPYPATH="${MYPYPATH:-stubs:middleware/sql_to_arc/src}"
+export CST_BAKE_TARGET="${CST_BAKE_TARGET:-sql_to_arc}"
+export CST_IMAGE_TAG="${CST_IMAGE_TAG:-sql-to-arc:test}"
+export CST_CONFIG="${CST_CONFIG:-docker/container-structure-tests/sql_to_arc.yaml}"
+
 # Setup aliases (completions: static files in image + bash-completion lazy-load)
 alias k=kubectl
 alias d=docker

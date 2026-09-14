@@ -21,7 +21,12 @@
     "UV_LINK_MODE": "copy"
   },
   "remoteEnv": {
-    "PATH": "${workspaceFolder}/scripts/bin:${containerEnv:PATH}"
+    "PATH": "${workspaceFolder}/scripts/bin:${containerEnv:PATH}",
+    // Path overlays for synced pre-commit/CI tools (do not patch .pre-commit-config.yaml).
+    "MYPYPATH": "stubs:middleware/sql_to_arc/src",
+    "CST_BAKE_TARGET": "sql_to_arc",
+    "CST_IMAGE_TAG": "sql-to-arc:test",
+    "CST_CONFIG": "docker/container-structure-tests/sql_to_arc.yaml"
   },
   "customizations": {
     "vscode": {

@@ -37,11 +37,12 @@ jobs:
   code-quality:
     name: Code Quality
     needs: validate-branch
-    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-code-quality.yml@a061d6fb85afc8dfd54083ff58bf788744dcdca8
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-code-quality.yml@main
     with:
       python_package_root: middleware
       components: '["sql_to_arc"]'
       mypy_path: stubs:middleware/sql_to_arc/src
+      pylint_source_roots: middleware/sql_to_arc/src
     secrets: inherit
 
   build:
