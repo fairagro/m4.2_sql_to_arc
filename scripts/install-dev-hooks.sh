@@ -9,7 +9,7 @@
 #   - scripts/setup-git-lfs.sh        (product: restore LFS post-* + combined pre-push)
 #
 # Prefer postCreate for first install; run this manually after path/venv drift.
-# Do not invoke from load-env.sh (per-shell).
+# Not a per-shell init script (bashrc-free; see remoteEnv.PATH + product.env).
 
 set -euo pipefail
 
