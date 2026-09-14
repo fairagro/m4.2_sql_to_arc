@@ -10,16 +10,18 @@ stay in place before and after Wave B.
 
 | Step | Owner | Script / hook |
 | ---- | ----- | ------------- |
-| One-time Dev Container / clone setup | Product | `scripts/install-dev-hooks.sh` (`postCreateCommand`) |
-| `pre-commit` commit-stage hook | Product (via pre-commit) | `pre-commit install --hook-type pre-commit` |
+| Shared Dev Container `postCreate` | Devinfra (synced) | `scripts/devcontainer-post-create.sh` → `setup-git-hooks.sh` (quality pre-push; **strips** LFS `post-*`) |
+| Product hooks + LFS after create/rebuild | Product | `scripts/install-dev-hooks.sh` (re-applies LFS overlay) — **not** wired in synced `devcontainer.json`; run after rebuild until Devinfra invokes it when present |
+| `pre-commit` commit-stage hook | Shared postCreate + product | `pre-commit install --hook-type pre-commit` |
 | Git LFS local init + LFS hooks | Product | `scripts/setup-git-lfs.sh` |
 | Quality `pre-push` (synced, verbatim) | Devinfra | `scripts/git-hooks/pre-push` |
 | Combined `pre-push` + LFS `post-*` | Product | `scripts/git-lfs-hooks/*` — **outside** synced `scripts/git-hooks/**` |
 
-**Not involved:** `scripts/load-env.sh` (per-shell PATH / SOPS only). It does
+**Not involved:** `scripts/load-env.sh` (per-shell PATH / SOPS / CST·MYPYPATH defaults only). It does
 **not** install Git LFS.
 
-Manual re-install after clone (or if hooks were overwritten):
+After a Dev Container rebuild (verbatim synced JSON), shared postCreate overwrites hooks.
+Re-apply the LFS overlay before pushing `*.sql` (same after clone if hooks were overwritten):
 
 ```bash
 ./scripts/install-dev-hooks.sh
