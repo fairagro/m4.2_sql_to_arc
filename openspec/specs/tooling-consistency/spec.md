@@ -2,17 +2,15 @@
 
 ## Purpose
 
-Ensure VS Code editor tools, pre-commit hooks, and GitHub CI workflows all
-report identical results for the same code by sharing a single configuration
-source of truth.
+Ensure VS Code editor tools, pre-commit hooks, and GitHub CI workflows all report identical results for the same code by
+sharing a single configuration source of truth.
 
 ## Requirements
 
 ### Requirement: Same Tool Invocation Everywhere
 
-Every quality tool (Ruff, mypy, pylint, bandit) MUST be invoked via
-`uv run <tool>` in all three environments (VS Code extension, pre-commit
-hook, CI workflow step), ensuring the same installed version is used.
+Every quality tool (Ruff, mypy, pylint, bandit) MUST be invoked via `uv run <tool>` in all three environments (VS Code
+extension, pre-commit hook, CI workflow step), ensuring the same installed version is used.
 
 #### Scenario: Lint locally and in CI
 
@@ -22,10 +20,8 @@ hook, CI workflow step), ensuring the same installed version is used.
 
 ### Requirement: Shared Config Files Only
 
-Every tool MUST read its configuration exclusively from `pyproject.toml`
-(or the repo-root config file for tools that do not support
-`pyproject.toml`, e.g. `.bandit`). Per-environment config overrides are
-forbidden.
+Every tool MUST read its configuration exclusively from `pyproject.toml` (or the repo-root config file for tools that do
+not support `pyproject.toml`, e.g. `.bandit`). Per-environment config overrides are forbidden.
 
 #### Scenario: Changing a Ruff rule
 
@@ -35,9 +31,8 @@ forbidden.
 
 ### Requirement: Editor Uses Environment Binaries
 
-VS Code extensions MUST be configured to use `importStrategy:
-fromEnvironment` (or equivalent) so they pick up the same binary and
-version as the `uv run` invocations in hooks and workflows.
+VS Code extensions MUST be configured to use `importStrategy: fromEnvironment` (or equivalent) so they pick up the same
+binary and version as the `uv run` invocations in hooks and workflows.
 
 #### Scenario: Extension resolves Ruff
 
@@ -47,8 +42,8 @@ version as the `uv run` invocations in hooks and workflows.
 
 ### Requirement: Matching Config Paths In Editor Settings
 
-VS Code extension settings that reference a config file MUST pass the same
-path that the hook and workflow use (e.g. `--config-file pyproject.toml`).
+VS Code extension settings that reference a config file MUST pass the same path that the hook and workflow use (e.g.
+`--config-file pyproject.toml`).
 
 #### Scenario: Pylint config path
 
@@ -58,10 +53,8 @@ path that the hook and workflow use (e.g. `--config-file pyproject.toml`).
 
 ### Requirement: Centralized Stub Suppressions
 
-If a third-party library has no type stubs and no `py.typed` marker, the
-suppression MUST be declared once in `pyproject.toml`
-`[[tool.mypy.overrides]]`, not scattered across individual `# type: ignore`
-comments.
+If a third-party library has no type stubs and no `py.typed` marker, the suppression MUST be declared once in
+`pyproject.toml` `[[tool.mypy.overrides]]`, not scattered across individual `# type: ignore` comments.
 
 #### Scenario: Untyped library used in multiple modules
 
@@ -71,8 +64,7 @@ comments.
 
 ### Requirement: Add Tools To All Environments Together
 
-Adding a new quality tool to any one environment MUST also add it to all
-three in the same commit.
+Adding a new quality tool to any one environment MUST also add it to all three in the same commit.
 
 #### Scenario: Introducing a new checker
 
@@ -82,9 +74,8 @@ three in the same commit.
 
 ### Requirement: Glob Overrides Cover Submodules
 
-When a library subpackage has a different dotted path from the top-level
-package (e.g. `arctrl.py.Core.*` vs. `arctrl`), the mypy override MUST use
-a glob that covers all submodules (`["arctrl", "arctrl.*"]`).
+When a library subpackage has a different dotted path from the top-level package (e.g. `arctrl.py.Core.*` vs. `arctrl`),
+the mypy override MUST use a glob that covers all submodules (`["arctrl", "arctrl.*"]`).
 
 #### Scenario: arctrl submodule import
 
