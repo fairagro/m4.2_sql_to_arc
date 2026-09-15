@@ -73,7 +73,8 @@ markers = [
     "asyncio: marks tests as async",
     "unit: marks tests as unit tests",
     "integration: marks tests as integration tests",
-    "system: marks tests as system tests",
+    "system_local: marks tests that use locally runnable external services (e.g. testcontainers)",
+    "system_external: marks tests that depend on real external systems/secrets",
 ]
 
 [tool.coverage.run]
