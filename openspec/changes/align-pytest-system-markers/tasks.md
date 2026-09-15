@@ -10,4 +10,4 @@
 
 ## 3. Ready signal (after merge / with PR)
 
-- [ ] 3.1 Comment on Devinfra [#120](https://github.com/fairagro/m4.2_middleware_devinfra/issues/120) that sql_to_arc markers are aligned (link PR)
+- [x] 3.1 Comment on Devinfra [#120](https://github.com/fairagro/m4.2_middleware_devinfra/issues/120) that sql_to_arc markers are aligned (link PR)
