@@ -34,8 +34,8 @@ Pilot pattern: middleware_api change `adopt-devinfra-wave-a` / draft PR
 
 Copy allowlisted paths from Devinfra at one SHA recorded in the adopt PR. Do not hand-edit synced files after copy.
 
-**Reason:** Fleet SoT; avoids drift vs API/harvester.
-**Alternatives:** Wait for #13; cherry-pick with local edits (rejected).
+**Reason:** Fleet SoT; avoids drift vs API/harvester. **Alternatives:** Wait for #13; cherry-pick with local edits
+(rejected).
 
 **Pin policy:** Prefer the same SHA as the **merged** middleware_api pilot (F1). **Apply refresh (2026-09-08):** include
 closed Devinfra [#45](https://github.com/fairagro/m4.2_middleware_devinfra/issues/45) /
@@ -61,8 +61,8 @@ Re-sync allowlisted Wave A files so product checkouts get:
 Include `scripts/bin/gh`, `scripts/dev-tokens.sh`, `scripts/set-dev-tokens.sh`; exclude `scripts/bin/git` and the rest
 of Wave B.
 
-**Reason:** Skills document these wrappers; thin slice stays reviewable.
-**Alternatives:** A-only (auth mismatch); full Wave B (too large).
+**Reason:** Skills document these wrappers; thin slice stays reviewable. **Alternatives:** A-only (auth mismatch); full
+Wave B (too large).
 
 ### D3: `m42-ai` via `--project scripts/ai`
 
@@ -81,8 +81,8 @@ Finder/surface path examples here.
 Domain OpenSpec requirements remain in `openspec/specs/principles/spec.md` (behavioral RFC 2119). Root `principles.md`
 is the agent-facing overlay, not a replacement for that domain spec in this change.
 
-**Reason:** Agents load shared rules from `.global` while keeping converter-specific guidance.
-**Alternatives:** Delete domain principles spec (out of scope); fat local file that duplicates `.global` (rejected).
+**Reason:** Agents load shared rules from `.global` while keeping converter-specific guidance. **Alternatives:** Delete
+domain principles spec (out of scope); fat local file that duplicates `.global` (rejected).
 
 ### D5: Surface-bar overlay for sql_to_arc paths
 
@@ -95,8 +95,8 @@ Sync `docs/surface-quality-bar.global.md`. Create local `docs/surface-quality-ba
 
 Do **not** copy API pilot rows (`/v3/…`, Celery, CouchDB) unless they truly apply.
 
-**Reason:** #32 landed; product Finder context without forking `.global`.
-**Alternatives:** Former O1-in-principles (superseded).
+**Reason:** #32 landed; product Finder context without forking `.global`. **Alternatives:** Former O1-in-principles
+(superseded).
 
 ### D6: Replace local `arctrl`; keep `config-wrapper`
 
@@ -106,19 +106,19 @@ Overwrite `.agents/skills/arctrl/` with Devinfra’s first-party skill. Keep `.a
 No `scan-secrets` tree exists here — nothing to delete; still align AGENTS/excludes to vendor set
 `{gh,docker,hadolint,uv}`.
 
-**Reason:** #35 / #93 allowlist; avoid arctrl drift.
-**Explore note (B):** Local skill is shorter and **outdated on arctrl 3.2+** (e.g. `CompositeHeader.performer()` vs
-property; `start_as_task` import path). Devinfra adds WriteContracts / `AddFile` / supplementary-file sections that
-matter less for harvest JSON upload but are correct SoT. Converter-relevant pitfalls (`gc.collect` in workers, no
-pickling ARC objects, `technology_platform=None`) remain in the shared skill — no need to preserve a local fork for
-those. Diff before overwrite; if any truly unique tip remains, move to `AGENTS.md` (prefer shared skill).
+**Reason:** #35 / #93 allowlist; avoid arctrl drift. **Explore note (B):** Local skill is shorter and **outdated on
+arctrl 3.2+** (e.g. `CompositeHeader.performer()` vs property; `start_as_task` import path). Devinfra adds
+WriteContracts / `AddFile` / supplementary-file sections that matter less for harvest JSON upload but are correct SoT.
+Converter-relevant pitfalls (`gc.collect` in workers, no pickling ARC objects, `technology_platform=None`) remain in the
+shared skill — no need to preserve a local fork for those. Diff before overwrite; if any truly unique tip remains, move
+to `AGENTS.md` (prefer shared skill).
 
 ### D7: `skip_specs: true`
 
 No delta under `openspec/changes/.../specs/`.
 
-**Reason:** Tooling/docs adoption; domain behaviour unchanged.
-**Alternatives:** Import Devinfra capability specs (out of scope).
+**Reason:** Tooling/docs adoption; domain behaviour unchanged. **Alternatives:** Import Devinfra capability specs (out
+of scope).
 
 ## Risks / Trade-offs
 
