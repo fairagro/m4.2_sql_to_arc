@@ -2,10 +2,9 @@
 
 ### Requirement: Network And API Errors Are Non-Fatal
 
-On `ConnectionError`, `TimeoutError`, or `ApiClientError`, the system MUST
-record the investigation as failed on the shared repository scope with a
-failure message and the investigation identifier, and continue. It MUST NOT
-maintain a parallel local failed-id list for the end-of-run report.
+On `ConnectionError`, `TimeoutError`, or `ApiClientError`, the system MUST record the investigation as failed on the
+shared repository scope with a failure message and the investigation identifier, and continue. It MUST NOT maintain a
+parallel local failed-id list for the end-of-run report.
 
 #### Scenario: ApiClientError response
 
@@ -25,10 +24,8 @@ maintain a parallel local failed-id list for the end-of-run report.
 
 ### Requirement: Successful Upload Records Harvested
 
-After `ApiClient.create_or_update_arc` completes without error, the system
-MUST record one harvested dataset on the shared repository scope for that
-investigation. Harvested MUST NOT be recorded before the upload outcome is
-known.
+After `ApiClient.create_or_update_arc` completes without error, the system MUST record one harvested dataset on the
+shared repository scope for that investigation. Harvested MUST NOT be recorded before the upload outcome is known.
 
 #### Scenario: Upload succeeds
 

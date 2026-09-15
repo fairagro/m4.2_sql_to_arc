@@ -2,16 +2,15 @@
 
 ## Purpose
 
-Provide a typed, async, memory-safe interface to the SQL views. All SQL in
-the project lives here; no other module may query the database directly.
+Provide a typed, async, memory-safe interface to the SQL views. All SQL in the project lives here; no other module may
+query the database directly.
 
 ## Requirements
 
 ### Requirement: Multi-Dialect Async Connection
 
-The system SHALL connect to any SQLAlchemy-supported async dialect via a
-connection string (PostgreSQL, MySQL, MSSQL, Oracle) and MUST normalise
-scheme prefixes automatically.
+The system SHALL connect to any SQLAlchemy-supported async dialect via a connection string (PostgreSQL, MySQL, MSSQL,
+Oracle) and MUST normalise scheme prefixes automatically.
 
 #### Scenario: Legacy postgresql:// prefix
 
@@ -23,13 +22,12 @@ scheme prefixes automatically.
 
 - GIVEN prefixes `mysql://`, `mariadb://`, `oracle://`, or `mssql://`
 - WHEN normalised
-- THEN they become `mysql+aiomysql://`, `mysql+aiomysql://`,
-  `oracle+oracledb://`, or `mssql+aioodbc://` respectively
+- THEN they become `mysql+aiomysql://`, `mysql+aiomysql://`, `oracle+oracledb://`, or `mssql+aioodbc://` respectively
 
 ### Requirement: Schema Validation Before Loop
 
-The system MUST validate that all required views exist and have the
-expected columns before the main processing loop starts.
+The system MUST validate that all required views exist and have the expected columns before the main processing loop
+starts.
 
 #### Scenario: Required view present
 
@@ -39,8 +37,7 @@ expected columns before the main processing loop starts.
 
 ### Requirement: Optional Columns Warn
 
-The system MUST warn (not fail) when optional columns are missing and use
-model defaults.
+The system MUST warn (not fail) when optional columns are missing and use model defaults.
 
 #### Scenario: Optional column absent
 
@@ -51,8 +48,7 @@ model defaults.
 
 ### Requirement: Required Columns Must Exist
 
-The system MUST fail fast with `MissingRequiredColumnsError` when required
-columns are absent.
+The system MUST fail fast with `MissingRequiredColumnsError` when required columns are absent.
 
 #### Scenario: Required column missing
 
@@ -62,9 +58,8 @@ columns are absent.
 
 ### Requirement: Required Columns Must Not Be Null
 
-The system MUST fail fast with `RequiredColumnsNullError` when required
-columns contain NULL values, unless `spec_override=True` is set on the
-field.
+The system MUST fail fast with `RequiredColumnsNullError` when required columns contain NULL values, unless
+`spec_override=True` is set on the field.
 
 #### Scenario: NULLs in required column
 
@@ -74,8 +69,7 @@ field.
 
 ### Requirement: Stream Investigations
 
-The system MUST stream investigations using a server-side cursor and MUST
-NEVER load the full table into memory.
+The system MUST stream investigations using a server-side cursor and MUST NEVER load the full table into memory.
 
 #### Scenario: Large investigation table
 
@@ -85,9 +79,8 @@ NEVER load the full table into memory.
 
 ### Requirement: Bulk Fetch Related Entities
 
-The system MUST fetch related entities (studies, assays, contacts,
-publications, annotations) in bulk for a list of investigation IDs using a
-single `WHERE investigation_ref = ANY(...)` query per entity type.
+The system MUST fetch related entities (studies, assays, contacts, publications, annotations) in bulk for a list of
+investigation IDs using a single `WHERE investigation_ref = ANY(...)` query per entity type.
 
 #### Scenario: Batch of investigation IDs
 
@@ -97,8 +90,8 @@ single `WHERE investigation_ref = ANY(...)` query per entity type.
 
 ### Requirement: Validate Rows With Pydantic
 
-The system MUST validate each row against its Pydantic model; invalid rows
-MUST be skipped with a warning and MUST increment `failed_datasets`.
+The system MUST validate each row against its Pydantic model; invalid rows MUST be skipped with a warning and MUST
+increment `failed_datasets`.
 
 #### Scenario: Row fails validation
 
@@ -110,10 +103,8 @@ MUST be skipped with a warning and MUST increment `failed_datasets`.
 
 ### Requirement: Annotation Cross-Field Constraints
 
-For `vAnnotationTable` rows, the system MUST also validate cross-field
-constraints (e.g. `column_io_type` required when `column_type` is `input`
-or `output`). Constraint violations MUST log a warning but MUST NOT skip
-the row.
+For `vAnnotationTable` rows, the system MUST also validate cross-field constraints (e.g. `column_io_type` required when
+`column_type` is `input` or `output`). Constraint violations MUST log a warning but MUST NOT skip the row.
 
 #### Scenario: input column missing column_io_type
 
@@ -124,23 +115,19 @@ the row.
 
 ### Requirement: View Contract Document
 
-The authoritative column-level specification for all views — including
-required/optional fields, data types, and cross-dialect type mappings —
-MUST be maintained in `docs/sql_to_arc_database_views.md`. Every view MUST
-have a corresponding `BaseRow` subclass in `models.py`; no raw dicts MAY
-cross module boundaries.
+The authoritative column-level specification for all views — including required/optional fields, data types, and
+cross-dialect type mappings — MUST be maintained in `docs/sql_to_arc_database_views.md`. Every view MUST have a
+corresponding `BaseRow` subclass in `models.py`; no raw dicts MAY cross module boundaries.
 
 #### Scenario: Adding a new view column
 
 - GIVEN a new column is added to a view
 - WHEN the converter is updated
-- THEN `docs/sql_to_arc_database_views.md` and the matching `BaseRow` model
-  are updated together
+- THEN `docs/sql_to_arc_database_views.md` and the matching `BaseRow` model are updated together
 
 ### Requirement: Empty Investigation List Short-Circuit
 
-An empty investigation list passed to `_stream_by_investigation` MUST
-return immediately without a query.
+An empty investigation list passed to `_stream_by_investigation` MUST return immediately without a query.
 
 #### Scenario: Empty ID list
 
@@ -151,8 +138,8 @@ return immediately without a query.
 
 ### Requirement: Missing View Handling
 
-If a view does not exist, `validate_schema()` MUST log a warning and skip
-that view for optional views; missing required views MUST be fatal.
+If a view does not exist, `validate_schema()` MUST log a warning and skip that view for optional views; missing required
+views MUST be fatal.
 
 #### Scenario: Optional view missing
 

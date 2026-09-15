@@ -1,18 +1,19 @@
 # AGENTS.md - Instructions for AI Assistants
 
-This file contains critical context about the FAIRagro SQL-to-ARC Converter project for AI assistants (GitHub Copilot, Cursor, Claude, etc.).
+This file contains critical context about the FAIRagro SQL-to-ARC Converter project for AI assistants (GitHub Copilot,
+Cursor, Claude, etc.).
 
 ## Tech Stack
 
-| Component | Version | Details |
-| --------- | ------- | ------- |
-| Python | 3.12.14 | Primary language |
-| PostgreSQL | 15.15 | Database |
-| Docker | Latest | Containerization |
-| Git LFS | 3.3.0+ | Large file storage |
-| uv | Latest | Python package manager |
-| arctrl | Latest | ARC manipulation library |
-| OpenSpec | Latest | Spec-driven development (`openspec/` + `/opsx-*`) |
+| Component  | Version | Details                                           |
+| ---------- | ------- | ------------------------------------------------- |
+| Python     | 3.12.14 | Primary language                                  |
+| PostgreSQL | 15.15   | Database                                          |
+| Docker     | Latest  | Containerization                                  |
+| Git LFS    | 3.3.0+  | Large file storage                                |
+| uv         | Latest  | Python package manager                            |
+| arctrl     | Latest  | ARC manipulation library                          |
+| OpenSpec   | Latest  | Spec-driven development (`openspec/` + `/opsx-*`) |
 
 ## Project Structure
 
@@ -92,9 +93,8 @@ dev_environment/
 └── config.dev.yaml       # Development configuration for the converter
 ```
 
-**Principles split:** `openspec/principles.global.md` (synced shared foundation) +
-`openspec/principles.md` (product overlay). Domain requirements remain under
-`openspec/specs/principles/` — do not confuse the agent overlay with that
+**Principles split:** `openspec/principles.global.md` (synced shared foundation) + `openspec/principles.md` (product
+overlay). Domain requirements remain under `openspec/specs/principles/` — do not confuse the agent overlay with that
 behavioral spec.
 
 ## Important Commands
@@ -131,35 +131,31 @@ openspec list                  # List active changes
 openspec validate <change>     # Validate a change folder
 ```
 
-In Cursor chat: `/opsx-explore`, `/opsx-propose`, `/opsx-apply`, `/opsx-archive`.
-In GitHub Copilot: the matching `opsx-*` prompts under `.github/prompts/`.
+In Cursor chat: `/opsx-explore`, `/opsx-propose`, `/opsx-apply`, `/opsx-archive`. In GitHub Copilot: the matching
+`opsx-*` prompts under `.github/prompts/`.
 
 ### CI (Wave C)
 
-Callers: `.github/workflows/feature-pull-request.yml`, `pre-release.yml`,
-`release.yml` → Devinfra reusables (`docs/ci.md`). Temporary
-`reusable-check-local.yml` omits Trivy licence scan until Devinfra #74 — do not
-hand-edit synced trees. CQ `@main` with product `mypy_path` /
-`pylint_source_roots`. Keep `.pre-commit-config.yaml` **verbatim**; product
-overlays via `.devcontainer/product.env` / CI inputs (`MYPYPATH`, `CST_*`).
+Callers: `.github/workflows/feature-pull-request.yml`, `pre-release.yml`, `release.yml` → Devinfra reusables
+(`docs/ci.md`). Temporary `reusable-check-local.yml` omits Trivy licence scan until Devinfra #74 — do not hand-edit
+synced trees. CQ `@main` with product `mypy_path` / `pylint_source_roots`. Keep `.pre-commit-config.yaml` **verbatim**;
+product overlays via `.devcontainer/product.env` / CI inputs (`MYPYPATH`, `CST_*`).
 
-Bake: `docker-bake.hcl` targets `sql_to_arc-base` + `sql_to_arc` (synced
-`Dockerfile.product-app.base` + thin last stage).
+Bake: `docker-bake.hcl` targets `sql_to_arc-base` + `sql_to_arc` (synced `Dockerfile.product-app.base` + thin last
+stage).
 
 ### Dev Container
 
-| IDE | How to open |
-| --- | --- |
-| **VS Code** | **Reopen in Container** → `.devcontainer/devcontainer.json` |
-| **Cursor** | **Dev Containers: Reopen in Container** → `.devcontainer/devcontainer.json` |
+| IDE         | How to open                                                                 |
+| ----------- | --------------------------------------------------------------------------- |
+| **VS Code** | **Reopen in Container** → `.devcontainer/devcontainer.json`                 |
+| **Cursor**  | **Dev Containers: Reopen in Container** → `.devcontainer/devcontainer.json` |
 
-Shared image: `.devcontainer/Dockerfile` (synced from Devinfra) + compose.
-Synced `devcontainer.json` sets `remoteEnv.PATH` (`.venv/bin` + `scripts/bin`);
-optional product `.devcontainer/product.env` holds `MYPYPATH` / `CST_*`.
-postCreate: shared `devcontainer-post-create.sh` (decrypts `.env` file only; no
-bashrc). Product hooks/LFS: run `./scripts/install-dev-hooks.sh` after create when
-needed. Do **not** source a load-env from `~/.bashrc` — remove any leftover
-`source …/load-env.sh` line after rebuild. Toolchain pins: `versions.env`.
+Shared image: `.devcontainer/Dockerfile` (synced from Devinfra) + compose. Synced `devcontainer.json` sets
+`remoteEnv.PATH` (`.venv/bin` + `scripts/bin`); optional product `.devcontainer/product.env` holds `MYPYPATH` / `CST_*`.
+postCreate: shared `devcontainer-post-create.sh` (decrypts `.env` file only; no bashrc). Product hooks/LFS: run
+`./scripts/install-dev-hooks.sh` after create when needed. Do **not** source a load-env from `~/.bashrc` — remove any
+leftover `source …/load-env.sh` line after rebuild. Toolchain pins: `versions.env`.
 
 ### Development Environment
 
@@ -181,9 +177,8 @@ docker compose down
 
 ## Architecture & Design
 
-Before generating or modifying code, read the relevant OpenSpec domain under
-`openspec/specs/`. Prefer an active change under `openspec/changes/` when one
-exists for the work in progress.
+Before generating or modifying code, read the relevant OpenSpec domain under `openspec/specs/`. Prefer an active change
+under `openspec/changes/` when one exists for the work in progress.
 
 **Agent entry / shared foundation:**
 
@@ -196,19 +191,24 @@ exists for the work in progress.
 
 **Cross-cutting domains:**
 
-- **[`openspec/specs/principles/`](openspec/specs/principles/)** — Behavioral foundation contract (RFC 2119; start here for requirements).
+- **[`openspec/specs/principles/`](openspec/specs/principles/)** — Behavioral foundation contract (RFC 2119; start here
+  for requirements).
 - **[`openspec/specs/configuration/`](openspec/specs/configuration/)** — Config loading, env overrides, secrets.
 - **[`openspec/specs/demo-environment/`](openspec/specs/demo-environment/)** — Local demo / deployment setup.
-- **[`openspec/specs/tooling-consistency/`](openspec/specs/tooling-consistency/)** — VS Code, pre-commit, and CI must report identical results.
+- **[`openspec/specs/tooling-consistency/`](openspec/specs/tooling-consistency/)** — VS Code, pre-commit, and CI must
+  report identical results.
 
 **Converter domains** (code under `middleware/sql_to_arc/`):
 
-- **[`openspec/specs/sql-to-arc-conversion/`](openspec/specs/sql-to-arc-conversion/)** — Top-level workflow: workers, stats, CLI.
-- **[`openspec/specs/arc-building/`](openspec/specs/arc-building/)** — ARC object construction (`mapper.py` + `builder.py`).
+- **[`openspec/specs/sql-to-arc-conversion/`](openspec/specs/sql-to-arc-conversion/)** — Top-level workflow: workers,
+  stats, CLI.
+- **[`openspec/specs/arc-building/`](openspec/specs/arc-building/)** — ARC object construction (`mapper.py` +
+  `builder.py`).
 - **[`openspec/specs/database-access/`](openspec/specs/database-access/)** — DB access patterns, row models, SQL views.
 - **[`openspec/specs/api-upload/`](openspec/specs/api-upload/)** — Upload to the Middleware API.
 
-Each domain has `spec.md` (behavior). Domains with non-obvious architecture also keep `design.md` (current Key Decisions).
+Each domain has `spec.md` (behavior). Domains with non-obvious architecture also keep `design.md` (current Key
+Decisions).
 
 ---
 
@@ -216,21 +216,19 @@ Each domain has `spec.md` (behavior). Domains with non-obvious architecture also
 
 ### External Dependencies
 
-This project depends on `shared` and `api_client` libraries, which are hosted in a separate repository (`m4.2_advanced_middleware_api`). They are included via `uv` workspace sources pointing to Git.
+This project depends on `shared` and `api_client` libraries, which are hosted in a separate repository
+(`m4.2_advanced_middleware_api`). They are included via `uv` workspace sources pointing to Git.
 
 ### Git LFS Integration
 
 Product overlay (not in Devinfra). See [`docs/git-lfs.md`](docs/git-lfs.md).
 
-**Setup:** `scripts/install-dev-hooks.sh` (Dev Container `postCreate` / after
-clone) installs commit-stage pre-commit, shared `setup-git-hooks.sh`, then
-`setup-git-lfs.sh`, which copies `scripts/git-lfs-hooks/{pre-push,post-*}`
-into `.git/hooks`. Shell init is bashrc-free (`remoteEnv` / `product.env`); it
-does **not** install LFS.
+**Setup:** `scripts/install-dev-hooks.sh` (Dev Container `postCreate` / after clone) installs commit-stage pre-commit,
+shared `setup-git-hooks.sh`, then `setup-git-lfs.sh`, which copies `scripts/git-lfs-hooks/{pre-push,post-*}` into
+`.git/hooks`. Shell init is bashrc-free (`remoteEnv` / `product.env`); it does **not** install LFS.
 
-**Tracked:** `*.sql` (`.gitattributes`). **Wave B:** always re-apply
-`setup-git-lfs.sh` after any shared `setup-git-hooks.sh` (shared installer
-removes LFS `post-*` hooks).
+**Tracked:** `*.sql` (`.gitattributes`). **Wave B:** always re-apply `setup-git-lfs.sh` after any shared
+`setup-git-hooks.sh` (shared installer removes LFS `post-*` hooks).
 
 ## Security Notes
 
@@ -239,23 +237,30 @@ removes LFS `post-*` hooks).
 
 ## Code Quality Standards
 
-Agents are expected to maintain high code quality by addressing issues reported by the project's configured tools: **Ruff, Pylance, MyPy, Pylint, and Bandit**.
+Agents are expected to maintain high code quality by addressing issues reported by the project's configured tools:
+**Ruff, Pylance, MyPy, Pylint, and Bandit**.
 
 - **Automatic Fixes**: Actively check for and fix code smells, warnings, and notices.
-- **Real Fixes vs. Suppression**: Issues must be resolved with actual code changes. Using comments to suppress warnings (e.g., `# noqa`, `# type: ignore`, `# pylint: disable`) is an **option of last resort**.
-- **When to Suppress**: Only suppress if a fix is technically impossible or would result in unnecessarily complex or unreadable code.
-- **Comprehensive Coverage**: Fix all reported issues, including low-severity notices and warnings, not just critical errors.
+- **Real Fixes vs. Suppression**: Issues must be resolved with actual code changes. Using comments to suppress warnings
+  (e.g., `# noqa`, `# type: ignore`, `# pylint: disable`) is an **option of last resort**.
+- **When to Suppress**: Only suppress if a fix is technically impossible or would result in unnecessarily complex or
+  unreadable code.
+- **Comprehensive Coverage**: Fix all reported issues, including low-severity notices and warnings, not just critical
+  errors.
 
 ## File Modifications Pattern
 
 When editing files:
 
 1. **Always check current state** - Use `read_file` to see current content.
-2. **Review for quality** - Check the VS Code **Problems** tab (Pylance, Mypy, Ruff run continuously in the background). Only run individual tools (`uv run ruff check .`, `uv run mypy ...`) if the Problems tab is not available. Never run `./scripts/quality-check.sh` — it is too slow.
+2. **Review for quality** - Check the VS Code **Problems** tab (Pylance, Mypy, Ruff run continuously in the background).
+   Only run individual tools (`uv run ruff check .`, `uv run mypy ...`) if the Problems tab is not available. Never run
+   `./scripts/quality-check.sh` — it is too slow.
 3. **Never modify `.git/` directly** - Use scripts instead.
 4. **Format and test after changes** - Run `uv run ruff format .` to auto-format, then `uv run pytest` to verify.
 
 ---
 
-**Last Updated**: 2026-09-08
-**Maintainer Notes**: Spec-driven workflow uses OpenSpec (`openspec/`). High-level architecture involves converting SQL views into ARC files. AI review / fixer stack synced from Devinfra Wave A (see issue #93).
+**Last Updated**: 2026-09-08 **Maintainer Notes**: Spec-driven workflow uses OpenSpec (`openspec/`). High-level
+architecture involves converting SQL views into ARC files. AI review / fixer stack synced from Devinfra Wave A (see
+issue #93).

@@ -2,16 +2,15 @@
 
 ## Purpose
 
-Orchestrate the end-to-end batch run: validate the database, process all
-investigations, build ARCs, upload them, and report results. This domain
-covers only the glue between the other features.
+Orchestrate the end-to-end batch run: validate the database, process all investigations, build ARCs, upload them, and
+report results. This domain covers only the glue between the other features.
 
 ## Requirements
 
 ### Requirement: Pre-Loop Schema Validation
 
-The pipeline MUST validate that all required database views and columns
-exist before starting the main loop (see `database-access`).
+The pipeline MUST validate that all required database views and columns exist before starting the main loop (see
+`database-access`).
 
 #### Scenario: Schema mismatch at startup
 
@@ -22,8 +21,8 @@ exist before starting the main loop (see `database-access`).
 
 ### Requirement: Stream And Bulk-Fetch
 
-The pipeline MUST stream investigations one at a time (batched) and fetch
-related entities in bulk per batch (see `database-access`).
+The pipeline MUST stream investigations one at a time (batched) and fetch related entities in bulk per batch (see
+`database-access`).
 
 #### Scenario: Processing a batch
 
@@ -33,8 +32,7 @@ related entities in bulk per batch (see `database-access`).
 
 ### Requirement: Isolated Worker Build
 
-For each investigation, the pipeline MUST build the ARC in an isolated
-worker process (see `arc-building`).
+For each investigation, the pipeline MUST build the ARC in an isolated worker process (see `arc-building`).
 
 #### Scenario: Per-investigation build
 
@@ -45,9 +43,8 @@ worker process (see `arc-building`).
 
 ### Requirement: Upload Built ARCs
 
-The pipeline MUST upload successfully built ARCs to the Middleware API
-through the harvest-session upload path defined in `api-upload` (one harvest
-per RDI run via `harvest_arcs`, not per-investigation `create_or_update_arc`).
+The pipeline MUST upload successfully built ARCs to the Middleware API through the harvest-session upload path defined
+in `api-upload` (one harvest per RDI run via `harvest_arcs`, not per-investigation `create_or_update_arc`).
 
 #### Scenario: Successful builds enter one harvest
 
@@ -58,8 +55,8 @@ per RDI run via `harvest_arcs`, not per-investigation `create_or_update_arc`).
 
 ### Requirement: Provenance Report
 
-The pipeline MUST record success and failure per investigation by ID and
-print a JSON provenance report to stdout when the run completes.
+The pipeline MUST record success and failure per investigation by ID and print a JSON provenance report to stdout when
+the run completes.
 
 #### Scenario: Run completes with mixed results
 
@@ -69,9 +66,8 @@ print a JSON provenance report to stdout when the run completes.
 
 ### Requirement: Exit Codes
 
-The pipeline MUST exit with code 0 if processing succeeded (even with
-partial failures). It MUST exit non-zero on fatal errors (schema mismatch,
-DB unreachable, etc.).
+The pipeline MUST exit with code 0 if processing succeeded (even with partial failures). It MUST exit non-zero on fatal
+errors (schema mismatch, DB unreachable, etc.).
 
 #### Scenario: Partial failures only
 
@@ -87,8 +83,7 @@ DB unreachable, etc.).
 
 ### Requirement: Worker Timeout Continues Loop
 
-If a worker process times out (default 30 min), the investigation MUST be
-counted as failed and the loop MUST continue.
+If a worker process times out (default 30 min), the investigation MUST be counted as failed and the loop MUST continue.
 
 #### Scenario: Worker exceeds timeout
 
@@ -99,8 +94,7 @@ counted as failed and the loop MUST continue.
 
 ### Requirement: Debug Limit Cap
 
-The pipeline MUST respect `debug_limit` config to cap the number of
-investigations processed (for testing).
+The pipeline MUST respect `debug_limit` config to cap the number of investigations processed (for testing).
 
 #### Scenario: debug_limit set to 5
 

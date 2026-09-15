@@ -2,15 +2,15 @@
 
 ## Purpose
 
-Define how the converter reads, validates, and exposes configuration so that
-all code has a single, typed source of truth for runtime settings.
+Define how the converter reads, validates, and exposes configuration so that all code has a single, typed source of
+truth for runtime settings.
 
 ## Requirements
 
 ### Requirement: YAML Config At Startup
 
-The system SHALL load configuration from a YAML file at startup. The path
-MUST be provided via the CLI `-c` / `--config` flag.
+The system SHALL load configuration from a YAML file at startup. The path MUST be provided via the CLI `-c` / `--config`
+flag.
 
 #### Scenario: Normal startup
 
@@ -20,9 +20,8 @@ MUST be provided via the CLI `-c` / `--config` flag.
 
 ### Requirement: Env And Secret Overrides
 
-Any config field SHALL be overridable by an environment variable or Docker
-secret using the naming convention `{PREFIX}_{FIELD_PATH}` (prefix
-`SQL_TO_ARC` for this component).
+Any config field SHALL be overridable by an environment variable or Docker secret using the naming convention
+`{PREFIX}_{FIELD_PATH}` (prefix `SQL_TO_ARC` for this component).
 
 #### Scenario: Override connection string
 
@@ -33,8 +32,7 @@ secret using the naming convention `{PREFIX}_{FIELD_PATH}` (prefix
 
 ### Requirement: Pydantic Validation Before Start
 
-All config values MUST be validated and type-coerced via Pydantic before the
-application starts.
+All config values MUST be validated and type-coerced via Pydantic before the application starts.
 
 #### Scenario: Invalid type in YAML
 
@@ -45,9 +43,8 @@ application starts.
 
 ### Requirement: Explicit Dependency Injection
 
-The resulting `Config` object MUST be exposed through explicit dependency
-injection. No module MAY read environment variables or config files after
-startup.
+The resulting `Config` object MUST be exposed through explicit dependency injection. No module MAY read environment
+variables or config files after startup.
 
 #### Scenario: Module needs a setting mid-run
 
@@ -58,9 +55,8 @@ startup.
 
 ### Requirement: Typed Config Fields Only
 
-All new settings MUST be added as typed, annotated fields in `Config` (or a
-sub-model referenced by `Config`). Ad-hoc env reads and global variables are
-forbidden.
+All new settings MUST be added as typed, annotated fields in `Config` (or a sub-model referenced by `Config`). Ad-hoc
+env reads and global variables are forbidden.
 
 #### Scenario: Adding a new setting
 
@@ -71,9 +67,8 @@ forbidden.
 
 ### Requirement: Secrets Via SecretStr
 
-Secrets (`connection_string`, TLS keys) MUST use `pydantic.SecretStr`.
-Access via `.get_secret_value()` MUST occur only at the point of use; values
-MUST NOT be passed to `str()` or logged.
+Secrets (`connection_string`, TLS keys) MUST use `pydantic.SecretStr`. Access via `.get_secret_value()` MUST occur only
+at the point of use; values MUST NOT be passed to `str()` or logged.
 
 #### Scenario: Using the DB connection string
 
@@ -84,8 +79,8 @@ MUST NOT be passed to `str()` or logged.
 
 ### Requirement: Load Once Per Run
 
-Configuration MUST be loaded once in `main.py` and passed down via function
-arguments. It MUST NOT be re-loaded during a run.
+Configuration MUST be loaded once in `main.py` and passed down via function arguments. It MUST NOT be re-loaded during a
+run.
 
 #### Scenario: Long batch run
 
