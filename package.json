@@ -1,7 +1,7 @@
 {
-  "name": "m4.2_sql_to_arc",
+  "name": "m4.2_middleware_devinfra",
   "private": true,
-  "description": "FAIRagro SQL-to-ARC converter — markdown toolchain pins mirror versions.env",
+  "description": "Shared Devinfra tooling pins and scripts for FAIRagro m4.2 middleware repos",
   "scripts": {
     "format:md": "prettier --write \"**/*.{md,mdc}\"",
     "format:md:check": "prettier --check \"**/*.{md,mdc}\"",
