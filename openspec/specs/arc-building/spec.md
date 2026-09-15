@@ -2,17 +2,15 @@
 
 ## Purpose
 
-Transform pre-fetched database rows into a valid ARC RO-Crate JSON-LD
-document for a single investigation. Runs in an isolated worker process;
-must be stateless and side-effect-free.
+Transform pre-fetched database rows into a valid ARC RO-Crate JSON-LD document for a single investigation. Runs in an
+isolated worker process; must be stateless and side-effect-free.
 
 ## Requirements
 
 ### Requirement: Accept ArcBuildData Bundle
 
-The builder MUST accept a self-contained `ArcBuildData` bundle
-(investigation plus related studies, assays, contacts, publications,
-annotations).
+The builder MUST accept a self-contained `ArcBuildData` bundle (investigation plus related studies, assays, contacts,
+publications, annotations).
 
 #### Scenario: Complete bundle provided
 
@@ -22,8 +20,7 @@ annotations).
 
 ### Requirement: Map Investigation
 
-The builder MUST map `InvestigationRow` → `ArcInvestigation` and wrap it
-in an `ARC`.
+The builder MUST map `InvestigationRow` → `ArcInvestigation` and wrap it in an `ARC`.
 
 #### Scenario: Valid investigation row
 
@@ -33,8 +30,7 @@ in an `ARC`.
 
 ### Requirement: Map And Register Studies
 
-The builder MUST map each `StudyRow` → `ArcStudy` and register it in the
-ARC.
+The builder MUST map each `StudyRow` → `ArcStudy` and register it in the ARC.
 
 #### Scenario: Multiple studies
 
@@ -44,9 +40,8 @@ ARC.
 
 ### Requirement: Map Assays And Link Studies
 
-The builder MUST map each `AssayRow` → `ArcAssay`, register it in the ARC,
-and link it to studies via `study_ref` (supports a single ID or a JSON
-array).
+The builder MUST map each `AssayRow` → `ArcAssay`, register it in the ARC, and link it to studies via `study_ref`
+(supports a single ID or a JSON array).
 
 #### Scenario: Assay linked to one study
 
@@ -62,8 +57,8 @@ array).
 
 ### Requirement: Map Contacts By Target
 
-The builder MUST map each `ContactRow` → `Person` and attach it to
-investigation, study, or assay depending on `target_type`.
+The builder MUST map each `ContactRow` → `Person` and attach it to investigation, study, or assay depending on
+`target_type`.
 
 #### Scenario: Contact targets a study
 
@@ -73,8 +68,8 @@ investigation, study, or assay depending on `target_type`.
 
 ### Requirement: Map Publications By Target
 
-The builder MUST map each `PublicationRow` → `Publication` and attach it
-to investigation or study depending on `target_type`.
+The builder MUST map each `PublicationRow` → `Publication` and attach it to investigation or study depending on
+`target_type`.
 
 #### Scenario: Publication targets investigation
 
@@ -84,8 +79,7 @@ to investigation or study depending on `target_type`.
 
 ### Requirement: Build Annotation Tables
 
-The builder MUST build `ArcTable` objects from flat annotation rows and
-attach them to the correct study or assay.
+The builder MUST build `ArcTable` objects from flat annotation rows and attach them to the correct study or assay.
 
 #### Scenario: Annotation rows for a study table
 
@@ -95,8 +89,7 @@ attach them to the correct study or assay.
 
 ### Requirement: Serialize To RO-Crate JSON-LD
 
-The builder MUST serialize the finished ARC to a JSON-LD string via
-`arc.ToROCrateJsonString()`.
+The builder MUST serialize the finished ARC to a JSON-LD string via `arc.ToROCrateJsonString()`.
 
 #### Scenario: Successful serialization
 
@@ -106,8 +99,7 @@ The builder MUST serialize the finished ARC to a JSON-LD string via
 
 ### Requirement: Explicit Cleanup After Serialize
 
-The builder MUST explicitly free ARC objects and call `gc.collect()`
-before returning.
+The builder MUST explicitly free ARC objects and call `gc.collect()` before returning.
 
 #### Scenario: After ToROCrateJsonString
 
@@ -117,8 +109,7 @@ before returning.
 
 ### Requirement: No Database Or Processor Imports
 
-The builder MUST NEVER import `database`, `processor`, or `config`; inputs
-arrive as pure Pydantic data.
+The builder MUST NEVER import `database`, `processor`, or `config`; inputs arrive as pure Pydantic data.
 
 #### Scenario: Worker module imports
 
@@ -128,10 +119,9 @@ arrive as pure Pydantic data.
 
 ### Requirement: Duplicate Assays With Matching Metadata
 
-Duplicate `vAssay` rows with the same `identifier` within one investigation
-MUST add the assay once and merge study links from subsequent rows when all
-other fields match, logging one aggregated warning per investigation (with
-row count).
+Duplicate `vAssay` rows with the same `identifier` within one investigation MUST add the assay once and merge study
+links from subsequent rows when all other fields match, logging one aggregated warning per investigation (with row
+count).
 
 #### Scenario: Same assay linked to two studies via duplicate rows
 
@@ -142,9 +132,8 @@ row count).
 
 ### Requirement: Plain-Text Study Ref Coercion
 
-A plain-text `study_ref` (single study ID, not a JSON array) MUST be coerced
-to a one-element array, logging one aggregated warning per investigation
-(with assay count).
+A plain-text `study_ref` (single study ID, not a JSON array) MUST be coerced to a one-element array, logging one
+aggregated warning per investigation (with assay count).
 
 #### Scenario: Non-JSON study_ref
 
@@ -155,9 +144,8 @@ to a one-element array, logging one aggregated warning per investigation
 
 ### Requirement: Native JSON Roles Coercion
 
-Native JSON `roles` on `vContact` (parsed list from the DB driver, not a
-JSON string) MUST be coerced to a JSON string, logging one aggregated
-warning per investigation (with contact count).
+Native JSON `roles` on `vContact` (parsed list from the DB driver, not a JSON string) MUST be coerced to a JSON string,
+logging one aggregated warning per investigation (with contact count).
 
 #### Scenario: roles arrives as a list
 
@@ -168,9 +156,8 @@ warning per investigation (with contact count).
 
 ### Requirement: Missing Contact First Name
 
-Missing `first_name` on `vContact` MUST use an empty given name at
-serialization and log one aggregated warning per investigation (with
-contact count).
+Missing `first_name` on `vContact` MUST use an empty given name at serialization and log one aggregated warning per
+investigation (with contact count).
 
 #### Scenario: Contact without first_name
 
@@ -181,9 +168,8 @@ contact count).
 
 ### Requirement: Conflicting Duplicate Assay Metadata
 
-Duplicate `identifier` with conflicting metadata (any field other than
-`study_ref` / `investigation_ref`) MUST raise `DuplicateAssayRowError` and
-fail the investigation build.
+Duplicate `identifier` with conflicting metadata (any field other than `study_ref` / `investigation_ref`) MUST raise
+`DuplicateAssayRowError` and fail the investigation build.
 
 #### Scenario: Conflicting duplicate assays
 
@@ -194,8 +180,7 @@ fail the investigation build.
 
 ### Requirement: Assays Without Studies Warning
 
-If an investigation has assays but no studies, the builder MUST log a
-warning.
+If an investigation has assays but no studies, the builder MUST log a warning.
 
 #### Scenario: Orphan assays
 
@@ -217,9 +202,8 @@ An unknown annotation column type MUST be skipped with a warning.
 
 ### Requirement: Missing Annotation Target Skipped
 
-If an annotation table targets a study/assay identifier that does not
-exist in the current investigation's data, the table MUST be skipped with
-a warning.
+If an annotation table targets a study/assay identifier that does not exist in the current investigation's data, the
+table MUST be skipped with a warning.
 
 #### Scenario: Dangling target_ref
 
@@ -230,8 +214,7 @@ a warning.
 
 ### Requirement: Unknown Contact Or Publication Target
 
-A contact or publication with an unknown `target_type` MUST NOT be
-attached anywhere; a warning MUST be logged.
+A contact or publication with an unknown `target_type` MUST NOT be attached anywhere; a warning MUST be logged.
 
 #### Scenario: Invalid target_type
 

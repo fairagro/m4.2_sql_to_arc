@@ -2,31 +2,27 @@
 
 ## Purpose
 
-Foundation contract and project values for the FAIRagro SQL-to-ARC converter.
-All other domain specs assume these constraints. The authoritative schema
-contract is `docs/sql_to_arc_database_views.md` — feature specs MUST NOT
-restate view definitions; they reference that document when citing columns.
+Foundation contract and project values for the FAIRagro SQL-to-ARC converter. All other domain specs assume these
+constraints. The authoritative schema contract is `docs/sql_to_arc_database_views.md` — feature specs MUST NOT restate
+view definitions; they reference that document when citing columns.
 
 ## Requirements
 
 ### Requirement: View Contract Is Authoritative
 
-The converter MUST treat `docs/sql_to_arc_database_views.md` as the sole
-column-level schema contract and MUST query only the views defined there,
-never raw tables.
+The converter MUST treat `docs/sql_to_arc_database_views.md` as the sole column-level schema contract and MUST query
+only the views defined there, never raw tables.
 
 #### Scenario: Feature cites a column
 
 - GIVEN a feature that needs a database column or constraint
 - WHEN the requirement is written or implemented
-- THEN it references `docs/sql_to_arc_database_views.md` instead of restating
-  the view definition
+- THEN it references `docs/sql_to_arc_database_views.md` instead of restating the view definition
 
 ### Requirement: Correctness Over Speed
 
-The system MUST prefer valid ARC output over throughput. If a dataset cannot
-be mapped cleanly, the investigation MUST fail with a clear error rather than
-produce silent garbage.
+The system MUST prefer valid ARC output over throughput. If a dataset cannot be mapped cleanly, the investigation MUST
+fail with a clear error rather than produce silent garbage.
 
 #### Scenario: Unmappable investigation
 
@@ -37,20 +33,18 @@ produce silent garbage.
 
 ### Requirement: Memory-Safe By Design
 
-The system MUST keep peak RAM bounded and predictable for tens of thousands
-of investigations on hosts with limited memory.
+The system MUST keep peak RAM bounded and predictable for tens of thousands of investigations on hosts with limited
+memory.
 
 #### Scenario: Large dataset run
 
 - GIVEN a database with tens of thousands of investigations
 - WHEN the converter runs to completion
-- THEN investigations are streamed and processed without loading the full
-  dataset into memory at once
+- THEN investigations are streamed and processed without loading the full dataset into memory at once
 
 ### Requirement: Failure Isolation
 
-One failing investigation MUST NOT abort the entire run. Stats and error IDs
-MUST be collected and reported at the end.
+One failing investigation MUST NOT abort the entire run. Stats and error IDs MUST be collected and reported at the end.
 
 #### Scenario: Single investigation fails
 
@@ -62,9 +56,8 @@ MUST be collected and reported at the end.
 
 ### Requirement: Stateless Batch Process
 
-The converter MUST store no state between runs (no cache, no lock files, no
-database writes). The only persistent output is what the Middleware API
-receives.
+The converter MUST store no state between runs (no cache, no lock files, no database writes). The only persistent output
+is what the Middleware API receives.
 
 #### Scenario: Second consecutive run
 
@@ -74,9 +67,8 @@ receives.
 
 ### Requirement: Security By Default
 
-Inputs from external sources (database, API, config) MUST be treated as
-untrusted. The system MUST validate before use, fail closed, and apply least
-privilege (OWASP best practices).
+Inputs from external sources (database, API, config) MUST be treated as untrusted. The system MUST validate before use,
+fail closed, and apply least privilege (OWASP best practices).
 
 #### Scenario: Untrusted input arrives
 
@@ -87,8 +79,8 @@ privilege (OWASP best practices).
 
 ### Requirement: Typed Python And Uv
 
-All public APIs MUST be fully typed for Python 3.12. Dependency management
-MUST use `uv`; production code MUST NOT call `pip` directly.
+All public APIs MUST be fully typed for Python 3.12. Dependency management MUST use `uv`; production code MUST NOT call
+`pip` directly.
 
 #### Scenario: Adding a dependency
 
@@ -99,8 +91,7 @@ MUST use `uv`; production code MUST NOT call `pip` directly.
 
 ### Requirement: No Direct Environment Access
 
-Code MUST NOT read `os.environ` directly. Configuration MUST go through
-`Config` / `ConfigWrapper`.
+Code MUST NOT read `os.environ` directly. Configuration MUST go through `Config` / `ConfigWrapper`.
 
 #### Scenario: Reading a runtime setting
 
@@ -111,8 +102,7 @@ Code MUST NOT read `os.environ` directly. Configuration MUST go through
 
 ### Requirement: SQL Confined To Database Module
 
-All SQL MUST live inside the `Database` class. Other modules MUST NOT query
-the database directly.
+All SQL MUST live inside the `Database` class. Other modules MUST NOT query the database directly.
 
 #### Scenario: Fetching related entities
 
@@ -122,8 +112,8 @@ the database directly.
 
 ### Requirement: JSON-Only Worker IPC
 
-Worker processes MUST communicate via JSON strings only (no shared objects,
-no pickling of domain objects across the IPC boundary).
+Worker processes MUST communicate via JSON strings only (no shared objects, no pickling of domain objects across the IPC
+boundary).
 
 #### Scenario: ARC build completes in a worker
 
@@ -134,9 +124,8 @@ no pickling of domain objects across the IPC boundary).
 
 ### Requirement: Quality Gates And Tests
 
-Ruff (lint + format), mypy, pylint, bandit, and pytest MUST pass before
-merge. Every new feature MUST include matching tests. `# noqa` /
-`# type: ignore` suppressions MUST be used only when technically unavoidable.
+Ruff (lint + format), mypy, pylint, bandit, and pytest MUST pass before merge. Every new feature MUST include matching
+tests. `# noqa` / `# type: ignore` suppressions MUST be used only when technically unavoidable.
 
 #### Scenario: New feature lands
 
@@ -147,11 +136,9 @@ merge. Every new feature MUST include matching tests. `# noqa` /
 
 ### Requirement: Validation In Pydantic Models
 
-Validation MUST belong in the Pydantic model where possible (`Literal` types
-or `@field_validator`). A `ValidationError` triggers the standard
-skip-with-warning path in `database.py`. Custom warning code outside Pydantic
-MAY be used only when a spec violation should log a warning but NOT skip the
-row (rescue scenario).
+Validation MUST belong in the Pydantic model where possible (`Literal` types or `@field_validator`). A `ValidationError`
+triggers the standard skip-with-warning path in `database.py`. Custom warning code outside Pydantic MAY be used only
+when a spec violation should log a warning but NOT skip the row (rescue scenario).
 
 #### Scenario: Invalid row from a view
 
@@ -162,11 +149,9 @@ row (rescue scenario).
 
 ### Requirement: Acyclic Module Dependencies
 
-The module dependency graph MUST be:
-`main → processor → builder → mapper`, with `processor` also depending on
-`database` and `api_client`, and `config`/`stats` as shared leaves. Circular
-imports are forbidden. `mapper` and `builder` MUST NOT import `database` or
-`processor`.
+The module dependency graph MUST be: `main → processor → builder → mapper`, with `processor` also depending on
+`database` and `api_client`, and `config`/`stats` as shared leaves. Circular imports are forbidden. `mapper` and
+`builder` MUST NOT import `database` or `processor`.
 
 #### Scenario: Builder needs investigation data
 

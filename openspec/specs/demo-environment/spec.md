@@ -2,16 +2,14 @@
 
 ## Purpose
 
-Provide a one-command, self-contained local environment that demonstrates
-the full SQL-to-ARC pipeline end-to-end without production credentials,
-mTLS certificates, or network access to external services.
+Provide a one-command, self-contained local environment that demonstrates the full SQL-to-ARC pipeline end-to-end
+without production credentials, mTLS certificates, or network access to external services.
 
 ## Requirements
 
 ### Requirement: Single-Command Start
 
-The demo environment SHALL start with a single command:
-`docker compose -f compose.demo.yaml up --build` (or the wrapper
+The demo environment SHALL start with a single command: `docker compose -f compose.demo.yaml up --build` (or the wrapper
 `./start-demo.sh --build`).
 
 #### Scenario: Fresh clone demo
@@ -22,8 +20,7 @@ The demo environment SHALL start with a single command:
 
 ### Requirement: Demo Database Import
 
-The environment MUST spin up PostgreSQL and import a small demo dataset
-(10 investigations) without any manual steps.
+The environment MUST spin up PostgreSQL and import a small demo dataset (10 investigations) without any manual steps.
 
 #### Scenario: Postgres healthy
 
@@ -33,11 +30,10 @@ The environment MUST spin up PostgreSQL and import a small demo dataset
 
 ### Requirement: Mock Middleware API
 
-The environment MUST run a mock Middleware API (`middleware-api`) that
-implements the harvest lifecycle used by `ApiClient.harvest_arcs`: create a
-harvest, accept ARC RO-Crate submissions under that harvest, and complete or
-fail the harvest. Successful ARC submissions MUST write artifacts under the
-local `demo_output/` directory (same host-ownership rules as today).
+The environment MUST run a mock Middleware API (`middleware-api`) that implements the harvest lifecycle used by
+`ApiClient.harvest_arcs`: create a harvest, accept ARC RO-Crate submissions under that harvest, and complete or fail the
+harvest. Successful ARC submissions MUST write artifacts under the local `demo_output/` directory (same host-ownership
+rules as today).
 
 #### Scenario: End-to-end harvest upload
 
@@ -54,12 +50,10 @@ The mock MUST expose at least:
 - `POST /v3/harvests` — create a harvest (`RUNNING`)
 - `POST /v3/harvests/{harvest_id}/arcs` — submit an ARC into that harvest
 - `POST /v3/harvests/{harvest_id}/complete` — mark the harvest `COMPLETED`
-- `PATCH /v3/harvests/{harvest_id}` — set terminal status (`FAILED`,
-  `CANCELLED`, or `COMPLETED`)
+- `PATCH /v3/harvests/{harvest_id}` — set terminal status (`FAILED`, `CANCELLED`, or `COMPLETED`)
 
-Responses MUST be parseable by `middleware.api_client` harvest/ARC result
-models for the happy path. Full production auth, idempotency, and persistence
-semantics are out of scope for the mock.
+Responses MUST be parseable by `middleware.api_client` harvest/ARC result models for the happy path. Full production
+auth, idempotency, and persistence semantics are out of scope for the mock.
 
 #### Scenario: Create then submit then complete
 
@@ -70,8 +64,7 @@ semantics are out of scope for the mock.
 
 ### Requirement: Converter Against Demo Stack
 
-The environment MUST run the `sql_to_arc` converter against the demo DB and
-mock API.
+The environment MUST run the `sql_to_arc` converter against the demo DB and mock API.
 
 #### Scenario: End-to-end demo run
 
@@ -81,9 +74,8 @@ mock API.
 
 ### Requirement: Exit Code Propagation
 
-The converter MUST exit 0 when all 10 investigations are processed.
-Compose MUST exit with the converter's exit code (`--exit-code-from
-sql_to_arc`).
+The converter MUST exit 0 when all 10 investigations are processed. Compose MUST exit with the converter's exit code
+(`--exit-code-from sql_to_arc`).
 
 #### Scenario: Successful full demo
 
@@ -93,8 +85,7 @@ sql_to_arc`).
 
 ### Requirement: Host-Accessible Output
 
-Written ARC files MUST be accessible on the host via a bind-mounted
-`demo_output/` volume.
+Written ARC files MUST be accessible on the host via a bind-mounted `demo_output/` volume.
 
 #### Scenario: Inspect output on host
 
@@ -104,8 +95,7 @@ Written ARC files MUST be accessible on the host via a bind-mounted
 
 ### Requirement: Host File Ownership
 
-File ownership of output files MUST match the host user via
-`LOCAL_UID` / `LOCAL_GID` environment variables.
+File ownership of output files MUST match the host user via `LOCAL_UID` / `LOCAL_GID` environment variables.
 
 #### Scenario: Non-root host user
 
@@ -115,9 +105,8 @@ File ownership of output files MUST match the host user via
 
 ### Requirement: No Secrets Or External Network
 
-The demo MUST NOT require secrets, encrypted files, or external network
-calls. Production credentials, sops, mTLS, and Edaphobase full-dump
-downloads are out of scope (dev environment only).
+The demo MUST NOT require secrets, encrypted files, or external network calls. Production credentials, sops, mTLS, and
+Edaphobase full-dump downloads are out of scope (dev environment only).
 
 #### Scenario: Offline demo
 
@@ -127,8 +116,7 @@ downloads are out of scope (dev environment only).
 
 ### Requirement: Missing Demo SQL Fails Clearly
 
-If `demo.sql` is missing, postgres init MUST fail and compose MUST exit
-non-zero with a clear log message.
+If `demo.sql` is missing, postgres init MUST fail and compose MUST exit non-zero with a clear log message.
 
 #### Scenario: demo.sql absent
 
@@ -139,9 +127,8 @@ non-zero with a clear log message.
 
 ### Requirement: Unsafe ARC Identifier Fallback
 
-If an ARC identifier in the payload is unsafe (path traversal attempt),
-the mock API MUST fall back to a random ID, log to console, and MUST NOT
-write outside `demo_output/`.
+If an ARC identifier in the payload is unsafe (path traversal attempt), the mock API MUST fall back to a random ID, log
+to console, and MUST NOT write outside `demo_output/`.
 
 #### Scenario: Path traversal identifier
 
@@ -152,8 +139,7 @@ write outside `demo_output/`.
 
 ### Requirement: Create Output Directory On Demand
 
-If `demo_output/` does not exist, the mock API MUST create it on first
-request.
+If `demo_output/` does not exist, the mock API MUST create it on first request.
 
 #### Scenario: Missing output directory
 

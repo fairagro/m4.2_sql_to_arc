@@ -2,18 +2,16 @@
 
 ## Purpose
 
-Publish finished ARC RO-Crate JSON-LD documents to the FAIRagro
-Middleware API. Upload is the final I/O step of a conversion run and is
-the only operation that reaches outside the local machine at runtime.
+Publish finished ARC RO-Crate JSON-LD documents to the FAIRagro Middleware API. Upload is the final I/O step of a
+conversion run and is the only operation that reaches outside the local machine at runtime.
 
 ## Requirements
 
 ### Requirement: Upload Via ApiClient
 
-For each conversion run, the system MUST upload successfully built ARCs
-through `ApiClient.harvest_arcs(rdi, arcs, expected_datasets=…)` (or an
-equivalent client API that creates a harvest, submits each ARC into that
-harvest, and completes or fails the harvest). The system MUST NOT call
+For each conversion run, the system MUST upload successfully built ARCs through
+`ApiClient.harvest_arcs(rdi, arcs, expected_datasets=…)` (or an equivalent client API that creates a harvest, submits
+each ARC into that harvest, and completes or fails the harvest). The system MUST NOT call
 `ApiClient.create_or_update_arc` from application code.
 
 #### Scenario: Successful harvest upload
@@ -25,15 +23,12 @@ harvest, and completes or fails the harvest). The system MUST NOT call
 
 ### Requirement: Network And API Errors Are Non-Fatal
 
-On per-item harvest submission failures reported by the client, or on
-`ConnectionError`, `TimeoutError`, or `ApiClientError` for individual ARC
-submissions that the client treats as non-catastrophic, the system MUST
-record the affected investigation as failed on the shared repository scope
-with a failure message and the investigation identifier, and MUST continue
-the run. A catastrophic harvest failure (for example auth failure or
-harvest-state error that aborts `harvest_arcs`) MUST be recorded on the
-scope (failed datasets and/or repository issue as applicable) without
-silently falling back to `create_or_update_arc`.
+On per-item harvest submission failures reported by the client, or on `ConnectionError`, `TimeoutError`, or
+`ApiClientError` for individual ARC submissions that the client treats as non-catastrophic, the system MUST record the
+affected investigation as failed on the shared repository scope with a failure message and the investigation identifier,
+and MUST continue the run. A catastrophic harvest failure (for example auth failure or harvest-state error that aborts
+`harvest_arcs`) MUST be recorded on the scope (failed datasets and/or repository issue as applicable) without silently
+falling back to `create_or_update_arc`.
 
 #### Scenario: Per-item submission failure
 
@@ -51,11 +46,9 @@ silently falling back to `create_or_update_arc`.
 
 ### Requirement: Successful Upload Records Harvested
 
-After a harvest completes (or returns with mixed per-item results), the
-system MUST record one harvested dataset on the shared repository scope for
-each ARC that was submitted without a corresponding per-item error.
-Harvested MUST NOT be recorded for ARCs that failed submission. When the
-client returns a harvest identifier, the system MUST set it on the
+After a harvest completes (or returns with mixed per-item results), the system MUST record one harvested dataset on the
+shared repository scope for each ARC that was submitted without a corresponding per-item error. Harvested MUST NOT be
+recorded for ARCs that failed submission. When the client returns a harvest identifier, the system MUST set it on the
 repository scope.
 
 #### Scenario: Mixed harvest outcomes
@@ -68,17 +61,15 @@ repository scope.
 
 #### Scenario: Unattributed per-item harvest error
 
-- **GIVEN** ARCs were submitted and the harvest result includes a per-item
-  error with a missing or unmapped `arc_id`
+- **GIVEN** ARCs were submitted and the harvest result includes a per-item error with a missing or unmapped `arc_id`
 - **WHEN** upload outcomes are applied
 - **THEN** a repository issue is recorded for the unattributed error
 - **AND** investigations without a matching per-item error are still recorded as harvested
 
 ### Requirement: Built ARCs Feed The Harvest Stream
 
-Only successfully built ARC JSON payloads MUST enter the harvest upload
-stream. Build failures, skipped investigations, and empty (`None`) build
-results MUST NOT be submitted into the harvest.
+Only successfully built ARC JSON payloads MUST enter the harvest upload stream. Build failures, skipped investigations,
+and empty (`None`) build results MUST NOT be submitted into the harvest.
 
 #### Scenario: Empty build excluded from harvest
 
@@ -89,9 +80,8 @@ results MUST NOT be submitted into the harvest.
 
 ### Requirement: Per-Investigation Upload Logging
 
-The system MUST log per-investigation upload progress when an ARC enters the
-harvest stream, and MUST log overall harvest completion (or failure) for the
-run. Logging MUST reflect harvest-session outcomes, not a separate
+The system MUST log per-investigation upload progress when an ARC enters the harvest stream, and MUST log overall
+harvest completion (or failure) for the run. Logging MUST reflect harvest-session outcomes, not a separate
 per-investigation upload RPC.
 
 #### Scenario: ARC queued for harvest
@@ -108,9 +98,8 @@ per-investigation upload RPC.
 
 ### Requirement: Reuse ApiClient Instance
 
-The system MUST reuse the same `ApiClient` instance across all uploads
-within a run. Connection details come from `ApiClientConfig`
-(`config.api_client`); the converter MUST NOT reinterpret those values.
+The system MUST reuse the same `ApiClient` instance across all uploads within a run. Connection details come from
+`ApiClientConfig` (`config.api_client`); the converter MUST NOT reinterpret those values.
 
 #### Scenario: Many uploads in one run
 
@@ -120,8 +109,8 @@ within a run. Connection details come from `ApiClientConfig`
 
 ### Requirement: No Startup Connectivity Pre-Check
 
-If the API is unreachable at startup, the first upload attempt MUST fail
-normally; the converter MUST NOT pre-check connectivity.
+If the API is unreachable at startup, the first upload attempt MUST fail normally; the converter MUST NOT pre-check
+connectivity.
 
 #### Scenario: API down at start
 
@@ -132,8 +121,8 @@ normally; the converter MUST NOT pre-check connectivity.
 
 ### Requirement: Skip Upload When Build Returned Nothing
 
-If `arc_json` is `None` (build returned nothing), the system MUST log an
-error, mark the investigation failed, and skip the upload entirely.
+If `arc_json` is `None` (build returned nothing), the system MUST log an error, mark the investigation failed, and skip
+the upload entirely.
 
 #### Scenario: Empty build result
 

@@ -2,9 +2,8 @@
 
 ### Requirement: Upload Built ARCs
 
-The pipeline MUST upload successfully built ARCs to the Middleware API
-through the harvest-session upload path defined in `api-upload` (one harvest
-per RDI run via `harvest_arcs`, not per-investigation `create_or_update_arc`).
+The pipeline MUST upload successfully built ARCs to the Middleware API through the harvest-session upload path defined
+in `api-upload` (one harvest per RDI run via `harvest_arcs`, not per-investigation `create_or_update_arc`).
 
 #### Scenario: Successful builds enter one harvest
 

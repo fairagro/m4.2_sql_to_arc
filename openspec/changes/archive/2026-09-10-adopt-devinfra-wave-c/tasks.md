@@ -14,10 +14,9 @@
 ## 3. CI callers
 
 - [x] 3.1 Add `reusable-check-local.yml` (no Trivy licence; until Devinfra #74)
-- [x] 3.2 Add `feature-pull-request.yml` / `pre-release.yml` / `release.yml`
-      (CQ pin #72 SHA; build/release @main; check-local)
-- [x] 3.3 Delete local `python-quality.yml`, `docker-build.yml`,
-      `docker-release.yml`, `pull-request-tests.yml`
+- [x] 3.2 Add `feature-pull-request.yml` / `pre-release.yml` / `release.yml` (CQ pin #72 SHA; build/release @main;
+      check-local)
+- [x] 3.3 Delete local `python-quality.yml`, `docker-build.yml`, `docker-release.yml`, `pull-request-tests.yml`
 
 ## 4. Docs
 
