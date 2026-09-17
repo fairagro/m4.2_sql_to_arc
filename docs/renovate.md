@@ -40,7 +40,7 @@ Use this mapping:
 | Contents                            | `contents`         | Read and write                 | Clone, branches, commits (Renovate + sync)     |
 | Pull requests                       | `pull_requests`    | Read and write                 | Open/update PRs (Renovate + sync)              |
 | Workflows                           | `workflows`        | Read and write                 | Push changes under `.github/workflows/` (sync) |
-| Issues                              | `issues`           | Read and write                 | Renovate (issue/PR comment APIs, dashboard)    |
+| Issues                              | `issues`           | Read and write                 | Renovate + sync `SYNC-FOLLOWUP` product issues |
 
 **Do not confuse** GUI **Workflows** (`workflows`) with **Actions** (`actions`). **Workflows** is required to create or
 modify workflow _files_; **Actions** covers workflow _runs_/logs and is not required for the current Renovate/sync
