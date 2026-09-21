@@ -9,25 +9,26 @@ Issue: [#171](https://github.com/fairagro/m4.2_middleware_devinfra/issues/171) (
 
 ## Relationship
 
-| Skill           | Role                                          |
-| --------------- | --------------------------------------------- |
-| `/code-review`  | **Produce** a first-party review of a diff/PR |
-| `/review-fixer` | **Consume** Copilot/Bugbot review threads     |
-| `/create-issue` | Optional hand-off for Medium+ deferrals       |
+| Skill           | Role                                                                |
+| --------------- | ------------------------------------------------------------------- |
+| `/code-review`  | **Produce** a first-party review of a diff/PR (marker + findings)   |
+| `/review-fixer` | **Consume** Copilot/Bugbot threads **and** `/code-review` summaries |
+| `/create-issue` | Optional hand-off for Medium+ deferrals                             |
 
 ## Inputs / outputs
 
 - **Local:** `m42-ai code-review-context --base main` → review → `code-review-report-write` → `/tmp/code-review-*.md`
-  (no GitHub write).
+  (no GitHub write). Report body MUST start with `<!-- m42-ai:code-review -->` and a findings table (`path` column).
 - **PR:** same checklist; `code-review-publish --pr N` submits a formal COMMENT Pull Request Review
   (`gh pr review --comment`). Falls back to a conversation comment only if review submit fails.
 
 ## Anti-duplication
 
-Do not restate findings owned by Ruff, mypy, pylint, Bandit, markdownlint, Prettier, ggshield, CodeQL, Trivy, or (once
-landed) vulture / import-linter. Import-graph judgment applies
-[`openspec/principles.global.md`](../openspec/principles.global.md) **Import policy** until import-linter lands
-(mechanical graphs stay toolchain-owned when present).
+Do not restate findings owned by Ruff, mypy, pylint, Bandit, markdownlint, Prettier, ggshield, CodeQL, Trivy,
+**vulture**, or **import-linter**. Mechanical unused definitions are vulture’s; mechanical cycle/layer/forbidden
+violations are import-linter’s. Keep judgment-only notes for Import-policy rules outside the linter (module-level
+imports, relative imports, `sys.path` mutation, lazy imports used only to break cycles) — see
+[`openspec/principles.global.md`](../openspec/principles.global.md) **Import policy**.
 
 ## Auth
 

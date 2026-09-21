@@ -48,8 +48,10 @@ allow:
   - scripts/quality-check.sh
   - scripts/quality-fix.sh
   - scripts/run-container-structure-test.sh
+  - scripts/run-import-linter.sh
   - scripts/setup-git-hooks.sh
   - scripts/update-dockerfile-pins.sh
+  - scripts/prune-merged-branches.sh
   - scripts/git-hooks/**
   - scripts/load-versions-env.sh
   - scripts/devcontainer-post-create.sh
@@ -62,6 +64,7 @@ allow:
   - .python-version
   - .pre-commit-config.yaml
   - .bandit
+  - .importlinter.global
   - ruff.toml
   - mypy.ini
   - .pylintrc
@@ -98,3 +101,4 @@ overlays:
   - openspec/principles.md
   - AGENTS.md
   - .devcontainer/product.env
+  - .importlinter
