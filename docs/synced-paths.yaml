@@ -50,6 +50,7 @@ allow:
   - scripts/run-container-structure-test.sh
   - scripts/setup-git-hooks.sh
   - scripts/update-dockerfile-pins.sh
+  - scripts/prune-merged-branches.sh
   - scripts/git-hooks/**
   - scripts/load-versions-env.sh
   - scripts/devcontainer-post-create.sh
