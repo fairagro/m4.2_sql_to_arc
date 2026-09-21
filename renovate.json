@@ -293,8 +293,14 @@
       "matchFileNames": [
         "versions.env",
         ".python-version",
+        "package.json",
+        "package-lock.json",
         "docker/Dockerfile.product-app.base",
         ".devcontainer/Dockerfile",
+        ".devcontainer/devcontainer.json",
+        ".devcontainer/devcontainer-lock.json",
+        ".devcontainer/docker-compose.yml",
+        ".devcontainer/starship.toml",
         "renovate.json",
         ".github/workflows/renovate.yml",
         ".github/workflows/codeql.yml"

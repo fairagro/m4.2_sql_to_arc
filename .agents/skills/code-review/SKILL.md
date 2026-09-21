@@ -10,7 +10,8 @@ description: >-
 # Code review
 
 You are a **first-party reviewer** (judgment). Quality tools and CI are the gate for style/types/secrets scanners.
-`/review-fixer` consumes **external** Copilot/Bugbot threads — do **not** triage those here.
+`/review-fixer` consumes **external** Copilot/Bugbot threads **and** this skill’s marked COMMENT summaries —
+do **not** triage those here.
 
 Do **not** commit, push, or auto-approve. Do **not** auto-LGTM. **One** publish per run (no silent re-post loops).
 
@@ -100,16 +101,24 @@ fails.
 
 ## Output shape
 
-Suggested Markdown:
+Published / `/tmp` reports **MUST** start with the stable HTML comment marker so `/review-fixer` can triage them
+(even when the GitHub author is a human login):
+
+```markdown
+<!-- m42-ai:code-review -->
+```
+
+Suggested Markdown after the marker:
 
 - Short verdict (risks / open questions — not LGTM)
-- Findings table: path, goal, severity, cost, note
+- Findings table with columns **path**, **goal**, **severity**, **cost**, **note** (header row required; empty
+  findings → table omitted or a single “none” row is fine — without a `path` column, review-fixer ignores the body)
 - Optional: “defer via `/create-issue`” for Medium+
 
 ## Relationship
 
-| Skill           | Role                                      |
-| --------------- | ----------------------------------------- |
-| `/code-review`  | Produce first-party review of a diff / PR |
-| `/review-fixer` | Triage Copilot/Bugbot review threads      |
-| `/create-issue` | Open deferred issues (optional hand-off)  |
+| Skill           | Role                                                                 |
+| --------------- | -------------------------------------------------------------------- |
+| `/code-review`  | Produce first-party review of a diff / PR (marker + findings table)  |
+| `/review-fixer` | Triage Copilot/Bugbot **and** `/code-review` summary findings        |
+| `/create-issue` | Open deferred issues (optional hand-off)                             |
