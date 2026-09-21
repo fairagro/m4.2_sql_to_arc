@@ -57,18 +57,18 @@ the YAML, the YAML wins.
 - **Devinfra checkout:** optionally resolve the live allowlist with `--list-files` under [Local dry-run](#local-dry-run)
   (same script as in the Artifacts table).
 
-| Category                          | Examples on `allow` (non-exhaustive)                                                                                                                               |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Sync / AI policy docs             | `docs/sync.md`, `docs/synced-paths.yaml`, `docs/ai_review_policy.md`, `docs/quality.md`, `docs/devcontainer.md`, …                                                 |
-| Agent skills / commands / prompts | `.agents/skills/{issue-fixer,review-fixer,create-issue,arctrl,gh,docker,hadolint,uv}/**`, `.cursor/commands/*`, prompts                                            |
-| `m42-ai` package                  | `scripts/ai/**`, `scripts/bin/{gh,git,k,d}`, `scripts/{dev-tokens,set-dev-tokens}.sh`                                                                              |
-| Quality scripts / hooks           | `scripts/quality-{check,fix}.sh`, `scripts/setup-git-hooks.sh`, `scripts/git-hooks/**`, `scripts/update-dockerfile-pins.sh`, `scripts/devcontainer-post-create.sh` |
-| Python quality fragments          | `ruff.toml`, `mypy.ini`, `.pylintrc`, `.bandit`, `pyrightconfig.json`, `.pre-commit-config.yaml`                                                                   |
-| Markdown / IDE baseline           | `.markdownlint*`, `.prettier*`, `package.json`, `package-lock.json`, `.vscode/settings.json`, `.vscode/extensions.json`                                            |
-| Fleet ignore baseline             | root `.gitignore` (incl. `.docker/buildx/` + token-seed runtime; product-only paths → nested `.gitignore`; see Overlays)                                           |
-| Dev Container / image pins        | `.devcontainer/{Dockerfile,devcontainer.json,docker-compose.yml,starship.toml}`, `versions.env`, `.python-version`, `docker/Dockerfile.product-app.base`           |
-| Renovate                          | `renovate.json`, `.github/workflows/renovate.yml`                                                                                                                  |
-| Global prose SoT                  | `docs/surface-quality-bar.global.md`, `openspec/principles.global.md`                                                                                              |
+| Category                          | Examples on `allow` (non-exhaustive)                                                                                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Sync / AI policy docs             | `docs/sync.md`, `docs/synced-paths.yaml`, `docs/ai_review_policy.md`, `docs/quality.md`, `docs/devcontainer.md`, …                                                                                     |
+| Agent skills / commands / prompts | `.agents/skills/{issue-fixer,review-fixer,create-issue,arctrl,gh,docker,hadolint,uv}/**`, `.cursor/commands/*`, prompts                                                                                |
+| `m42-ai` package                  | `scripts/ai/**`, `scripts/bin/{gh,git,k,d}`, `scripts/{dev-tokens,set-dev-tokens}.sh`                                                                                                                  |
+| Quality scripts / hooks           | `scripts/quality-{check,fix}.sh`, `scripts/setup-git-hooks.sh`, `scripts/git-hooks/**`, `scripts/update-dockerfile-pins.sh`, `scripts/prune-merged-branches.sh`, `scripts/devcontainer-post-create.sh` |
+| Python quality fragments          | `ruff.toml`, `mypy.ini`, `.pylintrc`, `.bandit`, `pyrightconfig.json`, `.pre-commit-config.yaml`                                                                                                       |
+| Markdown / IDE baseline           | `.markdownlint*`, `.prettier*`, `package.json`, `package-lock.json`, `.vscode/settings.json`, `.vscode/extensions.json`                                                                                |
+| Fleet ignore baseline             | root `.gitignore` (incl. `.docker/buildx/` + token-seed runtime; product-only paths → nested `.gitignore`; see Overlays)                                                                               |
+| Dev Container / image pins        | `.devcontainer/{Dockerfile,devcontainer.json,docker-compose.yml,starship.toml}`, `versions.env`, `.python-version`, `docker/Dockerfile.product-app.base`                                               |
+| Renovate                          | `renovate.json`, `.github/workflows/renovate.yml`                                                                                                                                                      |
+| Global prose SoT                  | `docs/surface-quality-bar.global.md`, `openspec/principles.global.md`                                                                                                                                  |
 
 **Hard excludes / never overwrite:** see `exclude` and `overlays` in the YAML (e.g. `.devcontainer/product.env`,
 `docs/surface-quality-bar.md`, `openspec/principles.md`, `AGENTS.md`, reusable workflows, `middleware/**`).
@@ -133,6 +133,20 @@ Each live sync that has allowlisted changes opens a **new** PR per product repo:
 - After the new PR is created, other **open** sync PRs whose head is `chore/devinfra-sync` or `chore/devinfra-sync-*`
   get a **Superseded by #N** comment and are **closed** (not merged)
 - Sync does **not** auto-merge; humans merge the latest open sync PR when ready
+
+### Prune merged / superseded branches
+
+Product checkouts accumulate local and `origin` heads after merges (incl. squash) and after sync closes older PRs as
+**Superseded by #N**. Use the synced helper (dry-run by default):
+
+```bash
+./scripts/prune-merged-branches.sh
+./scripts/prune-merged-branches.sh --apply
+```
+
+It deletes a branch only when it is an ancestor of `origin/main`, the head of a **MERGED** PR into `main`, or the head
+of a **CLOSED** PR that reaches a MERGED PR via a recursive `Superseded by #<n>` chain. It never deletes `main`, the
+current branch, or heads of **OPEN** PRs. Requires `gh` on `PATH` (Dev Container wrappers).
 
 ## Bot token (shared with Renovate)
 
