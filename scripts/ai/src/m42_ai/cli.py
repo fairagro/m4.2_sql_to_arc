@@ -320,7 +320,10 @@ def build_parser() -> argparse.ArgumentParser:
     ic.add_argument("--body-file")
     ic.set_defaults(func=cmd_issue_create)
 
-    iv = sub.add_parser("issue-view", help="Fetch issue triage JSON (type, labels, body, url)")
+    iv = sub.add_parser(
+        "issue-view",
+        help="Fetch issue triage JSON (type, labels, body, comments, url)",
+    )
     iv.add_argument("--issue", type=int, required=True)
     iv.add_argument("--cwd", help="Git repo root (default: cwd)")
     iv.set_defaults(func=cmd_issue_view)

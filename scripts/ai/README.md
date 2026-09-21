@@ -56,7 +56,7 @@ you pass `--owner` / `--repo` where the command supports them.
 | `review-open --pr N`            | Ensure PR head checkout, then GraphQL shape; JSON includes `head_ref` / `current_branch` + open AI work |
 | `review-reply`                  | `in_reply_to` on a review comment, or `--conversation` PR comment                                       |
 | `review-resolve --thread-id ID` | `resolveReviewThread`                                                                                   |
-| `issue-view --issue N`          | Stable triage JSON (type, labels, body, url, triage:\* extract)                                         |
+| `issue-view --issue N`          | Stable triage JSON (type, labels, body, comments, url, triage:\* extract)                               |
 | `issue-create`                  | Type + severity/cost (+ optional `--practicality`, `--parent`)                                          |
 | `issue-branch --issue N`        | Ensure `issue-N-slug` checked out from base (no commit / push / PR)                                     |
 | `branch-ahead`                  | JSON ahead count vs `origin/<base>`; exit `1` when tip is not ahead                                     |

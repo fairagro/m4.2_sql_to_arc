@@ -210,14 +210,14 @@ def _triage_from_labels(label_names: list[str]) -> dict[str, str | None]:
 
 
 def view_issue(issue: int, *, cwd: Path | None = None) -> dict[str, Any]:
-    """Fetch a stable triage-oriented JSON shape for an issue."""
+    """Fetch a stable triage-oriented JSON shape for an issue (incl. comments)."""
     proc = run_gh(
         [
             "issue",
             "view",
             str(issue),
             "--json",
-            "number,title,url,body,labels,state,author,issueType",
+            "number,title,url,body,labels,state,author,issueType,comments",
         ],
         cwd=cwd,
     )
@@ -226,6 +226,20 @@ def view_issue(issue: int, *, cwd: Path | None = None) -> dict[str, Any]:
     label_names = _label_names(labels_raw if isinstance(labels_raw, list) else [])
     author = meta.get("author") or {}
     author_login = author.get("login") if isinstance(author, dict) else None
+    comments_out: list[dict[str, str | None]] = []
+    for c in meta.get("comments") or []:
+        if not isinstance(c, dict):
+            continue
+        c_author = c.get("author") or {}
+        login = c_author.get("login") if isinstance(c_author, dict) else None
+        comments_out.append(
+            {
+                "author": login,
+                "body": str(c.get("body") or ""),
+                "created_at": str(c.get("createdAt") or c.get("created_at") or "") or None,
+            }
+        )
+    comments_out.sort(key=lambda row: row.get("created_at") or "")
     return {
         "number": int(meta["number"]),
         "title": str(meta["title"]),
@@ -236,6 +250,7 @@ def view_issue(issue: int, *, cwd: Path | None = None) -> dict[str, Any]:
         "labels": label_names,
         "triage": _triage_from_labels(label_names),
         "author": author_login,
+        "comments": comments_out,
     }
 
 
