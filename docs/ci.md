@@ -18,7 +18,7 @@ Canonical GitHub Actions for the three m4.2 product repos live in this repositor
 | CodeQL (per-repo)             | [`.github/workflows/codeql.yml`](../.github/workflows/codeql.yml) — thin synced workflow; see below                                                                                          |
 | Sync products                 | [`.github/workflows/sync-products.yml`](https://github.com/fairagro/m4.2_middleware_devinfra/blob/main/.github/workflows/sync-products.yml) — allowlist push; see [docs/sync.md](sync.md)    |
 
-Dockerfile pins Renovate skips (`apk=…-rN`, inline `name==…`): synced
+Dockerfile pins Renovate skips (apk via `ARG …_VERSION=*-rN`, inline `name==…`): synced
 [`scripts/update-dockerfile-pins.sh`](../scripts/update-dockerfile-pins.sh) — see
 [Manual Dockerfile pins](renovate.md#manual-dockerfile-pins-not-renovate).
 
@@ -336,7 +336,7 @@ custom `tag_prefix` breaks Helm `appVersion` lookup unless you also change Helm 
 
 | Input                 | Default      | Purpose                                                                  |
 | --------------------- | ------------ | ------------------------------------------------------------------------ |
-| `python_package_root` | `middleware` | Path for ruff / pylint / mypy / bandit / pytest                          |
+| `python_package_root` | `middleware` | Path for ruff / pylint / mypy / bandit / vulture / pytest                |
 | `mypy_path`           | `""`         | Optional colon-separated `MYPYPATH` (stubs + src roots); empty = default |
 | `pylint_source_roots` | `""`         | Optional comma-separated pylint `--source-roots`                         |
 | `components`          | (optional)   | Accepted for caller compatibility; unused by this workflow               |
@@ -378,7 +378,11 @@ CRITICAL/HIGH vulnerabilities. See [Trivy: licenses vs vulnerabilities](#trivy-l
 | `skip`            | `false`                        | Successful no-op without artifacts                 |
 
 Outputs: `version`, `pep440_version`, `components`. Version scheme is shared across all three products
-(`*-docker-vX.Y.Z`; on `feature/*` → `X.Y.Z-rc.<branch>.<run>`).
+(`*-docker-vX.Y.Z`; on `build/*` → `X.Y.Z-rc.<branch>.<run>`). Here `<run>` is **`${{ github.run_number }}`** for that
+workflow file — a **repo-wide** counter, not per branch (a new `build/*` branch can still get a high `.N` because other
+branches already advanced the counter). On the same path, `pep440_version` is `X.Y.Z.devN` with the **same** global
+`run_number`. Fleet branch **channels** (`build/`, `ci/`, `docs/`, `chore/`) are documented in
+`openspec/principles.global.md`; Pre Release / RC applies only to `build/*` (hard cut — not `feature/*`).
 
 ### `reusable-release.yml`
 
@@ -422,7 +426,8 @@ When `create_github_release` is false, no git tag or GitHub Release is created (
 Helm CLI version comes from the caller’s `versions.env` (`HELM_VERSION`). Secrets `DOCKERHUB_USER` / `DOCKERHUB_TOKEN`
 are optional; if missing or a push fails, the Helm GitHub Release body (final) or job summary (pre-release) MUST state
 the registry status and reason. GHCR uses `GITHUB_TOKEN`. Chart tags are created before registry pushes (same tag-first
-policy as Docker release).
+policy as Docker release). Helm **pre-release** chart versions use `…-rc.<branch>.<run>` with the same meaning of
+`<run>` as Docker (`github.run_number`, repo-wide) and MUST run only on `build/*` (hard cut; not `feature/*`).
 
 ### `reusable-registry-retry.yml`
 

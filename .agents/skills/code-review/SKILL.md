@@ -10,7 +10,8 @@ description: >-
 # Code review
 
 You are a **first-party reviewer** (judgment). Quality tools and CI are the gate for style/types/secrets scanners.
-`/review-fixer` consumes **external** Copilot/Bugbot threads — do **not** triage those here.
+`/review-fixer` consumes **external** Copilot/Bugbot threads **and** this skill’s marked COMMENT summaries — do **not**
+triage those here.
 
 Do **not** commit, push, or auto-approve. Do **not** auto-LGTM. **One** publish per run (no silent re-post loops).
 
@@ -84,7 +85,7 @@ Local-only reviews never require GitHub auth.
    import-linter when present)
 6. Defensive bloat vs real edges
 7. Resource frugality
-8. Dead / unused code (judgment; vulture when landed is toolchain-owned)
+8. Dead / unused code (judgment beyond what vulture already gates; mechanical unused definitions are toolchain-owned)
 9. OpenSpec↔code drift — **only** where specs exist and the diff touches that surface
 10. Docs↔code drift (weaker severity than spec drift)
 11. Test adequacy for new risks (not coverage-% nagging)
@@ -94,22 +95,31 @@ Severity / cost language: [`docs/ai_review_policy.md`](../../../docs/ai_review_p
 
 ## Anti-duplication (hard rule)
 
-Do **not** restate findings owned by: Ruff, mypy, pylint, Bandit, markdownlint, Prettier, ggshield, CodeQL, Trivy, and
-(once landed) **vulture** / **import-linter**. Out of scope: format, import sort, line-length, type noise CI already
-fails.
+Do **not** restate findings owned by: Ruff, mypy, pylint, Bandit, markdownlint, Prettier, ggshield, CodeQL, Trivy,
+**vulture**, and (once landed) **import-linter**. Out of scope: format, import sort, line-length, type noise CI already
+fails. Do not re-report mechanical unused-definition hits that the fleet vulture gate (`--min-confidence 100`) would
+catch.
 
 ## Output shape
 
-Suggested Markdown:
+Published / `/tmp` reports **MUST** start with the stable HTML comment marker so `/review-fixer` can triage them (even
+when the GitHub author is a human login):
+
+```markdown
+<!-- m42-ai:code-review -->
+```
+
+Suggested Markdown after the marker:
 
 - Short verdict (risks / open questions — not LGTM)
-- Findings table: path, goal, severity, cost, note
+- Findings table with columns **path**, **goal**, **severity**, **cost**, **note** (header row required; empty findings
+  → table omitted or a single “none” row is fine — without a `path` column, review-fixer ignores the body)
 - Optional: “defer via `/create-issue`” for Medium+
 
 ## Relationship
 
-| Skill           | Role                                      |
-| --------------- | ----------------------------------------- |
-| `/code-review`  | Produce first-party review of a diff / PR |
-| `/review-fixer` | Triage Copilot/Bugbot review threads      |
-| `/create-issue` | Open deferred issues (optional hand-off)  |
+| Skill           | Role                                                                |
+| --------------- | ------------------------------------------------------------------- |
+| `/code-review`  | Produce first-party review of a diff / PR (marker + findings table) |
+| `/review-fixer` | Triage Copilot/Bugbot **and** `/code-review` summary findings       |
+| `/create-issue` | Open deferred issues (optional hand-off)                            |

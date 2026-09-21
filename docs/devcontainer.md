@@ -94,8 +94,8 @@ renovate --version
 | Containers      | DinD feature, `container-structure-test` (`cst`), `trivy`                                      |
 | Diagrams        | JRE + `graphviz` (PlantUML extension)                                                          |
 
-Python quality tools (ruff, mypy, pylint, bandit, ggshield, pre-commit) are **project deps** via `uv`, not separate
-image binaries — same pattern as product repos.
+Python quality tools (ruff, mypy, pylint, bandit, vulture, ggshield, pre-commit) are **project deps** via `uv`, not
+separate image binaries — same pattern as product repos.
 
 ## Bashrc-free shell init (no `load-env.sh`)
 

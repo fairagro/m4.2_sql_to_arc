@@ -94,6 +94,8 @@ Product application code under `middleware/` must pass via `uv run`. Prefer shar
 - `uv run pylint --rcfile .pylintrc middleware/` — style and code smells
 - `uv run bandit -r middleware/ -c .bandit -ll` — security (hooks: MEDIUM+ only via `-ll`). CI may omit `-ll` to log LOW
   while still failing only on MEDIUM/HIGH — same fail bar; see `docs/quality.md` when that file is synced
+- `uv run vulture middleware/ --min-confidence 100` — unused definitions (hooks + CI; no IDE gate; no synced whitelist;
+  see `docs/quality.md`)
 
 Markdown must pass Prettier formatting and markdownlint (`.markdownlint.json` disables rules that fight Prettier).
 Typical scripts (see `package.json` where present):
@@ -220,15 +222,20 @@ findings (practicality **None** — quote this section).
 
 ## Branch Strategy
 
-These projects use **Trunk-Based Development** with short-lived branches:
+These projects use **Trunk-Based Development** with short-lived branches. Prefixes are **CI channels** (not GitHub issue
+types). Fine-grained job skips stay on path / change detection — do not invent per-kind prefixes (`test/`, `scripts/`,
+…).
 
-| Branch      | Purpose                    | CI behaviour                                            |
-| ----------- | -------------------------- | ------------------------------------------------------- |
-| `main`      | Trunk — always deployable  | Final release via `workflow_dispatch` when applicable   |
-| `feature/*` | New features and bug fixes | PR checks; optional pre-release via `workflow_dispatch` |
-| `docs/*`    | Documentation-only changes | Change detection may skip unnecessary CI jobs           |
+| Branch    | Purpose                                                          | CI behaviour                                          |
+| --------- | ---------------------------------------------------------------- | ----------------------------------------------------- |
+| `main`    | Trunk — always deployable                                        | Final release via `workflow_dispatch` when applicable |
+| `build/*` | Product image/app work (any issue type)                          | PR checks; optional Pre Release / RC via dispatch     |
+| `ci/*`    | Shared CI/tooling (scripts, Dev Container, quality, those tests) | PR checks; no product-image Pre Release               |
+| `docs/*`  | Documentation-only changes                                       | Change detection may skip unnecessary CI jobs         |
+| `chore/*` | Sync / bots                                                      | Never Pre Release                                     |
 
 - All branches merge into `main` via pull request.
-- `feature/*` covers both new functionality and bug fixes; no separate `fix/*` or `hotfix/*` branches.
-- `docs/*` branches exist to skip unnecessary CI where change detection supports it; they carry no release privilege.
+- Issue-driven work uses `{channel}/issue-<n>-<slug>` (issue number always present). Unclear scope → `build/`.
+- No separate `fix/*` / `hotfix/*` / `feature/*` work-branch convention — `build/*` replaced historical `feature/*` for
+  RC.
 - Long-lived branches other than `main` are not permitted.

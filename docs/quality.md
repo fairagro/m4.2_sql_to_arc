@@ -43,20 +43,27 @@ restate line length, rule selects, ignore lists, or similar policy on the comman
 already defines them. Do not patch synced `.pre-commit-config.yaml` to carry those overlays. After syncing `.pylintrc`,
 products may drop a duplicate `--extension-pkg-allow-list=lxml` CLI flag — that allow-list lives in the rcfile.
 
-| Tool                    | IDE                                                 | Hooks             | CI  | Notes                                                                            |
-| ----------------------- | --------------------------------------------------- | ----------------- | --- | -------------------------------------------------------------------------------- |
-| Ruff format/lint        | yes (`ruff.toml`)                                   | yes               | yes | Primary IDE Python lint/format                                                   |
-| basedpyright / Pylance  | yes (`pyrightconfig.json`, `typeCheckingMode: off`) | —                 | —   | Language server only; type gate is mypy                                          |
-| Prettier / markdownlint | yes (Prettier formatter; markdownlint extension)    | yes               | yes | Shared `.markdownlint*` + Prettier; CI via `npm run format:md:check` / `lint:md` |
-| Mypy                    | **hooks + CI only**                                 | yes (`mypy.ini`)  | yes | No shared IDE mypy settings — do not add a second config                         |
-| Pylint                  | **hooks + CI only**                                 | yes (`.pylintrc`) | yes | Same as Mypy                                                                     |
-| Bandit                  | **hooks + CI only**                                 | yes (`.bandit`)   | yes | Medium/high fail; see Bandit note below                                          |
-| pytest                  | IDE via `pyproject.toml` `testpaths`                | pre-push          | yes | Synced `pytestArgs` stay `[]` — do not hardcode roots in settings                |
+| Tool                    | IDE                                                 | Hooks             | CI  | Notes                                                                             |
+| ----------------------- | --------------------------------------------------- | ----------------- | --- | --------------------------------------------------------------------------------- |
+| Ruff format/lint        | yes (`ruff.toml`)                                   | yes               | yes | Primary IDE Python lint/format                                                    |
+| basedpyright / Pylance  | yes (`pyrightconfig.json`, `typeCheckingMode: off`) | —                 | —   | Language server only; type gate is mypy                                           |
+| Prettier / markdownlint | yes (Prettier formatter; markdownlint extension)    | yes               | yes | Shared `.markdownlint*` + Prettier; CI via `npm run format:md:check` / `lint:md`  |
+| Mypy                    | yes (`mypy.ini` via `ms-python.mypy-type-checker`)  | yes (`mypy.ini`)  | yes | Same fragment + `.venv` as hooks/CI; open-file IDE vs whole-tree hooks is allowed |
+| Pylint                  | yes (`.pylintrc` via `ms-python.pylint`)            | yes (`.pylintrc`) | yes | Same fragment + `.venv`; `--source-roots` stays CI/env (see below)                |
+| Bandit                  | **hooks + CI only**                                 | yes (`.bandit`)   | yes | Named IDE exception; medium/high fail — see Bandit note below                     |
+| Vulture                 | **hooks + CI only**                                 | — (CLI policy)    | yes | Named IDE exception; `--min-confidence 100`, no synced whitelist — see below      |
+| pytest                  | IDE via `pyproject.toml` `testpaths`                | pre-push          | yes | Synced `pytestArgs` stay `[]` — do not hardcode roots in settings                 |
 
 **Bandit severity (named exception):** `.bandit` has no fail-on-severity key. Hooks use Bandit’s `-ll` (report MEDIUM+
 only). CI runs without `-ll`, logs all severities (JSON + wrapper), and still fails only on MEDIUM/HIGH — same fail bar
 as hooks, matching [principles Code Quality](../openspec/principles.global.md#code-quality). Do not reintroduce a second
 fail policy only on one surface.
+
+**Vulture (named IDE exception):** unused-definition gate for `middleware/` (or reusable `python_package_root`). Hooks
+and CI both run `uv run vulture <root> --min-confidence 100` with **no** synced whitelist file. False positives at that
+bar are fixed in product code (delete, use the symbol, or `# noqa`) — do **not** patch synced `.pre-commit-config.yaml`
+or lower fleet confidence after sync. Products must list `vulture` in their uv dependency set (same class as bandit /
+mypy / pylint). Ruff still owns unused **imports**; vulture owns unused **definitions**.
 
 ## Files
 
@@ -75,7 +82,7 @@ fail policy only on one surface.
 | `.bandit`                                           | Bandit config (`bandit -c .bandit`)                                                                             |
 | `.markdownlint.json` (+ ignore / cli2)              | Markdownlint (also used by the markdownlint hook)                                                               |
 | `package.json` / `package-lock.json`                | Shared npm scripts + pins for Prettier/markdownlint (hooks + reusable CI) — **verbatim** sync                   |
-| [`.vscode/settings.json`](../.vscode/settings.json) | Shared IDE baseline (interpreter, Ruff, empty `pytestArgs`, Prettier) — adopt **verbatim**                      |
+| [`.vscode/settings.json`](../.vscode/settings.json) | Shared IDE baseline (interpreter, Ruff, Mypy, Pylint, empty `pytestArgs`, Prettier) — adopt **verbatim**        |
 
 **Local artifact excludes:** repo-root `dist/` (PyInstaller onedir, etc.) is gitignored and already skipped by Ruff /
 Mypy / Pylint / Bandit. Markdown/Node tools must match: synced `.markdownlint-cli2.jsonc`, `.markdownlintignore`, and
@@ -104,19 +111,25 @@ Path overlays for Mypy/Pylint belong **outside** the synced YAML (optional `.dev
 reusable CI inputs such as `mypy_path` and `pylint_source_roots` in [`docs/ci.md`](ci.md) — not synced JSON `remoteEnv`
 for `MYPYPATH`). Prefer generalizing into Devinfra when every product needs the same roots.
 
+**Pylint `--source-roots`:** the synced pre-commit entry is `pylint --rcfile .pylintrc middleware/` **without**
+`--source-roots`, because product path lists cannot live in the shared hook YAML. Reusable CI passes
+`pylint_source_roots` when a product needs import helpers under `middleware/`. That overlay is **not** the fail bar —
+`.pylintrc` uses `fail-under=8.0`, so E0401 noise alone usually does not fail the gate. Do not patch synced
+`.pre-commit-config.yaml` to add `--source-roots`; use CI inputs / process env / `product.env` instead.
+
 ## Shared Python quality fragments (B2)
 
 Product repos historically kept large `[tool.ruff]` / `[tool.mypy]` / `[tool.pylint.*]` blocks in root `pyproject.toml`.
 Canonical copies live here as **fragment files** so sync (#13) can overwrite them without replacing product `[project]`
 / uv workspace sections.
 
-| Sync into products   | Keep product-local                                                                                               |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `ruff.toml`          | Root `pyproject.toml` `[project]`, `[tool.uv.*]`, deps (no product Ruff overlay)                                 |
-| `mypy.ini`           | Fleet `arctrl` / `fable_library` `ignore_missing_imports`; path overlays via **env** (`MYPYPATH`)                |
-| `.pylintrc`          | Fleet `ignored-modules` for arctrl/fable; path overlays via CI / env (`pylint_source_roots`)                     |
-| `pyrightconfig.json` | `typeCheckingMode: off` (LS = mypy); no middleware paths; no `stubPath`                                          |
-| `.bandit`            | pytest / coverage tool tables ([#123](https://github.com/fairagro/m4.2_middleware_devinfra/issues/123) deferred) |
+| Sync into products   | Keep product-local                                                                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ruff.toml`          | Root `pyproject.toml` `[project]`, `[tool.uv.*]`, deps (no product Ruff overlay)                                                                                                                                                                                         |
+| `mypy.ini`           | Fleet `arctrl` / `fable_library` `ignore_missing_imports`; path overlays via **env** (`MYPYPATH`)                                                                                                                                                                        |
+| `.pylintrc`          | Fleet `ignored-modules` for arctrl/fable; path overlays via CI / env (`pylint_source_roots`)                                                                                                                                                                             |
+| `pyrightconfig.json` | `typeCheckingMode: off` (LS = mypy); no middleware paths; no `stubPath`                                                                                                                                                                                                  |
+| `.bandit`            | pytest markers / coverage: products keep local registration until the **planned** pytest-plugin SoT ships ([#123](https://github.com/fairagro/m4.2_middleware_devinfra/issues/123); design `fleet-pytest-markers-plugin-design`); coverage fragment is a later follow-up |
 
 Shared hooks and reusable CI invoke `mypy --config-file mypy.ini` and `pylint --rcfile .pylintrc`. Those flags mean
 product `[tool.mypy]` / `[tool.pylint.*]` in `pyproject.toml` are **ignored**. Do **not** put path overlays into the
@@ -157,9 +170,11 @@ cannot layer onto the synced blob without post-sync hand-edits ([`docs/sync.md`]
 (including `ms-kubernetes-tools.vscode-kubernetes-tools`).
 
 It points the Python extension at the root `.venv` from `uv sync`, configures Ruff via `ruff.toml` like pre-commit/CI,
-and sets Prettier as default formatter for Markdown/JSON/YAML. Helm chart templates under `helmchart/**/templates/` and
-`helm/**/templates/` use language mode `helm` via Kubernetes Tools (`files.associations`); missing-kubeconfig toasts are
-suppressed (`vs-kubernetes.suppress-kubeconfig-not-found-alerts`) because Dev Containers often have no cluster config —
+wires `ms-python.mypy-type-checker` / `ms-python.pylint` to the same `.venv` and `mypy.ini` / `.pylintrc` (no product
+path overlays in settings — `MYPYPATH` / `pylint_source_roots` stay env/CI), and sets Prettier as default formatter for
+Markdown/JSON/YAML. Helm chart templates under `helmchart/**/templates/` and `helm/**/templates/` use language mode
+`helm` via Kubernetes Tools (`files.associations`); missing-kubeconfig toasts are suppressed
+(`vs-kubernetes.suppress-kubeconfig-not-found-alerts`) because Dev Containers often have no cluster config —
 kubectl-not-found alerts stay enabled.
 
 **pytest discovery:** keep `"python.testing.pytestArgs": []` (or omit the key). Non-empty args become CLI paths and
@@ -174,13 +189,16 @@ repo’s `pyproject.toml` (Devinfra: `scripts/ai/tests`; products: their `middle
 
 **Analysis (basedpyright / Pylance):** use synced [`pyrightconfig.json`](../pyrightconfig.json) **verbatim** — root
 `.venv`, `extraPaths` only for `scripts/ai/src`, and `typeCheckingMode: "off"` so the language server stays for IDE
-navigation while **mypy** owns type diagnostics (hooks + CI). Do **not** add product `middleware/` paths — editable `uv`
-installs resolve them. Do **not** patch `python.analysis.extraPaths` / Cursor Pyright equivalents into synced
-`.vscode/settings.json` after sync for product overlays ([`docs/sync.md`](sync.md)).
+navigation while **mypy** owns type diagnostics (IDE extension + hooks + CI). Do **not** add product `middleware/` paths
+— editable `uv` installs resolve them. Do **not** patch `python.analysis.extraPaths` / Cursor Pyright equivalents into
+synced `.vscode/settings.json` after sync for product overlays ([`docs/sync.md`](sync.md)).
 
-Mypy, Pylint, and Bandit stay **hooks + CI only** in the shared baseline (see
-[Environment parity](#environment-parity-ide-hooks-ci)) — do not add product-local IDE settings that invent a second
-config for those tools.
+**Mypy / Pylint IDE:** synced settings point the recommended extensions at `.venv` and the shared fragments. IDE
+diagnostics may run on open files while hooks/CI scan `middleware/` — same config and the same finding for the same
+file; hooks remain the commit gate. Do **not** invent a second mypy/pylint rule set in product-local IDE settings.
+
+**Bandit** stays **hooks + CI only** in the shared baseline (no Bandit IDE extension settings) — see
+[Environment parity](#environment-parity-ide-hooks-ci).
 
 ### Commit stage
 
@@ -219,10 +237,12 @@ Synced pre-push pytest excludes heavy system suites by default:
 -m "not system_external and not system_local"
 ```
 
-Products must register those markers in local `pyproject.toml` (or equivalent) so `--strict-markers` stays valid. A
-shared pytest-plugin / coverage-fragment SoT is deferred
-([#123](https://github.com/fairagro/m4.2_middleware_devinfra/issues/123)) — do **not** hand-copy marker strings into
-Devinfra sync blobs as a permanent product fork.
+Products must register those markers in local `pyproject.toml` (or equivalent) so `--strict-markers` stays valid until
+the planned fleet SoT lands. **Locked design** ([#123](https://github.com/fairagro/m4.2_middleware_devinfra/issues/123),
+OpenSpec change `fleet-pytest-markers-plugin-design`): a Devinfra **pytest plugin** will register the shared marker set
+(product `testpaths` / `pythonpath` stay local); a shared **coverage** fragment is deferred as a separate follow-up. Do
+**not** hand-copy marker strings into Devinfra sync blobs as a permanent product fork, and do **not** treat this docs
+note as “the plugin already ships.”
 
 The remaining suite can still take several minutes. The hook prints a short notice before pytest runs.
 `SKIP=pytest git push` is an **escape hatch only**, not the normal workflow.
