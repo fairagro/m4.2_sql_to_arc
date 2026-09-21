@@ -105,28 +105,43 @@ is separate from developer `GH_TOKEN`.
 Optional: turn off Dependabot **security update** PRs if Renovate owns security updates, so only one bot opens fix PRs.
 Keep alerts enabled.
 
+**Hard requirement after Renovate enablement:** product repos MUST **not** ship `.github/dependabot.yml` (or any
+version-update schedule). Alerts are configured in the repo Security tab — they do **not** need that file. Leaving
+`package-ecosystem: uv` / `devcontainers` / `docker` version updates enabled reopens weekly PRs that fight Renovate and
+Devinfra sync SoT (seen on harvester / sql-to-arc). Spot-check: delete the file in every product that still has it;
+close open Dependabot version-update PRs that only touch shared or Renovate-owned surfaces.
+
 ## Adoption / sync (#13)
 
 1. Land config + workflow here; set `DEVINFRA_BOT_TOKEN` on Devinfra; smoke-test Renovate and Sync products with
    `workflow_dispatch`.
 2. Sync `renovate.json`, `.github/workflows/renovate.yml`, and other allowlisted paths into API / sql-to-arc / harvester
    via [`docs/sync.md`](sync.md).
-3. Set `DEVINFRA_BOT_TOKEN` per product repo for Renovate; remove Dependabot version-update config; converge API onto
-   the shared config (drop divergent local rules unless documented as a thin overlay / `extends`).
+3. Set `DEVINFRA_BOT_TOKEN` per product repo for Renovate; **delete** `.github/dependabot.yml` if present (version
+   updates off; alerts stay); converge API onto the shared config (drop divergent local rules unless documented as a
+   thin overlay / `extends`).
 
 ### What product Renovate must not bump
 
 Shared `renovate.json` disables updates in the three product repos for **Devinfra-owned** pins/files (SoT stays here;
 products get them via sync):
 
-| Disabled in products                              | Why                                                           |
-| ------------------------------------------------- | ------------------------------------------------------------- |
-| `versions.env`, `.python-version`                 | Toolchain SoT — bump in Devinfra only                         |
-| `docker/Dockerfile.product-app.base`              | Synced base image                                             |
-| `.devcontainer/Dockerfile`                        | Synced Dev Container image                                    |
-| `renovate.json`, `.github/workflows/renovate.yml` | Shared Renovate SoT                                           |
-| `.github/workflows/codeql.yml`                    | Shared CodeQL SoT — toolchain pins stay in `versions.env`     |
-| Package `docker/dockerfile` (`# syntax=…`)        | Frontend pin tracked in Devinfra; avoid duplicate product PRs |
+| Disabled in products                                              | Why                                                                        |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `versions.env`, `.python-version`                                 | Toolchain SoT — bump in Devinfra only                                      |
+| `package.json`, `package-lock.json`                               | Synced npm toolchain SoT (Prettier / markdownlint-cli2, …)                 |
+| `docker/Dockerfile.product-app.base`                              | Synced base image                                                          |
+| `.devcontainer/Dockerfile`                                        | Synced Dev Container image                                                 |
+| `.devcontainer/devcontainer.json`                                 | Synced Dev Container config (including feature pins)                       |
+| `.devcontainer/devcontainer-lock.json`                            | Feature lock — bump/generate in Devinfra if committed; not SoT in products |
+| `.devcontainer/docker-compose.yml`, `.devcontainer/starship.toml` | Synced Dev Container compose / prompt                                      |
+| `renovate.json`, `.github/workflows/renovate.yml`                 | Shared Renovate SoT                                                        |
+| `.github/workflows/codeql.yml`                                    | Shared CodeQL SoT — toolchain pins stay in `versions.env`                  |
+| Package `docker/dockerfile` (`# syntax=…`)                        | Frontend pin tracked in Devinfra; avoid duplicate product PRs              |
+
+**Dev Container features / locks:** bump `ghcr.io/devcontainers/features/…` (and any `devcontainer-lock.json`) in
+**Devinfra**, then sync. Products must not merge Dependabot or Renovate PRs that only retarget shared `.devcontainer/*`
+SoT. Devinfra does not currently commit `devcontainer-lock.json`; do not treat a product-only lock edit as the SoT.
 
 Product Renovate **still** updates product-local deps (e.g. `middleware/` pep621, product last-stage `FROM` images,
 product-only workflows other than synced CodeQL/Renovate). Close any open product PRs that only touch the disabled paths
