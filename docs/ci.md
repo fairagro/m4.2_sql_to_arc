@@ -378,7 +378,9 @@ CRITICAL/HIGH vulnerabilities. See [Trivy: licenses vs vulnerabilities](#trivy-l
 | `skip`            | `false`                        | Successful no-op without artifacts                 |
 
 Outputs: `version`, `pep440_version`, `components`. Version scheme is shared across all three products
-(`*-docker-vX.Y.Z`; on `feature/*` → `X.Y.Z-rc.<branch>.<run>`).
+(`*-docker-vX.Y.Z`; on `build/*` → `X.Y.Z-rc.<branch>.<run>`). Fleet branch **channels** (`build/`, `ci/`, `docs/`,
+`chore/`) are documented in `openspec/principles.global.md`; Pre Release / RC applies only to `build/*` (hard cut — not
+`feature/*`).
 
 ### `reusable-release.yml`
 
@@ -422,7 +424,8 @@ When `create_github_release` is false, no git tag or GitHub Release is created (
 Helm CLI version comes from the caller’s `versions.env` (`HELM_VERSION`). Secrets `DOCKERHUB_USER` / `DOCKERHUB_TOKEN`
 are optional; if missing or a push fails, the Helm GitHub Release body (final) or job summary (pre-release) MUST state
 the registry status and reason. GHCR uses `GITHUB_TOKEN`. Chart tags are created before registry pushes (same tag-first
-policy as Docker release).
+policy as Docker release). Helm **pre-release** chart versions use `…-rc.<branch>.<run>` and MUST run only on `build/*`
+(hard cut; not `feature/*`).
 
 ### `reusable-registry-retry.yml`
 
