@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# Product-local glue until Devinfra owns shell/hook repair end-to-end
-# (m4.2_middleware_devinfra#56, #58). Not a synced script.
+# Host / manual-clone glue (product-owned, not synced).
 #
-# Calls:
-#   - scripts/uv-sync-dev.sh          (product: --dev --all-packages + stale venv)
-#   - pre-commit install              (commit-stage)
-#   - scripts/setup-git-hooks.sh      (synced: quality pre-push; strips LFS post-*)
-#   - scripts/setup-git-lfs.sh        (product: restore LFS post-* + combined pre-push)
+# Dev Container create/rebuild does NOT call this script: shared
+# scripts/devcontainer-post-create.sh runs uv sync, pre-commit, and
+# setup-git-hooks.sh, then product drop-ins under
+# scripts/devcontainer-post-create.d/ (50-git-lfs.sh → setup-git-lfs.sh).
 #
-# Prefer postCreate for first install; run this manually after path/venv drift.
+# Use this on a host clone (or after path/venv drift) to repair:
+#   - scripts/uv-sync-dev.sh
+#   - pre-commit install (commit-stage)
+#   - scripts/setup-git-hooks.sh (dispatcher + pre-push.d/50-quality)
+#   - scripts/setup-git-lfs.sh (pre-push.d/10-git-lfs + LFS post-*)
+#
 # Not a per-shell init script (bashrc-free; see remoteEnv.PATH + product.env).
 
 set -euo pipefail
@@ -45,7 +48,7 @@ else
 fi
 
 bash "${script_dir}/setup-git-hooks.sh"
-echo "Re-applying product Git LFS overlay..."
+echo "Applying product Git LFS overlay..."
 bash "${script_dir}/setup-git-lfs.sh"
 
 echo "Dev hooks installed"

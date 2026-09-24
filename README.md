@@ -44,8 +44,8 @@ therefore neither documented nor officially supported.
 - **[uv](https://github.com/astral-sh/uv)** (Dependency Management & Workspace Orchestration)
 - **Docker & Docker Compose**
 - **Node.js 22+** (for `npm run lint:md` on host clones; installed in the Dev Container)
-- **Git LFS** for `*.sql` — `./scripts/install-dev-hooks.sh` (or `./scripts/setup-git-lfs.sh`); see
-  [`docs/git-lfs.md`](docs/git-lfs.md)
+- **Git LFS** for `*.sql` — Dev Container restores via `devcontainer-post-create.d/50-git-lfs.sh`; on host clones use
+  `./scripts/setup-git-lfs.sh` (or `./scripts/install-dev-hooks.sh`); see [`docs/git-lfs.md`](docs/git-lfs.md)
 
 ### 2. Environment Setup
 

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Product Git LFS pre-push fragment (NOT under synced scripts/git-hooks/).
+#
+# Installed as .git/hooks/pre-push.d/10-git-lfs via scripts/setup-git-lfs.sh.
+# The shared dispatcher runs pre-push.d/* in lexicographic order (10-git-lfs
+# before 50-quality). Stdin is the git pre-push ref list (replayed by the
+# dispatcher). See docs/git-lfs.md.
+
+set -euo pipefail
+
+if command -v git-lfs >/dev/null 2>&1; then
+  git lfs pre-push "$@"
+else
+  echo "WARNING: git-lfs not on PATH; skipping LFS pre-push" >&2
+fi

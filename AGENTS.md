@@ -74,14 +74,15 @@ scripts/
 ├── bin/gh, bin/git, bin/k, bin/d  # PATH wrappers (synced; remoteEnv prepends scripts/bin)
 ├── load-versions-env.sh           # Synced versions.env loader
 ├── uv-sync-dev.sh                 # Product: uv sync --dev --all-packages
-├── install-dev-hooks.sh           # Product: pre-commit + setup-git-hooks + setup-git-lfs
-├── setup-git-hooks.sh             # Synced quality pre-push installer (no LFS)
-├── setup-git-lfs.sh               # Product Git LFS overlay
-├── devcontainer-post-create.sh    # Synced shared postCreate
+├── install-dev-hooks.sh           # Product: host/manual repair (uv + pre-commit + hooks + LFS)
+├── setup-git-hooks.sh             # Synced: pre-push dispatcher + pre-push.d/50-quality
+├── setup-git-lfs.sh               # Product: pre-push.d/10-git-lfs + LFS post-*
+├── devcontainer-post-create.sh    # Synced shared postCreate (+ product post-create.d/)
+├── devcontainer-post-create.d/    # Product: T-late drop-ins (50-git-lfs.sh)
 ├── import-public-gpg-keys.sh      # Product: public_gpg_keys/*.asc
 ├── quality-*.sh / CST runner      # Synced quality scripts
-├── git-hooks/                     # Synced quality pre-push only (verbatim)
-├── git-lfs-hooks/                 # Product: combined LFS+quality pre-push; LFS post-*
+├── git-hooks/                     # Synced dispatcher + pre-push.d/50-quality (verbatim)
+├── git-lfs-hooks/                 # Product: pre-push.d/10-git-lfs + LFS post-*
 
 dev_environment/
 ├── start-demo.sh         # Start full local demo (DB + Converter + Mock API)
@@ -151,9 +152,10 @@ stage).
 
 Shared image: `.devcontainer/Dockerfile` (synced from Devinfra) + compose. Synced `devcontainer.json` sets
 `remoteEnv.PATH` (`.venv/bin` + `scripts/bin`); optional product `.devcontainer/product.env` holds `MYPYPATH` / `CST_*`.
-postCreate: shared `devcontainer-post-create.sh` (decrypts `.env` file only; no bashrc). Product hooks/LFS: run
-`./scripts/install-dev-hooks.sh` after create when needed. Do **not** source a load-env from `~/.bashrc` — remove any
-leftover `source …/load-env.sh` line after rebuild. Toolchain pins: `versions.env`.
+postCreate: shared `devcontainer-post-create.sh` (uv, pre-commit, dispatcher hooks, then
+`scripts/devcontainer-post-create.d/*` — e.g. LFS via `50-git-lfs.sh`). Host/manual repair:
+`./scripts/install-dev-hooks.sh`. Do **not** source a load-env from `~/.bashrc` — remove any leftover
+`source …/load-env.sh` line after rebuild. Toolchain pins: `versions.env`.
 
 ### Development Environment
 
@@ -221,12 +223,13 @@ This project depends on `shared` and `api_client` libraries, which are hosted in
 
 Product overlay (not in Devinfra). See [`docs/git-lfs.md`](docs/git-lfs.md).
 
-**Setup:** `scripts/install-dev-hooks.sh` (Dev Container `postCreate` / after clone) installs commit-stage pre-commit,
-shared `setup-git-hooks.sh`, then `setup-git-lfs.sh`, which copies `scripts/git-lfs-hooks/{pre-push,post-*}` into
-`.git/hooks`. Shell init is bashrc-free (`remoteEnv` / `product.env`); it does **not** install LFS.
+**Setup:** Dev Container T-late drop-in `scripts/devcontainer-post-create.d/50-git-lfs.sh` runs `setup-git-lfs.sh`,
+which installs `pre-push.d/10-git-lfs` + LFS `post-*` and re-ensures the shared dispatcher after
+`git lfs install --force`. Host/manual: `./scripts/install-dev-hooks.sh` or `./scripts/setup-git-lfs.sh`. Shell init is
+bashrc-free (`remoteEnv` / `product.env`); it does **not** install LFS.
 
-**Tracked:** `*.sql` (`.gitattributes`). **Wave B:** always re-apply `setup-git-lfs.sh` after any shared
-`setup-git-hooks.sh` (shared installer removes LFS `post-*` hooks).
+**Tracked:** `*.sql` (`.gitattributes`). Do **not** replace the shared pre-push dispatcher; keep LFS as
+`pre-push.d/10-git-lfs` outside synced `scripts/git-hooks/**`.
 
 ## Security Notes
 
