@@ -1,0 +1,20 @@
+# Product-owned import-linter config (not synced). Fleet-required settings: docs/quality.md
+#
+# PEP 420: grimp cannot use ancestors = middleware (namespace). Ancestors are the
+# installed portions instead — same contract type acyclic_siblings as the fleet template.
+# Do not add a path-mutating middleware/__init__.py (Import policy).
+
+[importlinter]
+exclude_type_checking_imports = True
+root_packages =
+    middleware.sql_to_arc
+    middleware.shared
+    middleware.api_client
+
+[importlinter:contract:middleware-acyclic-siblings]
+name = middleware sibling packages must be acyclic
+type = acyclic_siblings
+ancestors =
+    middleware.sql_to_arc
+    middleware.shared
+    middleware.api_client
