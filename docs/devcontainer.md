@@ -159,8 +159,12 @@ Prettier and markdownlint-cli2 are installed **globally in the image**. Pins: `P
 ```bash
 npm run format:md
 npm run format:md:check
+npm run format:md:skills   # Devinfra only: synced first-party skill Markdown (bypasses .prettierignore)
 npm run lint:md
 ```
+
+Opsx / vendor / synced first-party skills are listed in `.prettierignore` (see [`docs/quality.md`](quality.md)); product
+`format:md:check` must not rewrite those trees.
 
 ## Trivy / Renovate (local CLIs)
 
@@ -194,6 +198,29 @@ Ensure on the **host**:
 
 - `git config --global user.name` / `user.email` are set
 - SSH agent running with keys loaded (`ssh-add`) if you use SSH remotes
+
+### GPG (signing / SOPS) — do not bind-mount host `~/.gnupg`
+
+Prefer **agent forwarding only**. Do **not** add a host GnuPG bind mount to `devcontainer.json` / Compose, for example:
+
+```json
+"source=${localEnv:HOME}/.gnupg,target=/home/vscode/.gnupg,type=bind"
+```
+
+That path is the **same** host directory. Container-side `gpg`, Cursor proxy sockets, or agent restarts can delete or
+corrupt host `private-keys-v1.d` (seen in the wild). A **read-only** mount is not a safe workaround either: GnuPG needs
+writable sockets/locks under `~/.gnupg`, and it still fights agent forwarding. Forum workarounds that recommend this
+mount are not fleet policy.
+
+Also:
+
+- Do **not** run `gpgconf --kill all` **inside** the container while forwarding is active — that wedges the shared host
+  agent. If the agent is stuck, restart it on the **host** only.
+- Forwarding is shared across open Dev Containers: rebuilding or reconnecting one repo can break
+  `gpg --list-secret-keys` in another until you reload the window / re-attach. Host vs container GnuPG minor-version
+  skew can show up as `Forbidden` or flaky listing — still do not “fix” that with a host `~/.gnupg` mount.
+
+Synced fleet `devcontainer.json` mounts only named volumes (`bashhistory`, `gh-config`) — never host `~/.gnupg`.
 
 ### gh auth (HTTPS)
 

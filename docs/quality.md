@@ -162,6 +162,15 @@ Mypy / Pylint / Bandit. Markdown/Node tools must match: synced `.markdownlint-cl
 `.prettierignore` ignore `dist/**` (same class as `.venv/` / `node_modules/`). IDE analysis excludes `**/dist` in
 `pyrightconfig.json` and `.vscode/settings.json`. Do not hand-edit those lists in product checkouts after sync.
 
+**Prettier vs markdownlint ignores (opsx / synced skills):** fleet Prettier aligns with markdownlint for
+**non-product-authored** trees — OpenSpec opsx commands/skills/prompts/rules (`.cursor/commands/opsx-*.md`,
+`.cursor/skills/openspec-*/**`, `.github/prompts/opsx-*`, `.github/skills/openspec-*/**`,
+`.cursor/rules/openspec-*.mdc`) plus vendor skills under `.agents/skills/{gh,docker,hadolint,uv}/`. **First-party synced
+skills** (`.agents/skills/{review-fixer,create-issue,code-review,issue-fixer,arctrl}/`) are also in `.prettierignore`:
+Devinfra is SoT (`npm run format:md:skills` bypasses the ignore); products must not rewrite those trees after sync.
+Product-owned `openspec/**` prose stays Prettier-checked (not ignored). Old guidance that opsx Markdown was “NOT
+ignored” for Prettier is obsolete.
+
 ## Shared pre-commit config (verbatim sync)
 
 [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) is on the sync allowlist
@@ -178,7 +187,9 @@ Examples already in the shared skeleton:
   trees) — safe when those paths are absent.
 - Commit-stage `prettier-md` (`npm run format:md:check`) and `markdownlint` (`npm run lint:md`) share the same `files` /
   `exclude` class for `*.md` / `*.mdc` (parity with reusable CI). Escape hatch only: `SKIP=prettier-md` or
-  `SKIP=markdownlint` (same class as other Node markdown hooks — not the normal workflow).
+  `SKIP=markdownlint` (same class as other Node markdown hooks — not the normal workflow). `./scripts/quality-fix.sh`
+  runs `npm run format:md` (write) after the mutating pre-commit hooks so the check hook and fix script stay aligned —
+  Prettier is check-only in `.pre-commit-config.yaml`, not a rewrite hook.
 - CST bake target / image tag come from env (`CST_BAKE_*`), not from a product-hardcoded hook entry.
 - pytest uses product `pyproject.toml` discovery; the shared pre-push hook runs
   `uv run pytest -m "not system_external and not system_local"` (see [Pre-push pytest scope](#pre-push-pytest-scope)).
@@ -394,5 +405,7 @@ CST_CONFIG=docker/container-structure-tests/api.yaml \
 
 - Vendor skill trees under `.agents/skills/{gh,docker,hadolint,uv}/` (and `scan-secrets` if present) are excluded from
   tree-walking hooks — do not hand-edit those trees.
+- Synced first-party skill Markdown is Prettier-ignored in products; format only in Devinfra with
+  `npm run format:md:skills`, then sync.
 - This Devinfra repo has **no** `middleware/` packages; Python hooks scoped to `middleware/` apply after sync to a
   product repo.
