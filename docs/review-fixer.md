@@ -1,7 +1,7 @@
 # Review-fixer conventions
 
-Shared `/review-fixer` triages Copilot and Bugbot PR review comments using the AI review policy: fix high-risk and
-in-budget nits, dismiss the rest, at most one Medium+ follow-up. Canonical skill:
+Shared `/review-fixer` triages Copilot, Bugbot, and first-party `/code-review` PR review comments using the AI review
+policy: fix high-risk and in-budget nits, dismiss the rest, at most one Medium+ follow-up. Canonical skill:
 [`.agents/skills/review-fixer/SKILL.md`](../.agents/skills/review-fixer/SKILL.md). Policy:
 [`ai_review_policy.md`](ai_review_policy.md). Synced path allowlist (never patch these in product checkouts):
 [`synced-paths.yaml`](synced-paths.yaml).
@@ -10,15 +10,32 @@ Issue: [#5](https://github.com/fairagro/m4.2_middleware_devinfra/issues/5).
 
 ## Workflow (summary)
 
-- Process **open** AI work only — start with `uv run --project scripts/ai m42-ai review-open --pr <n>` (not raw
-  GraphQL). That call also checks out the PR head before any local `fix` edits. Triage unresolved threads **and**
-  `summary_only_findings` from every AI review (not only the latest).
+- Process **open** review work — **first hard gate:** `uv run --project scripts/ai m42-ai review-open --pr <n>` (not raw
+  GraphQL). Stop on checkout failure (no stash/improvise); dirty on the PR head is OK. Then triage unresolved threads
+  (**any** author) **and** `summary_only_findings` from finder reviews (Copilot suppressed packing **and**
+  `/code-review` marked COMMENT bodies — not only the latest submission).
 - Two phases when anything is `fix`: local fixes + dismiss/follow-up replies first (**no commit**); `Fixed in <sha>`
   only after the user commits.
 - In **product** repos: do not `fix` paths on [`synced-paths.yaml`](synced-paths.yaml); `follow-up` to Devinfra or
   `dismiss` (synced — upstream) instead.
 - Follow-ups open via [`/create-issue`](create-issue.md): **linked** by default; `relation: sub-of #<issue_number>` only
   when the PR has `Fixes #<issue_number>` and the deferred item is remaining acceptance criteria of that issue.
+
+## GitHub Code Quality findings
+
+Unresolved review threads from **`github-code-quality[bot]`** are open work (any-author intake). Resolving those threads
+(`Dismissed.` / `Fixed in …` + `resolveReviewThread`) is **not** the same as the PR UI action **Dismiss finding**.
+
+| Action                                              | Effect                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Fixer reply + thread resolve                        | Conversation thread collapses                                                                       |
+| Code Quality finding `state` / quality-gate unblock | **Not** updated by thread resolve — use **Dismiss finding** in the UI, or a real code fix + re-scan |
+
+`m42-ai review-open` soft-fetches the read-only findings REST API and may attach `code_quality_finding` (`number`,
+`state`, optional `rule_id`) onto correlatable CQ bot threads. There is **no** agent dismiss/write API today
+([#219](https://github.com/fairagro/m4.2_middleware_devinfra/issues/219)). Phase 1 MUST say manual dismiss (or re-scan
+after a real fix) is still required while linked findings stay `open`, and MUST NOT claim Remaining risk / open work is
+clear solely because those threads were resolved.
 
 ## Auth
 
