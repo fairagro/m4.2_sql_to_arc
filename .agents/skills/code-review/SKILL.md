@@ -10,7 +10,8 @@ description: >-
 # Code review
 
 You are a **first-party reviewer** (judgment). Quality tools and CI are the gate for style/types/secrets scanners.
-`/review-fixer` consumes **external** Copilot/Bugbot threads — do **not** triage those here.
+`/review-fixer` consumes **external** Copilot/Bugbot threads **and** this skill’s marked COMMENT summaries — do **not**
+triage those here.
 
 Do **not** commit, push, or auto-approve. Do **not** auto-LGTM. **One** publish per run (no silent re-post loops).
 
@@ -51,7 +52,8 @@ Local-only reviews never require GitHub auth.
 
    Use `paths` / `stats` from JSON. Full patch is omitted — open files as needed.
 
-2. **Review** (agent judgment — see Goals). Produce structured Markdown (summary + findings table).
+2. **Review** (agent judgment — see Goals). Produce structured Markdown (verdict + numbered findings + Findings index
+   table).
 
 3. **Write report**
 
@@ -79,12 +81,12 @@ Local-only reviews never require GitHub auth.
 2. Correctness / missing edge cases (inputs, network, config)
 3. Concurrency & races (when async/shared state)
 4. Architecture & simplicity (YAGNI)
-5. Import graph / cycles — **judgment-only** against
-   [`openspec/principles.global.md`](../../../openspec/principles.global.md) **Import policy** (mechanical graphs →
-   import-linter when present)
+5. Import graph / cycles — **judgment-only** for what import-linter does not encode (Import policy in
+   [`openspec/principles.global.md`](../../../openspec/principles.global.md)); mechanical cycle/layer/forbidden →
+   import-linter
 6. Defensive bloat vs real edges
 7. Resource frugality
-8. Dead / unused code (judgment; vulture when landed is toolchain-owned)
+8. Dead / unused code (judgment beyond what vulture already gates; mechanical unused definitions are toolchain-owned)
 9. OpenSpec↔code drift — **only** where specs exist and the diff touches that surface
 10. Docs↔code drift (weaker severity than spec drift)
 11. Test adequacy for new risks (not coverage-% nagging)
@@ -94,22 +96,68 @@ Severity / cost language: [`docs/ai_review_policy.md`](../../../docs/ai_review_p
 
 ## Anti-duplication (hard rule)
 
-Do **not** restate findings owned by: Ruff, mypy, pylint, Bandit, markdownlint, Prettier, ggshield, CodeQL, Trivy, and
-(once landed) **vulture** / **import-linter**. Out of scope: format, import sort, line-length, type noise CI already
-fails.
+Do **not** restate findings owned by: Ruff, mypy, pylint, Bandit, markdownlint, Prettier, ggshield, CodeQL, Trivy,
+**vulture**, and **import-linter**. Out of scope: format, import sort, line-length, type noise CI already fails. Do not
+re-report mechanical unused-definition hits that the fleet vulture gate (`--min-confidence 100`) would catch, or
+cycle/layer/forbidden hits that import-linter would catch. Judgment MAY still cover Import-policy rules outside the
+linter (module-level placement, relative imports, `sys.path` mutation, lazy imports used only to break cycles).
 
 ## Output shape
 
-Suggested Markdown:
+Published / `/tmp` reports **MUST** start with the stable HTML comment marker so `/review-fixer` can triage them (even
+when the GitHub author is a human login):
 
-- Short verdict (risks / open questions — not LGTM)
-- Findings table: path, goal, severity, cost, note
-- Optional: “defer via `/create-issue`” for Medium+
+```markdown
+<!-- m42-ai:code-review -->
+```
+
+Suggested Markdown after the marker (**dual layout** — human-readable blocks + machine table):
+
+1. Short verdict (risks / open questions — not LGTM)
+2. **Numbered findings** (primary scan on github.com — **not** a wide multi-column table, **not** `###` per finding):
+
+   ```markdown
+   1. **Short title**
+   - **Severity:** Medium · **Cost:** cheap · **Goal:** Correctness
+   - **Path:** `path/to/file.py` (`symbol_or_region`)
+   - **Note:** One or two sentences …
+   ```
+
+3. **Findings index** — compact Markdown table with columns **path**, **goal**, **severity**, **cost**, **note** (header
+   row required). Same findings as the numbered list (keep both in sync). `/review-fixer` extracts from this table’s
+   `path` column. Empty findings → omit the numbered list **and** the table.
+4. Optional: “defer via `/create-issue`” for Medium+
+
+Example (two findings):
+
+```markdown
+<!-- m42-ai:code-review -->
+
+## Verdict
+
+One Medium correctness gap; one Low docs nit.
+
+1. **Null PR head not handled**
+   - **Severity:** High · **Cost:** S · **Goal:** Correctness
+   - **Path:** `scripts/ai/src/m42_ai/review.py` (`fetch_review_open`)
+   - **Note:** GraphQL null `pullRequest` can crash shaping; fail closed with a clear error.
+2. **Stale workflow name in docs**
+   - **Severity:** Low · **Cost:** XS · **Goal:** Docs↔code
+   - **Path:** `docs/ci.md`
+   - **Note:** Section still names a removed workflow.
+
+## Findings index
+
+| path | goal | severity | cost | note |
+|------|------|----------|------|------|
+| `scripts/ai/src/m42_ai/review.py` (`fetch_review_open`) | Correctness | High | S | Null pullRequest not handled |
+| `docs/ci.md` | Docs↔code | Low | XS | Stale workflow name |
+```
 
 ## Relationship
 
-| Skill           | Role                                      |
-| --------------- | ----------------------------------------- |
-| `/code-review`  | Produce first-party review of a diff / PR |
-| `/review-fixer` | Triage Copilot/Bugbot review threads      |
-| `/create-issue` | Open deferred issues (optional hand-off)  |
+| Skill           | Role                                                                           |
+| --------------- | ------------------------------------------------------------------------------ |
+| `/code-review`  | Produce first-party review of a diff / PR (marker + numbered findings + table) |
+| `/review-fixer` | Triage Copilot/Bugbot **and** `/code-review` summary findings                  |
+| `/create-issue` | Open deferred issues (optional hand-off)                                       |

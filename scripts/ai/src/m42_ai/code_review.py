@@ -9,8 +9,17 @@ from pathlib import Path
 from typing import Any
 
 from m42_ai.gh import GhError, repo_owner_name, run_gh, run_git
+from m42_ai.review import CODE_REVIEW_MARKER
 
 _SLUG_SAFE = re.compile(r"[^a-zA-Z0-9._-]+")
+
+
+def ensure_code_review_marker(body: str) -> str:
+    """Prepend the stable marker when missing so review-fixer can detect the report."""
+    text = body if body.endswith("\n") else body + "\n"
+    if CODE_REVIEW_MARKER in text:
+        return text
+    return f"{CODE_REVIEW_MARKER}\n{text}"
 
 
 def _cwd(cwd: Path | None) -> Path | None:
@@ -139,7 +148,7 @@ def write_report(
     directory = tmp_dir or Path("/tmp")
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"code-review-{label}-{stamp}.md"
-    path.write_text(body if body.endswith("\n") else body + "\n", encoding="utf-8")
+    path.write_text(ensure_code_review_marker(body), encoding="utf-8")
     return {"ok": True, "path": str(path.resolve()), "slug": label}
 
 

@@ -26,6 +26,8 @@ LABEL_SPECS: dict[str, tuple[str, str]] = {
 }
 
 ORG_TYPES = frozenset({"Bug", "Security", "Feature", "Task", "Discussion", "Refactoring"})
+ISSUE_BRANCH_CHANNELS = frozenset({"build", "ci", "docs"})
+DEFAULT_ISSUE_BRANCH_CHANNEL = "build"
 ISSUE_URL_RE = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/issues/\d+")
 
 
@@ -36,6 +38,20 @@ def slugify(text: str, *, max_len: int = 48) -> str:
     if not s:
         s = "issue"
     return s[:max_len].rstrip("-")
+
+
+def normalize_issue_channel(channel: str | None) -> str:
+    """Return a fleet CI channel (`build` | `ci` | `docs`); default `build`."""
+    raw = (channel or DEFAULT_ISSUE_BRANCH_CHANNEL).strip().lower()
+    if raw not in ISSUE_BRANCH_CHANNELS:
+        allowed = ", ".join(sorted(ISSUE_BRANCH_CHANNELS))
+        raise ValueError(f"channel must be one of: {allowed} (got {channel!r})")
+    return raw
+
+
+def issue_branch_name(issue: int, slug: str, *, channel: str | None = None) -> str:
+    ch = normalize_issue_channel(channel)
+    return f"{ch}/issue-{issue}-{slug}"
 
 
 def _repo_args(repo: str | None) -> list[str]:
@@ -210,14 +226,14 @@ def _triage_from_labels(label_names: list[str]) -> dict[str, str | None]:
 
 
 def view_issue(issue: int, *, cwd: Path | None = None) -> dict[str, Any]:
-    """Fetch a stable triage-oriented JSON shape for an issue."""
+    """Fetch a stable triage-oriented JSON shape for an issue (incl. comments)."""
     proc = run_gh(
         [
             "issue",
             "view",
             str(issue),
             "--json",
-            "number,title,url,body,labels,state,author,issueType",
+            "number,title,url,body,labels,state,author,issueType,comments",
         ],
         cwd=cwd,
     )
@@ -226,6 +242,20 @@ def view_issue(issue: int, *, cwd: Path | None = None) -> dict[str, Any]:
     label_names = _label_names(labels_raw if isinstance(labels_raw, list) else [])
     author = meta.get("author") or {}
     author_login = author.get("login") if isinstance(author, dict) else None
+    comments_out: list[dict[str, str | None]] = []
+    for c in meta.get("comments") or []:
+        if not isinstance(c, dict):
+            continue
+        c_author = c.get("author") or {}
+        login = c_author.get("login") if isinstance(c_author, dict) else None
+        comments_out.append(
+            {
+                "author": login,
+                "body": str(c.get("body") or ""),
+                "created_at": str(c.get("createdAt") or c.get("created_at") or "") or None,
+            }
+        )
+    comments_out.sort(key=lambda row: row.get("created_at") or "")
     return {
         "number": int(meta["number"]),
         "title": str(meta["title"]),
@@ -236,6 +266,7 @@ def view_issue(issue: int, *, cwd: Path | None = None) -> dict[str, Any]:
         "labels": label_names,
         "triage": _triage_from_labels(label_names),
         "author": author_login,
+        "comments": comments_out,
     }
 
 
@@ -260,16 +291,18 @@ def ensure_issue_branch(
     issue: int,
     slug: str | None = None,
     base: str = "main",
+    channel: str | None = None,
     cwd: Path | None = None,
 ) -> dict[str, Any]:
-    """Ensure local `issue-<n>-<slug>` exists and is checked out. No commit, push, or PR."""
+    """Ensure local `{channel}/issue-<n>-<slug>` exists and is checked out. No commit, push, or PR."""
     root = cwd or Path.cwd()
     if run_git(["status", "--porcelain"], cwd=root).stdout.strip():
         raise RuntimeError("working tree/index must be clean before issue-branch / issue-start")
 
+    ch = normalize_issue_channel(channel)
     viewed = view_issue(issue, cwd=root)
     title = viewed["title"]
-    branch = f"issue-{issue}-{slugify(slug) if slug else slugify(title)}"
+    branch = issue_branch_name(issue, slugify(slug) if slug else slugify(title), channel=ch)
 
     current = run_git(["branch", "--show-current"], cwd=root).stdout.strip()
     created = False
@@ -292,6 +325,7 @@ def ensure_issue_branch(
             "issue_type": viewed["issue_type"],
         },
         "branch": branch,
+        "channel": ch,
         "created": created,
         "base": base,
         "ahead": ahead_info["ahead"],
@@ -303,12 +337,13 @@ def issue_start(
     issue: int,
     slug: str | None = None,
     base: str = "main",
+    channel: str | None = None,
     cwd: Path | None = None,
     draft_title: str | None = None,
 ) -> dict[str, Any]:
     """Push issue branch and open a draft PR — requires commits ahead of base (no empty bootstrap)."""
     root = cwd or Path.cwd()
-    ensured = ensure_issue_branch(issue=issue, slug=slug, base=base, cwd=root)
+    ensured = ensure_issue_branch(issue=issue, slug=slug, base=base, channel=channel, cwd=root)
     if int(ensured["ahead"]) == 0:
         raise RuntimeError(f"no commits ahead of {base}; commit real work before issue-start (no empty bootstrap)")
 

@@ -9,14 +9,14 @@ public_key_path="${script_dir}/../public_gpg_keys"
 shopt -s nullglob
 keys=( "${public_key_path}"/*.asc )
 if [ ${#keys[@]} -eq 0 ]; then
-    exit 0
+  exit 0
 fi
 
 if ! command -v gpg &>/dev/null; then
-    echo "❌ gpg command not found. Please install GnuPG to import public keys." >&2
-    exit 1
+  echo "gpg command not found. Please install GnuPG to import public keys." >&2
+  exit 1
 fi
 
 for file in "${keys[@]}"; do
-    gpg --batch --import "$file"
+  gpg --batch --import "$file"
 done

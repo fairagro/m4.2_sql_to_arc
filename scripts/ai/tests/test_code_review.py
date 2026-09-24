@@ -71,7 +71,17 @@ def test_write_report_tmp(tmp_path: Path) -> None:
     assert path.parent == tmp_path.resolve()
     assert path.name.startswith("code-review-my-branch-")
     assert path.name.endswith(".md")
-    assert "Findings" in path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("<!-- m42-ai:code-review -->")
+    assert "# Findings" in text
+
+
+def test_write_report_keeps_existing_marker(tmp_path: Path) -> None:
+    body = "<!-- m42-ai:code-review -->\n## Verdict\n\nok\n"
+    out = write_report(body, slug="marked", tmp_dir=tmp_path)
+    text = Path(out["path"]).read_text(encoding="utf-8")
+    assert text.count("<!-- m42-ai:code-review -->") == 1
+    assert "## Verdict" in text
 
 
 def test_publish_local_noop(tmp_path: Path) -> None:
