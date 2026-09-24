@@ -1,8 +1,16 @@
 # Product-owned import-linter config (not synced). Fleet-required settings: docs/quality.md
 #
-# PEP 420: grimp cannot use ancestors = middleware (namespace). Ancestors are the
-# installed portions instead — same contract type acyclic_siblings as the fleet template.
-# Do not add a path-mutating middleware/__init__.py (Import policy).
+# Inventory (top-level middleware.* portions) — issue #209:
+#   middleware.sql_to_arc  — converter (entry, orchestration, mapping, upload)
+#   middleware.api_client  — Middleware API client (git dep from advanced_middleware_api)
+#   middleware.shared      — ConfigWrapper / shared utilities (git dep)
+#
+# Intended dependency direction (openspec/principles.md Module Dependency Rules):
+#   sql_to_arc → api_client → shared
+# Converter may depend on shared and api_client; libs must not depend upward into sql_to_arc.
+#
+# PEP 420: grimp cannot use ancestors = middleware (namespace). Ancestors / root_packages
+# are the installed portions. Do not add a path-mutating middleware/__init__.py (Import policy).
 
 [importlinter]
 exclude_type_checking_imports = True
@@ -18,3 +26,11 @@ ancestors =
     middleware.sql_to_arc
     middleware.shared
     middleware.api_client
+
+[importlinter:contract:sql-to-arc-layers]
+name = sql_to_arc may depend on api_client and shared; libs must not depend upward
+type = layers
+layers =
+    middleware.sql_to_arc
+    middleware.api_client
+    middleware.shared
