@@ -83,8 +83,6 @@ scripts/
 ├── git-hooks/                     # Synced quality pre-push only (verbatim)
 ├── git-lfs-hooks/                 # Product: combined LFS+quality pre-push; LFS post-*
 
-stubs/                             # Product-local arctrl/fable stubs until Devinfra #67
-
 dev_environment/
 ├── start-demo.sh         # Start full local demo (DB + Converter + Mock API)
 ├── start-dev.sh          # Start with local DB, external API (needs sops)
@@ -109,7 +107,7 @@ uv run pytest middleware/sql_to_arc/tests/ -v
 # Never run quality-check.sh from agents — it runs everything and is too slow.
 uv run ruff format --check --config ruff.toml middleware/
 uv run ruff check --config ruff.toml middleware/
-MYPYPATH=stubs:middleware/sql_to_arc/src \
+MYPYPATH=middleware/sql_to_arc/src \
   uv run mypy --config-file mypy.ini middleware/
 uv run pylint --rcfile .pylintrc middleware/sql_to_arc
 uv run bandit -r middleware/ -c .bandit -ll
