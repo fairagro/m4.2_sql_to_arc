@@ -22,8 +22,8 @@ async def test_stream_by_investigation_selects_all_columns() -> None:
 
     # Mock stream to return an empty async iterator
     async def async_iter() -> AsyncGenerator[None, None]:
-        if False:
-            yield  # Trick to make it an async generator
+        for _ in ():
+            yield None
 
     mock_result = MagicMock()
     mock_result.mappings.return_value = async_iter()
@@ -63,8 +63,8 @@ async def test_stream_investigations_selects_all_columns() -> None:
     mock_engine.connect.return_value.__aenter__.return_value = mock_conn
 
     async def async_iter() -> AsyncGenerator[None, None]:
-        if False:
-            yield
+        for _ in ():
+            yield None
 
     mock_result = MagicMock()
     mock_result.mappings.return_value = async_iter()
