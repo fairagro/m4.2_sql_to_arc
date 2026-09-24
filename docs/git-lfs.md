@@ -9,8 +9,8 @@ foreign `pre-push.d` fragments and LFS `post-*` hooks alone. This product owns t
 | Step                                   | Owner                    | Script / hook                                                              |
 | -------------------------------------- | ------------------------ | -------------------------------------------------------------------------- |
 | Dev Container create/rebuild           | Shared + product drop-in | `devcontainer-post-create.sh` → `devcontainer-post-create.d/50-git-lfs.sh` |
-| Host / manual clone (optional glue)    | Product                  | `scripts/install-dev-hooks.sh`                                             |
-| `pre-commit` commit-stage hook         | Shared postCreate / glue | `pre-commit install --hook-type pre-commit`                                |
+| Host / manual LFS overlay              | Product                  | `scripts/setup-git-lfs.sh`                                                 |
+| `pre-commit` commit-stage hook         | Shared postCreate / host | `pre-commit install --hook-type pre-commit`                                |
 | Dispatcher + `pre-push.d/50-quality`   | Devinfra                 | `scripts/setup-git-hooks.sh` / `scripts/git-hooks/`                        |
 | `pre-push.d/10-git-lfs` + LFS `post-*` | Product                  | `scripts/setup-git-lfs.sh` / `scripts/git-lfs-hooks/`                      |
 
@@ -20,9 +20,9 @@ LFS. After a Dev Container rebuild, remove any leftover `source …/scripts/load
 Manual re-install after clone (or if hooks were overwritten):
 
 ```bash
-./scripts/setup-git-lfs.sh
-# or full host repair:
-./scripts/install-dev-hooks.sh
+uv sync --dev --all-packages
+./scripts/setup-git-hooks.sh   # if dispatcher / 50-quality missing
+./scripts/setup-git-lfs.sh     # product LFS entrypoint
 ```
 
 ## Hook ownership (today)
