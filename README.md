@@ -45,7 +45,7 @@ therefore neither documented nor officially supported.
 - **Docker & Docker Compose**
 - **Node.js 22+** (for `npm run lint:md` on host clones; installed in the Dev Container)
 - **Git LFS** for `*.sql` — Dev Container restores via `devcontainer-post-create.d/50-git-lfs.sh`; on host clones use
-  `./scripts/setup-git-lfs.sh` (or `./scripts/install-dev-hooks.sh`); see [`docs/git-lfs.md`](docs/git-lfs.md)
+  `./scripts/setup-git-lfs.sh`; see [`docs/git-lfs.md`](docs/git-lfs.md)
 
 ### 2. Environment Setup
 
@@ -53,7 +53,8 @@ Clone the repository and install all workspace dependencies:
 
 ```bash
 uv sync --dev --all-packages
-./scripts/install-dev-hooks.sh
+./scripts/setup-git-hooks.sh
+./scripts/setup-git-lfs.sh
 ```
 
 ### 3. Start Local Development Environment

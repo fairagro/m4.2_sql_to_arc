@@ -11,7 +11,7 @@
 # LFS fragment again.
 #
 # Invoked from scripts/devcontainer-post-create.d/50-git-lfs.sh (T-late) and
-# optionally scripts/install-dev-hooks.sh for host / manual clone.
+# manually on host clones after shared setup-git-hooks.sh / uv sync.
 # Sources live under scripts/git-lfs-hooks/ (product-owned), NOT under synced
 # scripts/git-hooks/**. See docs/git-lfs.md.
 #
