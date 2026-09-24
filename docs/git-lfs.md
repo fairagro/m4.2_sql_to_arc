@@ -1,18 +1,18 @@
 # Git LFS (product overlay)
 
 This repo tracks large `*.sql` files with **Git LFS** (see `.gitattributes`). Shared Devinfra does **not** ship an LFS
-layer; Wave B’s `scripts/setup-git-hooks.sh` installs only a quality `pre-push` and **removes** legacy LFS `post-*`
-hooks. This product therefore owns an LFS overlay that must stay in place before and after Wave B.
+layer. Shared `scripts/setup-git-hooks.sh` installs a **pre-push dispatcher** plus `pre-push.d/50-quality` and leaves
+foreign `pre-push.d` fragments and LFS `post-*` hooks alone. This product owns the LFS overlay.
 
 ## Who installs what
 
-| Step                                  | Owner                    | Script / hook                                                         |
-| ------------------------------------- | ------------------------ | --------------------------------------------------------------------- |
-| One-time Dev Container / clone setup  | Product                  | `scripts/install-dev-hooks.sh` (`postCreateCommand`)                  |
-| `pre-commit` commit-stage hook        | Product (via pre-commit) | `pre-commit install --hook-type pre-commit`                           |
-| Git LFS local init + LFS hooks        | Product                  | `scripts/setup-git-lfs.sh`                                            |
-| Quality `pre-push` (synced, verbatim) | Devinfra                 | `scripts/git-hooks/pre-push`                                          |
-| Combined `pre-push` + LFS `post-*`    | Product                  | `scripts/git-lfs-hooks/*` — **outside** synced `scripts/git-hooks/**` |
+| Step                                   | Owner                    | Script / hook                                                              |
+| -------------------------------------- | ------------------------ | -------------------------------------------------------------------------- |
+| Dev Container create/rebuild           | Shared + product drop-in | `devcontainer-post-create.sh` → `devcontainer-post-create.d/50-git-lfs.sh` |
+| Host / manual clone (optional glue)    | Product                  | `scripts/install-dev-hooks.sh`                                             |
+| `pre-commit` commit-stage hook         | Shared postCreate / glue | `pre-commit install --hook-type pre-commit`                                |
+| Dispatcher + `pre-push.d/50-quality`   | Devinfra                 | `scripts/setup-git-hooks.sh` / `scripts/git-hooks/`                        |
+| `pre-push.d/10-git-lfs` + LFS `post-*` | Product                  | `scripts/setup-git-lfs.sh` / `scripts/git-lfs-hooks/`                      |
 
 Shell init is **bashrc-free** (`remoteEnv.PATH` + optional `.devcontainer/product.env`). It does **not** install Git
 LFS. After a Dev Container rebuild, remove any leftover `source …/scripts/load-env.sh` line from `~/.bashrc` if present.
@@ -20,35 +20,30 @@ LFS. After a Dev Container rebuild, remove any leftover `source …/scripts/load
 Manual re-install after clone (or if hooks were overwritten):
 
 ```bash
-./scripts/install-dev-hooks.sh
-# or LFS only:
 ./scripts/setup-git-lfs.sh
+# or full host repair:
+./scripts/install-dev-hooks.sh
 ```
 
 ## Hook ownership (today)
 
 ```text
-.git/hooks/pre-commit     ← pre-commit (commit stage)
-.git/hooks/pre-push       ← scripts/git-lfs-hooks/pre-push
-                              (LFS → scripts/git-hooks/pre-push quality)
-.git/hooks/post-checkout  ← scripts/git-lfs-hooks/post-checkout (git lfs)
-.git/hooks/post-commit    ← scripts/git-lfs-hooks/post-commit (git lfs)
-.git/hooks/post-merge     ← scripts/git-lfs-hooks/post-merge (git lfs)
+.git/hooks/pre-commit              ← pre-commit (commit stage)
+.git/hooks/pre-push                ← scripts/git-hooks/pre-push (dispatcher)
+.git/hooks/pre-push.d/10-git-lfs   ← scripts/git-lfs-hooks/pre-push.d/10-git-lfs
+.git/hooks/pre-push.d/50-quality   ← scripts/git-hooks/pre-push.d/50-quality
+.git/hooks/post-checkout           ← scripts/git-lfs-hooks/post-checkout (git lfs)
+.git/hooks/post-commit             ← scripts/git-lfs-hooks/post-commit (git lfs)
+.git/hooks/post-merge              ← scripts/git-lfs-hooks/post-merge (git lfs)
 ```
 
-## Wave B composition (design lock-in)
+On `git push`, the dispatcher runs `pre-push.d/*` in lexicographic order: **LFS then quality**.
 
-When adopting Devinfra shared hooks:
+## Product rules
 
-1. **Keep** `scripts/setup-git-lfs.sh` and sources under `scripts/git-lfs-hooks/` as this product’s overlay (other fleet
-   repos may not need LFS). Never put LFS hooks under allowlisted `scripts/git-hooks/**`.
-2. **Never** run Devinfra `setup-git-hooks.sh` alone and stop. That script explicitly deletes LFS `post-*` hooks. Always
-   run `./scripts/setup-git-lfs.sh` **after** any shared hook installer, or fold that order into `install-dev-hooks.sh`.
-3. Prefer **compose**, not a fork of the quality `pre-push`:
-   - Keep **LFS `git lfs pre-push` first** (required for `*.sql`).
-   - Then exec the synced Devinfra `scripts/git-hooks/pre-push` (stdin buffering / `uv run pre-commit` as Wave B ships
-     it).
-4. Document any Wave B adopt PR with the invariant: _LFS overlay re-applied after shared hook sync_.
-
-Wave B adopt (`install-dev-hooks.sh`) runs `setup-git-hooks.sh` then `setup-git-lfs.sh` so the overlay always wins after
-shared hook install.
+1. Keep LFS sources under `scripts/git-lfs-hooks/` (outside synced `scripts/git-hooks/**`).
+2. Register LFS pre-push logic as **`pre-push.d/10-git-lfs`** — never replace the shared dispatcher wholesale.
+3. `setup-git-lfs.sh` is idempotent: refreshes only the product fragment and flat LFS `post-*`; after
+   `git lfs install --force` it re-runs `setup-git-hooks.sh` so the dispatcher and `50-quality` stay intact.
+4. Dev Container restore is the T-late drop-in `scripts/devcontainer-post-create.d/50-git-lfs.sh` (calls
+   `setup-git-lfs.sh` only). Do not hard-code product scripts into synced `devcontainer-post-create.sh`.

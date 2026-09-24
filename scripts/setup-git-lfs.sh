@@ -1,81 +1,106 @@
 #!/usr/bin/env bash
-# Product Git LFS overlay: local `git lfs install` + copy version-controlled LFS hooks.
+# Product Git LFS overlay: local `git lfs install` + product-owned hooks.
 #
-# Called from scripts/install-dev-hooks.sh (Dev Container postCreate / after clone).
-# Not part of Devinfra — Wave B shared setup-git-hooks.sh must NOT replace this;
-# always re-run this script after any shared hook installer (shared setup removes
-# LFS post-* hooks). See docs/git-lfs.md.
+# Installs / refreshes only:
+#   .git/hooks/pre-push.d/10-git-lfs   (from scripts/git-lfs-hooks/pre-push.d/)
+#   .git/hooks/post-{checkout,commit,merge}
 #
-# Hook sources live under scripts/git-lfs-hooks/ (product-owned), NOT under the
-# synced allowlist scripts/git-hooks/** (quality pre-push only, verbatim).
+# Does NOT replace the shared pre-push dispatcher or delete pre-push.d/50-quality.
+# After `git lfs install --force` (may rewrite .git/hooks/pre-push), re-runs
+# setup-git-hooks.sh to restore the dispatcher + 50-quality, then installs the
+# LFS fragment again.
 #
-# Usage (from the repository root):
+# Invoked from scripts/devcontainer-post-create.d/50-git-lfs.sh (T-late) and
+# optionally scripts/install-dev-hooks.sh for host / manual clone.
+# Sources live under scripts/git-lfs-hooks/ (product-owned), NOT under synced
+# scripts/git-hooks/**. See docs/git-lfs.md.
+#
+# Usage (from any cwd):
 #   ./scripts/setup-git-lfs.sh
 
-set -e
+set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOOKS_SOURCE_DIR="$REPO_ROOT/scripts/git-lfs-hooks"
-HOOKS_TARGET_DIR="$REPO_ROOT/.git/hooks"
+HOOKS_SOURCE_DIR="${REPO_ROOT}/scripts/git-lfs-hooks"
+HOOKS_TARGET_DIR="${REPO_ROOT}/.git/hooks"
+FRAGMENT_NAME="10-git-lfs"
+source_fragment="${HOOKS_SOURCE_DIR}/pre-push.d/${FRAGMENT_NAME}"
 
-echo "🔧 Setting up Git LFS hooks for repository..."
+echo "Setting up Git LFS hooks for repository..."
 
-# Check if Git LFS is available
 if ! command -v git-lfs >/dev/null 2>&1; then
-    echo "❌ Git LFS is not installed!"
-    echo "📦 Installing Git LFS..."
-
-    # Try to install Git LFS
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update && sudo apt-get install -y git-lfs
-    elif command -v brew >/dev/null 2>&1; then
-        brew install git-lfs
-    else
-        echo "❌ Could not install Git LFS automatically."
-        echo "Please install Git LFS manually: https://git-lfs.github.io/"
-        exit 1
-    fi
-fi
-
-echo "✅ Git LFS is available: $(git lfs version)"
-
-# Check if we're in a Git repository
-if [ ! -d "$REPO_ROOT/.git" ]; then
-    echo "❌ Not in a Git repository root"
+  echo "Git LFS is not installed; attempting install..."
+  if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update && sudo apt-get install -y git-lfs
+  elif command -v brew >/dev/null 2>&1; then
+    brew install git-lfs
+  else
+    echo "ERROR: could not install Git LFS automatically." >&2
+    echo "Install manually: https://git-lfs.github.io/" >&2
     exit 1
+  fi
 fi
 
-# Repo-local only: devcontainer bind-mounts host ~/.gitconfig read-only.
-# --force: overwrite default hooks; project hooks below replace pre-push again.
-echo "🚀 Initializing Git LFS (local config)..."
-(cd "$REPO_ROOT" && git lfs install --local --skip-smudge --force)
+echo "Git LFS available: $(git lfs version)"
 
-for hook in pre-push post-checkout post-commit post-merge; do
-    target_hook="$HOOKS_TARGET_DIR/$hook"
-    source_hook="$HOOKS_SOURCE_DIR/$hook"
+if [[ ! -d "${REPO_ROOT}/.git" ]]; then
+  echo "ERROR: not a git worktree root: ${REPO_ROOT}" >&2
+  exit 1
+fi
 
-    [ -f "$source_hook" ] || continue
+if [[ ! -f "${source_fragment}" ]]; then
+  echo "ERROR: missing ${source_fragment}" >&2
+  exit 1
+fi
 
-    if [ -f "$target_hook" ] && ! grep -q "version-controlled and should be installed via\|Product Git LFS" "$target_hook" 2>/dev/null; then
-        echo "📋 Backing up existing $hook hook to $hook.backup"
-        cp "$target_hook" "$target_hook.backup"
-    else
-        echo "📝 Installing $hook hook"
-    fi
+# Repo-local only: Dev Container bind-mounts host ~/.gitconfig read-only.
+# --force may overwrite .git/hooks/pre-push with the stock LFS hook — restore
+# the shared dispatcher immediately after.
+echo "Initializing Git LFS (local config)..."
+(cd "${REPO_ROOT}" && git lfs install --local --skip-smudge --force)
 
-    cp "$source_hook" "$target_hook"
-    chmod +x "$target_hook"
+echo "Re-ensuring shared pre-push dispatcher + 50-quality..."
+bash "${REPO_ROOT}/scripts/setup-git-hooks.sh"
+
+mkdir -p "${HOOKS_TARGET_DIR}/pre-push.d"
+echo "Installing pre-push.d/${FRAGMENT_NAME}"
+cp "${source_fragment}" "${HOOKS_TARGET_DIR}/pre-push.d/${FRAGMENT_NAME}"
+chmod +x "${HOOKS_TARGET_DIR}/pre-push.d/${FRAGMENT_NAME}"
+
+for hook in post-checkout post-commit post-merge; do
+  source_hook="${HOOKS_SOURCE_DIR}/${hook}"
+  target_hook="${HOOKS_TARGET_DIR}/${hook}"
+  [[ -f "${source_hook}" ]] || continue
+
+  if [[ -f "${target_hook}" ]] && cmp -s "${source_hook}" "${target_hook}"; then
+    echo "Already up to date: ${hook}"
+    continue
+  fi
+
+  # Backup only unknown foreign hooks — not our SoT and not stock `git lfs install` hooks.
+  if [[ -f "${target_hook}" ]] &&
+    ! grep -qE 'version-controlled and should be installed via|git lfs post-' "${target_hook}" 2>/dev/null; then
+    echo "Backing up existing ${hook} hook to ${hook}.backup"
+    cp "${target_hook}" "${target_hook}.backup"
+  else
+    echo "Installing ${hook} hook"
+  fi
+
+  cp "${source_hook}" "${target_hook}"
+  chmod +x "${target_hook}"
 done
 
 echo ""
-echo "✅ Git LFS hooks setup complete!"
+echo "Git LFS hooks setup complete."
+echo "Installed:"
+ls -la \
+  "${HOOKS_TARGET_DIR}/pre-push" \
+  "${HOOKS_TARGET_DIR}/pre-push.d/${FRAGMENT_NAME}" \
+  "${HOOKS_TARGET_DIR}/pre-push.d/50-quality" \
+  "${HOOKS_TARGET_DIR}/post-checkout" \
+  "${HOOKS_TARGET_DIR}/post-commit" \
+  "${HOOKS_TARGET_DIR}/post-merge" \
+  2>/dev/null || true
 echo ""
-echo "📁 Installed hooks:"
-ls -la "$HOOKS_TARGET_DIR"/{pre-push,post-checkout,post-commit,post-merge} 2>/dev/null || true
-echo ""
-echo "🔍 Git LFS tracked files:"
-git lfs ls-files
-echo ""
-echo "💡 To verify the setup:"
-echo "   git lfs env"
-echo "   git status"
+echo "Git LFS tracked files:"
+(cd "${REPO_ROOT}" && git lfs ls-files) || true
