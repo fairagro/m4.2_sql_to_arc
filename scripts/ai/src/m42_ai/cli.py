@@ -14,6 +14,7 @@ from m42_ai.auth import auth_status
 from m42_ai.code_review import code_review_context, publish_report, write_report
 from m42_ai.gh import GhError
 from m42_ai.issue import (
+    ISSUE_BRANCH_CHANNELS,
     branch_ahead,
     create_issue,
     ensure_issue_branch,
@@ -21,7 +22,7 @@ from m42_ai.issue import (
     view_issue,
 )
 from m42_ai.pr import pr_strip_footer
-from m42_ai.review import fetch_review_open, review_reply, review_resolve
+from m42_ai.review import PrHeadGateError, fetch_review_open, review_reply, review_resolve
 from m42_ai.sync_followup import (
     collect_sync_followup_ids,
     ensure_sync_followup_issue,
@@ -64,8 +65,11 @@ def cmd_review_open(args: argparse.Namespace) -> int:
             review_id=args.review_id,
             cwd=Path(args.cwd) if getattr(args, "cwd", None) else None,
         )
+    except PrHeadGateError as exc:
+        _print_json(exc.as_json())
+        return 1
     except (GhError, ValueError, RuntimeError, OSError, json.JSONDecodeError) as exc:
-        _print_json({"ok": False, "error": str(exc)})
+        _print_json({"ok": False, "pr_head_ok": False, "error": str(exc), "agent_action": "stop"})
         return 1
     _print_json(data)
     return 0
@@ -118,6 +122,7 @@ def cmd_issue_branch(args: argparse.Namespace) -> int:
         issue=args.issue,
         slug=args.slug,
         base=args.base,
+        channel=args.channel,
         cwd=Path(args.cwd) if args.cwd else None,
     )
     _print_json(data)
@@ -138,6 +143,7 @@ def cmd_issue_start(args: argparse.Namespace) -> int:
         issue=args.issue,
         slug=args.slug,
         base=args.base,
+        channel=args.channel,
         cwd=Path(args.cwd) if args.cwd else None,
         draft_title=args.title,
     )
@@ -320,17 +326,26 @@ def build_parser() -> argparse.ArgumentParser:
     ic.add_argument("--body-file")
     ic.set_defaults(func=cmd_issue_create)
 
-    iv = sub.add_parser("issue-view", help="Fetch issue triage JSON (type, labels, body, url)")
+    iv = sub.add_parser(
+        "issue-view",
+        help="Fetch issue triage JSON (type, labels, body, comments, url)",
+    )
     iv.add_argument("--issue", type=int, required=True)
     iv.add_argument("--cwd", help="Git repo root (default: cwd)")
     iv.set_defaults(func=cmd_issue_view)
 
     ib = sub.add_parser(
         "issue-branch",
-        help="Ensure issue-<n>-<slug> exists and is checked out (no commit/PR)",
+        help="Ensure {channel}/issue-<n>-<slug> exists and is checked out (no commit/PR)",
     )
     ib.add_argument("--issue", type=int, required=True)
     ib.add_argument("--slug")
+    ib.add_argument(
+        "--channel",
+        choices=sorted(ISSUE_BRANCH_CHANNELS),
+        default="build",
+        help="Fleet CI channel prefix (default: build)",
+    )
     ib.add_argument("--base", default="main")
     ib.add_argument("--cwd", help="Git repo root (default: cwd)")
     ib.set_defaults(func=cmd_issue_branch)
@@ -346,6 +361,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ist.add_argument("--issue", type=int, required=True)
     ist.add_argument("--slug")
+    ist.add_argument(
+        "--channel",
+        choices=sorted(ISSUE_BRANCH_CHANNELS),
+        default="build",
+        help="Fleet CI channel prefix (default: build)",
+    )
     ist.add_argument("--base", default="main")
     ist.add_argument("--title", help="Override draft PR title (default: issue title)")
     ist.add_argument("--cwd", help="Git repo root (default: cwd)")

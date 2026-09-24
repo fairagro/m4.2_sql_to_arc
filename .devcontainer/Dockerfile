@@ -196,8 +196,8 @@ RUN mkdir -p /commandhistory && \
         echo 'PROMPT_COMMAND="history -a${PROMPT_COMMAND:+; ${PROMPT_COMMAND}}"'; \
         } >> /etc/bash.bashrc
 
-# ── Switch to non-root user for uv tool installations
-USER vscode
+# ── Switch to non-root for uv installs (1000 = vscode in the Dev Container base image)
+USER 1000
 
 # ── Python (via uv; patch pin from versions.env → PYTHON_VERSION build-arg) ───
 RUN uv python install "${PYTHON_VERSION}"
