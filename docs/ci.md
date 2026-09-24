@@ -18,7 +18,7 @@ Canonical GitHub Actions for the three m4.2 product repos live in this repositor
 | CodeQL (per-repo)             | [`.github/workflows/codeql.yml`](../.github/workflows/codeql.yml) — thin synced workflow; see below                                                                                          |
 | Sync products                 | [`.github/workflows/sync-products.yml`](https://github.com/fairagro/m4.2_middleware_devinfra/blob/main/.github/workflows/sync-products.yml) — allowlist push; see [docs/sync.md](sync.md)    |
 
-Dockerfile pins Renovate skips (`apk=…-rN`, inline `name==…`): synced
+Dockerfile pins Renovate skips (apk via `ARG …_VERSION=*-rN`, inline `name==…`): synced
 [`scripts/update-dockerfile-pins.sh`](../scripts/update-dockerfile-pins.sh) — see
 [Manual Dockerfile pins](renovate.md#manual-dockerfile-pins-not-renovate).
 
@@ -142,6 +142,11 @@ default and may be omitted there.
   (Trivy)** section (counts + package/license/classification table). License hits alone must not fail release.
 - **Vulnerabilities (gate):** `reusable-check` **Security Check** keeps failing on CRITICAL/HIGH vulns (SARIF upload
   unchanged). Do not treat license policy as a reason to relax vuln gates.
+
+**Python lockfile / env (separate gate):** `reusable-code-quality` runs `./scripts/run-uv-audit.sh`
+(`uv audit --frozen`) and enables `UV_MALWARE_CHECK` on `uv sync`. That is the fleet lockfile CVE / malware layer — not
+a substitute for Trivy on images. See
+[Lockfile CVEs vs Trivy vs malware check](quality.md#lockfile-cves-vs-trivy-vs-malware-check) in `docs/quality.md`.
 
 Bump the product `uses:` ref after this policy lands so callers pick up report-only Licence Check.
 
@@ -334,13 +339,17 @@ custom `tag_prefix` breaks Helm `appVersion` lookup unless you also change Helm 
 
 ### `reusable-code-quality.yml`
 
-| Input                 | Default      | Purpose                                                                  |
-| --------------------- | ------------ | ------------------------------------------------------------------------ |
-| `python_package_root` | `middleware` | Path for ruff / pylint / mypy / bandit / pytest                          |
-| `mypy_path`           | `""`         | Optional colon-separated `MYPYPATH` (stubs + src roots); empty = default |
-| `pylint_source_roots` | `""`         | Optional comma-separated pylint `--source-roots`                         |
-| `components`          | (optional)   | Accepted for caller compatibility; unused by this workflow               |
-| `skip`                | `false`      | Successful no-op (keeps required check names green)                      |
+| Input                 | Default      | Purpose                                                                                                |
+| --------------------- | ------------ | ------------------------------------------------------------------------------------------------------ |
+| `python_package_root` | `middleware` | Path for ruff / pylint / mypy / bandit / vulture / pytest (import-linter uses product `.importlinter`) |
+| `mypy_path`           | `""`         | Optional colon-separated `MYPYPATH` (stubs + src roots); empty = default                               |
+| `pylint_source_roots` | `""`         | Optional comma-separated pylint `--source-roots`                                                       |
+| `components`          | (optional)   | Accepted for caller compatibility; unused by this workflow                                             |
+| `skip`                | `false`      | Successful no-op (keeps required check names green)                                                    |
+
+**uv audit / malware check:** when `skip` is false, the job runs `uv sync` with `UV_MALWARE_CHECK=1` and
+`./scripts/run-uv-audit.sh` (frozen lockfile; optional caller `.uv-audit-ignore`). See
+[quality.md](quality.md#lockfile-cves-vs-trivy-vs-malware-check).
 
 **pytest vs pre-push:** this workflow runs `uv run pytest "${PKG}" …` **without** the synced pre-push marker filter
 (`-m "not system_external and not system_local"`). CI stays the broader gate; local push excludes `system_*` by default
@@ -378,7 +387,11 @@ CRITICAL/HIGH vulnerabilities. See [Trivy: licenses vs vulnerabilities](#trivy-l
 | `skip`            | `false`                        | Successful no-op without artifacts                 |
 
 Outputs: `version`, `pep440_version`, `components`. Version scheme is shared across all three products
-(`*-docker-vX.Y.Z`; on `feature/*` → `X.Y.Z-rc.<branch>.<run>`).
+(`*-docker-vX.Y.Z`; on `build/*` → `X.Y.Z-rc.<branch>.<run>`). Here `<run>` is **`${{ github.run_number }}`** for that
+workflow file — a **repo-wide** counter, not per branch (a new `build/*` branch can still get a high `.N` because other
+branches already advanced the counter). On the same path, `pep440_version` is `X.Y.Z.devN` with the **same** global
+`run_number`. Fleet branch **channels** (`build/`, `ci/`, `docs/`, `chore/`) are documented in
+`openspec/principles.global.md`; Pre Release / RC applies only to `build/*` (hard cut — not `feature/*`).
 
 ### `reusable-release.yml`
 
@@ -422,7 +435,8 @@ When `create_github_release` is false, no git tag or GitHub Release is created (
 Helm CLI version comes from the caller’s `versions.env` (`HELM_VERSION`). Secrets `DOCKERHUB_USER` / `DOCKERHUB_TOKEN`
 are optional; if missing or a push fails, the Helm GitHub Release body (final) or job summary (pre-release) MUST state
 the registry status and reason. GHCR uses `GITHUB_TOKEN`. Chart tags are created before registry pushes (same tag-first
-policy as Docker release).
+policy as Docker release). Helm **pre-release** chart versions use `…-rc.<branch>.<run>` with the same meaning of
+`<run>` as Docker (`github.run_number`, repo-wide) and MUST run only on `build/*` (hard cut; not `feature/*`).
 
 ### `reusable-registry-retry.yml`
 
