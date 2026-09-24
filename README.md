@@ -14,7 +14,6 @@ standardized Annotated Research Context (ARC) objects and transmit them to the c
 | [dev_environment/](dev_environment/) | Docker-based local development setup (Postgres, Mock API).                 |
 | [scripts/](scripts/)                 | Tooling for quality checks, Dev Container helpers, hooks, and Git LFS.     |
 | [docker/](docker/)                   | Dockerfiles and container structure tests.                                 |
-| [stubs/](stubs/)                     | Product-local type stubs (`arctrl` / `fable_library`) until Devinfra #67.  |
 
 ## 🌟 Quick Start (Full Local Demo)
 
