@@ -8,6 +8,7 @@ Canonical GitHub Actions for the three m4.2 product repos live in this repositor
 | Image / SBOM checks           | [`.github/workflows/reusable-check.yml`](https://github.com/fairagro/m4.2_middleware_devinfra/blob/main/.github/workflows/reusable-check.yml)                                                |
 | Docker build                  | [`.github/workflows/reusable-build.yml`](https://github.com/fairagro/m4.2_middleware_devinfra/blob/main/.github/workflows/reusable-build.yml)                                                |
 | Docker release                | [`.github/workflows/reusable-release.yml`](https://github.com/fairagro/m4.2_middleware_devinfra/blob/main/.github/workflows/reusable-release.yml)                                            |
+| Helm lint (Feature PR)        | [`.github/workflows/reusable-helm-lint.yml`](https://github.com/fairagro/m4.2_middleware_devinfra/blob/main/.github/workflows/reusable-helm-lint.yml)                                        |
 | Helm final release            | [`.github/workflows/reusable-helm-release.yml`](https://github.com/fairagro/m4.2_middleware_devinfra/blob/main/.github/workflows/reusable-helm-release.yml)                                  |
 | Helm pre-release              | [`.github/workflows/reusable-helm-pre-release.yml`](https://github.com/fairagro/m4.2_middleware_devinfra/blob/main/.github/workflows/reusable-helm-pre-release.yml)                          |
 | Registry retry                | [`.github/workflows/reusable-registry-retry.yml`](https://github.com/fairagro/m4.2_middleware_devinfra/blob/main/.github/workflows/reusable-registry-retry.yml) — existing release only      |
@@ -150,11 +151,12 @@ a substitute for Trivy on images. See
 
 Bump the product `uses:` ref after this policy lands so callers pick up report-only Licence Check.
 
-### Feature PR (Docker build + check)
+### Feature PR (Docker build + check + Helm lint)
 
 Recommended product caller: cancel in-progress runs on the same PR, keep `detect-changes` **product-local**, and pass
-`skip` into the shared reusables. Outer Devinfra reusables also declare complementary `concurrency` (see below); that
-does **not** replace this caller-level cancel for the full pipeline.
+`skip` into the shared reusables (including a **separate** chart filter for `reusable-helm-lint`). Outer Devinfra
+reusables also declare complementary `concurrency` (see below); that does **not** replace this caller-level cancel for
+the full pipeline.
 
 ```yaml
 name: Feature Pull Request
@@ -174,6 +176,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.changes.outputs.code }}
+      helm: ${{ steps.changes.outputs.helm }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -192,6 +195,10 @@ jobs:
               - '.bandit'
               - 'versions.env'
               # Products may extend, e.g. stubs/, dev_environment/**
+              # Do NOT put chart paths only here — that forces Docker build/check without linting charts.
+            helm:
+              - 'helmchart/**'
+              # Other products: 'helm/**' (or the product chart root)
 
   code-quality:
     needs: [detect-changes]
@@ -221,10 +228,79 @@ jobs:
       image_base_name: fairagro-advanced-middleware
       skip: ${{ needs.detect-changes.outputs.code != 'true' || needs.build.result != 'success' }}
     secrets: inherit
+
+  helm-lint:
+    needs: [detect-changes]
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-helm-lint.yml@main
+    with:
+      chart_dir: helmchart/fairagro-advanced-middleware-api-chart
+      skip: ${{ needs.detect-changes.outputs.helm != 'true' }}
+      # Optional CI overlay (omit or leave empty for bare chart defaults):
+      # values_file: path/to/ci-values.yaml
 ```
 
 `detect-changes` / `skip` stay a **caller** responsibility. Suggested `code` paths above are a fleet default — extend
-for product-only trees (e.g. `stubs/`, `dev_environment/**`).
+for product-only trees (e.g. `stubs/`, `dev_environment/**`). Chart-only PRs should skip Docker build/check via `code`
+while still running `helm-lint` when the `helm` filter matches. **Do not** treat “add `helmchart/**` to the Docker
+`code` filter alone” as chart validation. Optional `values_file` passes a checkout-relative overlay into `helm lint` /
+`helm template` (fail closed if missing); empty keeps bare-chart behaviour. Local commit-stage parity uses
+`HELM_VALUES_FILE` on [`scripts/run-helm-lint.sh`](../scripts/run-helm-lint.sh) — see [`docs/quality.md`](quality.md).
+
+### Post-merge main (Docker build + check → Code Scanning)
+
+GitHub Code Scanning auto-closes Default-Branch alerts only when a later **clean** SARIF is uploaded for the **default
+branch**. Feature PR and Pre Release Trivy analyses are attributed to PR/feature refs and do **not** close alerts on
+`main`. Waiting for Docker **Release** works but can lag weeks after a Dockerfile pin already fixed the finding.
+
+Recommended product caller: a **thin** workflow on `push` to `main` that runs only `reusable-build` + `reusable-check`
+(so Trivy SARIF lands on `main`). Do **not** add code-quality or Release/publish here. **Release keeps its own**
+`reusable-check` security gate and does **not** consume SARIF from this run.
+
+Grant `security-events: write` on the top-level workflow so the nested Security Check can upload SARIF (GitHub
+intersects permissions down the `workflow_call` chain — see [Permissions](#permissions)).
+
+Path filters that skip rebuilds when image-irrelevant paths change are an optional later optimization; they are **not**
+required for this v1 snippet.
+
+Feature-oriented reusables (`reusable-build` / `reusable-check`) key concurrency with the **caller** `github.workflow`
+as well as repository + ref, so this Main Docker Check does **not** cancel an overlapping Docker Release’s build/check
+on `main` (caller-level groups alone would not separate nested reusable runs).
+
+```yaml
+name: Main Docker Check
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: main-docker-check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  build:
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-build.yml@main
+    with:
+      components: '["api"]'
+      image_base_name: fairagro-advanced-middleware
+    secrets: inherit
+
+  check:
+    needs: [build]
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-check.yml@main
+    with:
+      version: ${{ needs.build.outputs.version }}
+      components: '["api"]'
+      image_base_name: fairagro-advanced-middleware
+    secrets: inherit
+```
+
+Keep the Feature PR caller as the `pull_request` quality/build/check path; do **not** solve alert hygiene by adding
+`push: main` to that full job set.
 
 ### Release / pre-release (Docker)
 
@@ -240,8 +316,8 @@ on:
     inputs:
       version_bump:
         type: choice
-        options: [major, minor, patch]
-        default: patch
+        options: [auto, major, minor, patch]
+        default: auto
 
 concurrency:
   group: docker-release-${{ github.workflow }}-${{ github.ref }}
@@ -281,11 +357,18 @@ jobs:
     secrets: inherit
 ```
 
+`version_bump: auto` (default) derives the base semver from [Conventional Commits](https://www.conventionalcommits.org/)
+since the latest `*-docker-v*` tag via git-cliff (`scripts/detect-version-bump.sh`). Explicit `major` / `minor` /
+`patch` override. Auto **fails closed** if there are no commits since the last tag or git-cliff is unavailable — see
+[`docs/quality.md`](quality.md#conventional-commits). On `build/*`, the RC / PEP 440 suffix is still applied after the
+base bump.
+
 Keep any **PyPI** publish steps in a product-local job or workflow after build (API only).
 
 ### Helm (thin `workflow_dispatch` caller)
 
-Same serialize guidance as Docker release (`cancel-in-progress: false`). No `detect-changes` required.
+Same serialize guidance as Docker release (`cancel-in-progress: false`). No `detect-changes` required. Helm **auto**
+uses the latest `*-chart-v*` tag range (separate from Docker — R1).
 
 ```yaml
 name: Helm Chart Release
@@ -294,8 +377,8 @@ on:
     inputs:
       version_bump:
         type: choice
-        options: [major, minor, patch]
-        default: patch
+        options: [auto, major, minor, patch]
+        default: auto
 
 concurrency:
   group: helm-release-${{ github.workflow }}-${{ github.ref }}
@@ -387,12 +470,12 @@ CRITICAL/HIGH vulnerabilities. See [Trivy: licenses vs vulnerabilities](#trivy-l
 
 ### `reusable-build.yml`
 
-| Input             | Default                        | Purpose                                            |
-| ----------------- | ------------------------------ | -------------------------------------------------- |
-| `version_bump`    | `patch`                        | major / minor / patch against latest `*-docker-v*` |
-| `components`      | (required)                     | JSON array; matrix build                           |
-| `image_base_name` | `fairagro-advanced-middleware` | Local image tag prefix                             |
-| `skip`            | `false`                        | Successful no-op without artifacts                 |
+| Input             | Default                        | Purpose                                                                                    |
+| ----------------- | ------------------------------ | ------------------------------------------------------------------------------------------ |
+| `version_bump`    | `auto`                         | `auto` (Conventional Commits / git-cliff) or major / minor / patch vs latest `*-docker-v*` |
+| `components`      | (required)                     | JSON array; matrix build                                                                   |
+| `image_base_name` | `fairagro-advanced-middleware` | Local image tag prefix                                                                     |
+| `skip`            | `false`                        | Successful no-op without artifacts                                                         |
 
 Outputs: `version`, `pep440_version`, `components`. Version scheme is shared across all three products
 (`*-docker-vX.Y.Z`; on `build/*` → `X.Y.Z-rc.<branch>.<run>`). Here `<run>` is **`${{ github.run_number }}`** for that
@@ -427,18 +510,35 @@ naming).
 
 When `create_github_release` is false, no git tag or GitHub Release is created (image pushes still run).
 
+### `reusable-helm-lint.yml`
+
+Feature-PR chart gate (lint + optional template smoke). Does **not** package or publish.
+
+| Input          | Default    | Purpose                                                              |
+| -------------- | ---------- | -------------------------------------------------------------------- |
+| `chart_dir`    | (required) | Chart path in caller checkout                                        |
+| `skip`         | `false`    | No-op success path when no chart paths changed                       |
+| `run_template` | `true`     | Also run `helm template` smoke (defaults, or `values_file` when set) |
+| `values_file`  | `""`       | Optional checkout-relative overlay (`-f`); empty = bare chart        |
+
+Helm CLI version comes from the caller’s `versions.env` (`HELM_VERSION`). Wire with a **separate** detect-changes output
+for chart roots (`helmchart/**` or `helm/**`); see the Feature PR example above. When `values_file` is non-empty, the
+job fails if the path is missing and passes `-f` to both `helm lint` and (when enabled) `helm template`. Local
+commit-stage lint is the synced `helm-lint` hook (`scripts/run-helm-lint.sh`) with the matching env `HELM_VALUES_FILE` —
+see [`docs/quality.md`](quality.md); it does **not** replace this Feature-PR reusable.
+
 ### `reusable-helm-release.yml` / `reusable-helm-pre-release.yml`
 
-| Input                   | Default                   | Purpose                                      |
-| ----------------------- | ------------------------- | -------------------------------------------- |
-| `chart_dir`             | (required)                | Chart path in caller checkout                |
-| `chart_name`            | (required)                | Must match `name:` in Chart.yaml (validated) |
-| `dockerhub_namespace`   | `zalf`                    | Docker Hub OCI namespace                     |
-| `ghcr_namespace`        | `""` → `repository_owner` | GHCR OCI namespace; empty uses owner         |
-| `version_bump`          | `patch`                   | Final release only                           |
-| `require_main`          | `true`                    | Final release only                           |
-| `create_github_release` | `true`                    | Final release only                           |
-| `helm_install_name`     | `fairagro-middleware`     | Example name in release notes (final only)   |
+| Input                   | Default                   | Purpose                                                  |
+| ----------------------- | ------------------------- | -------------------------------------------------------- |
+| `chart_dir`             | (required)                | Chart path in caller checkout                            |
+| `chart_name`            | (required)                | Must match `name:` in Chart.yaml (validated)             |
+| `dockerhub_namespace`   | `zalf`                    | Docker Hub OCI namespace                                 |
+| `ghcr_namespace`        | `""` → `repository_owner` | GHCR OCI namespace; empty uses owner                     |
+| `version_bump`          | `auto`                    | Final + pre-release base: `auto` / major / minor / patch |
+| `require_main`          | `true`                    | Final release only                                       |
+| `create_github_release` | `true`                    | Final release only                                       |
+| `helm_install_name`     | `fairagro-middleware`     | Example name in release notes (final only)               |
 
 Helm CLI version comes from the caller’s `versions.env` (`HELM_VERSION`). Secrets `DOCKERHUB_USER` / `DOCKERHUB_TOKEN`
 are optional; if missing or a push fails, the Helm GitHub Release body (final) or job summary (pre-release) MUST state
