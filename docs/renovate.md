@@ -34,13 +34,14 @@ Fine-grained PAT **GUI** labels differ from the **REST/API** permission keys use
 ([permissions reference](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens)).
 Use this mapping:
 
-| GUI label (Create fine-grained PAT) | API permission key | Access                         | Needed for                                     |
-| ----------------------------------- | ------------------ | ------------------------------ | ---------------------------------------------- |
-| Metadata                            | `metadata`         | Read-only (often auto-granted) | Repo identity / baseline                       |
-| Contents                            | `contents`         | Read and write                 | Clone, branches, commits (Renovate + sync)     |
-| Pull requests                       | `pull_requests`    | Read and write                 | Open/update PRs (Renovate + sync)              |
-| Workflows                           | `workflows`        | Read and write                 | Push changes under `.github/workflows/` (sync) |
-| Issues                              | `issues`           | Read and write                 | Renovate + sync `SYNC-FOLLOWUP` product issues |
+| GUI label (Create fine-grained PAT) | API permission key     | Access                         | Needed for                                                   |
+| ----------------------------------- | ---------------------- | ------------------------------ | ------------------------------------------------------------ |
+| Metadata                            | `metadata`             | Read-only (often auto-granted) | Repo identity / baseline                                     |
+| Contents                            | `contents`             | Read and write                 | Clone, branches, commits (Renovate + sync)                   |
+| Pull requests                       | `pull_requests`        | Read and write                 | Open/update PRs (Renovate + sync)                            |
+| Workflows                           | `workflows`            | Read and write                 | Push changes under `.github/workflows/` (sync)               |
+| Issues                              | `issues`               | Read and write                 | Renovate + sync `SYNC-FOLLOWUP` product issues               |
+| Dependabot alerts                   | `vulnerability_alerts` | Read-only                      | Renovate `vulnerabilityAlerts` (read GitHub Dependabot CVEs) |
 
 **Do not confuse** GUI **Workflows** (`workflows`) with **Actions** (`actions`). **Workflows** is required to create or
 modify workflow _files_; **Actions** covers workflow _runs_/logs and is not required for the current Renovate/sync
@@ -54,7 +55,8 @@ Example API fragment (repository permissions object):
   "contents": "write",
   "pull_requests": "write",
   "workflows": "write",
-  "issues": "write"
+  "issues": "write",
+  "vulnerability_alerts": "read"
 }
 ```
 
@@ -79,14 +81,17 @@ on `PATH`). That pin is for local dry-runs only. CI runs
 [`renovatebot/github-action`](../.github/workflows/renovate.yml) at its own Action version (currently `v46.2.6`) — keep
 the Action major aware of the CLI major when bumping either pin; they are not the same artifact.
 
-The **npm CLI** itself is pinned as `NPM_VERSION` in `versions.env` (regex custom manager, `datasourceTemplate: npm`,
-grouped under **npm toolchain** with Prettier / markdownlint-cli2 / OpenSpec / Renovate CLI). It is independent of
-`NODE_VERSION` (Node tarball). Bump npm in Devinfra via Renovate; do not hand-edit the pin in product checkouts.
+The **npm CLI** itself is pinned as `NPM_VERSION` in `versions.env` (regex custom manager, `datasourceTemplate: npm`).
+It is independent of `NODE_VERSION` (Node tarball). Bump npm in Devinfra via Renovate; do not hand-edit the pin in
+product checkouts.
 
 **Grouping:** all Renovate updates that touch `versions.env` or `.python-version` share one PR group
 (`versions.env toolchain pins`), including former per-datasource splits (GitHub release CLIs, npm/pypi pins,
-`node-version`, …). Other managers (Actions, Dockerfiles outside those files) keep their own groups. Product Renovate
-still has those files **disabled** (bump in Devinfra, then sync).
+`node-version`, …). **Mirrored** `package.json` / `package-lock.json` pins for `prettier` and `markdownlint-cli2` use
+that **same** group so a Prettier bump cannot land as a SoT-only PR while `npm ci` still sees the old lockfile.
+`NPM_VERSION` / `RENOVATE_VERSION` / `OPENSPEC_VERSION` live only in `versions.env` (not in `package.json`) and stay in
+that file group. Other managers (Actions, Dockerfiles outside those files) keep their own groups. Product Renovate still
+has those synced files **disabled** (bump in Devinfra, then sync).
 
 From the repo root (no PR creation):
 
@@ -102,13 +107,25 @@ is separate from developer `GH_TOKEN`.
 
 ## Dependabot migration (products)
 
-| Keep                                                                                    | Drop / avoid                                                                            |
-| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **Dependabot alerts** (Security tab) — Renovate can read vulnerability alerts on GitHub | **Dependabot version updates** (`.github/dependabot.yml`)                               |
-| Prefer **Renovate** for dependency update PRs                                           | Running Dependabot version updates **and** Renovate as general updaters (duplicate PRs) |
+| Keep                                                                                 | Drop / avoid                                                                                        |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| **Dependabot alerts** (Security tab) — Renovate reads them via `vulnerabilityAlerts` | **Dependabot version updates** (`.github/dependabot.yml`)                                           |
+| Prefer **Renovate** for dependency update PRs **and** vulnerability remediation PRs  | Running Dependabot version updates **and** Renovate as general updaters (duplicate PRs)             |
+| Dependency graph + Dependabot alerts enabled on the repo                             | Dependabot **security update** PRs when Renovate owns fixes (two bots opening the same remediation) |
 
-Optional: turn off Dependabot **security update** PRs if Renovate owns security updates, so only one bot opens fix PRs.
-Keep alerts enabled.
+**Recommended:** turn off Dependabot **security update** PRs so only Renovate opens vulnerability fix PRs. Keep
+**alerts** enabled (Security tab). Shared `renovate.json` enables:
+
+- **`vulnerabilityAlerts`** — fix PRs from GitHub Dependabot alerts (labels `dependencies` + `security`, schedule
+  `at any time`, still subject to `prHourlyLimit` / `prConcurrentLimit`).
+- **`osvVulnerabilityAlerts`** — fix PRs from [OSV](https://osv.dev) for **direct** dependencies on Renovate-supported
+  datasources (e.g. `npm`, `pypi`). Not a transitive lockfile scanner.
+
+Neither knob consumes **Code Scanning** findings (including Trivy SARIF from `reusable-check`). Those stay on Security →
+Code scanning; remediation there is still normal Renovate version bumps / lockfile maintenance / manual pins.
+
+`DEVINFRA_BOT_TOKEN` MUST include read access to Dependabot alerts (`vulnerability_alerts`) or GitHub-sourced
+`vulnerabilityAlerts` PRs will not appear.
 
 **Hard requirement after Renovate enablement:** product repos MUST **not** ship `.github/dependabot.yml` (or any
 version-update schedule). Alerts are configured in the repo Security tab — they do **not** need that file. Leaving
