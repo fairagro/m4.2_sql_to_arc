@@ -24,8 +24,10 @@ pushes; the agent opens the draft PR only when the tip already differs from `mai
 
 ## Auth (`gh`)
 
-Prefer `uv run --project scripts/ai m42-ai …` (works in Devinfra and product checkouts). Bare `uv run m42-ai` is only OK
-when `scripts/ai` is a root workspace member (Devinfra).
+Prefer `m42-ai …` when `scripts/bin` is on `PATH` (synced wrapper unsets conflicting `VIRTUAL_ENV`, then
+`uv run --project scripts/ai m42-ai`). Portable without the wrapper:
+`env -u VIRTUAL_ENV uv run --project scripts/ai m42-ai …`. Bare `uv run m42-ai` is only OK when `scripts/ai` is a root
+workspace member (Devinfra). Do **not** use `uv run --active` to silence the warning.
 
 `gh` is wrapped (`scripts/bin/gh`, on `PATH` in the Dev Container via `remoteEnv`). Missing `GH_TOKEN` prompts on
 `/dev/tty` and is saved to `/commandhistory/tokens.env` (Linux Dev Container only — see `docs/conventions.md`). The
@@ -43,7 +45,7 @@ do not invent them. Never ask the user to paste a PAT into chat.
 
    Then reply here when done (or decline).
 
-3. After they confirm, retry `uv run --project scripts/ai m42-ai auth-status` (or `gh auth status`). If auth works,
+3. After they confirm, retry `m42-ai auth-status` (or `gh auth status`). If auth works,
    continue with fetch / branch / PR as usual.
 4. Only if they decline or auth still fails: skip GitHub writes, print intended branch/PR drafts, and may still work
    locally when appropriate.
@@ -53,7 +55,7 @@ do not invent them. Never ask the user to paste a PAT into chat.
 1. Prefer the CLI for a stable shape:
 
    ```bash
-   uv run --project scripts/ai m42-ai issue-view --issue <issue_number>
+   m42-ai issue-view --issue <issue_number>
    ```
 
    Use `issue_type`, `labels`, `triage`, `body`, `comments`, and `url` from that JSON (fall back to `gh issue view`
@@ -136,7 +138,7 @@ On every run that will implement, after explore (when it ran) or immediately whe
 1. **Create the issue branch** from `main` via CLI when possible (**before** OpenSpec artifacts or product code):
 
    ```bash
-   uv run --project scripts/ai m42-ai issue-branch --issue <issue_number> --channel <build|ci|docs> [--slug <slug>]
+   m42-ai issue-branch --issue <issue_number> --channel <build|ci|docs> [--slug <slug>]
    ```
 
    Branch shape: `{channel}/issue-<issue_number>-<slug>`. Channels are CI prefixes (not GitHub issue types):
@@ -153,14 +155,17 @@ On every run that will implement, after explore (when it ran) or immediately whe
 2. **Feature / Refactoring** (OpenSpec path), unless docs-only with no skill file — also any type with a skill file in
    scope, or Task/Bug with explicit `use opsx`:
 
-   1. Follow openspec-propose → **pause** (user reviews proposal / specs / design / tasks).
-   2. On `go`: follow openspec-apply → **pause** (user reviews working tree; they commit/push).
+   1. Follow openspec-propose → **pause** (user reviews proposal / specs / design / tasks). If the working tree is
+      dirty from propose, apply [Handoff commit message](#handoff-commit-message).
+   2. On `go`: follow openspec-apply → **pause** (user reviews working tree; they commit/push). Apply
+      [Handoff commit message](#handoff-commit-message).
    3. On `go`: ensure a **draft** PR when the tip is ahead of `main` (next section).
-   4. On `go` (**last**): follow openspec-archive → **pause** so the user can commit archive results.
+   4. On `go` (**last**): follow openspec-archive → **pause** so the user can commit archive results. Apply
+      [Handoff commit message](#handoff-commit-message).
 
 3. **Task / Bug / cheap Security**, and **docs-only** Feature/Refactoring that do not touch a skill file: implement in
-   the working tree → **pause** → on `go`: draft PR when ahead of `main`. Do **not** create an OpenSpec change for
-   process.
+   the working tree → **pause** (apply [Handoff commit message](#handoff-commit-message)) → on `go`: draft PR when
+   ahead of `main`. Do **not** create an OpenSpec change for process.
 
 Early exits that never implement skip this cadence. Once the user asks to implement a `Discussion`, start at branch +
 the type-routed path (OpenSpec if they retyped it as Feature/Refactoring).
@@ -175,25 +180,43 @@ when the tree is clean and the tip is already ahead of `main` (`git log main..HE
 not count):
 
 ```bash
-uv run --project scripts/ai m42-ai issue-start --issue <issue_number> [--slug <slug>]
+m42-ai issue-start --issue <issue_number> [--slug <slug>]
 ```
 
 `issue-start` ensures branch `{channel}/issue-<issue_number>-<slug>` (checkout/create from `main` if needed), refuses
-when there are no commits ahead of the base, pushes, and opens a **draft** PR with `Fixes #<issue_number>`. It does
-**not** create empty commits. See [`scripts/ai/README.md`](../../../scripts/ai/README.md).
+when there are no commits ahead of the base, pushes, and opens a **draft** PR with `Fixes #<issue_number>`. Default body
+Summary bullets come from the issue title + commit subjects vs the base (never `MVP scope: (fill in)`). Prefer passing a
+crafted Summary with `--body-file` / `--body` (Fixes appended if missing). It does **not** create empty commits. See
+[`scripts/ai/README.md`](../../../scripts/ai/README.md).
 
 If a draft PR already exists, skip create. Always prefer `m42-ai pr-strip-footer --pr <n>` after create (or when a
 footer may have been injected) instead of hand-editing with ad-hoc `gh` regexes.
 
 If the tip still equals `main`, do **not** open a PR and do **not** create an empty commit — ask the user to commit
-first. For OpenSpec types, archive is still the last `go` after this step (working-tree archive, then pause for commit).
+first and apply [Handoff commit message](#handoff-commit-message). For OpenSpec types, archive is still the last `go`
+after this step (working-tree archive, then pause for commit with handoff message).
 
 **PR body hygiene:** Do **not** append tool marketing footers (e.g. `Made with Cursor`, `Made with [Cursor](…)`). Body
-is Summary + `Fixes #<issue_number>` (+ deferred issue links when needed). If a footer appears after create, remove it
-immediately with:
+is Summary + `Fixes #<issue_number>` (+ deferred issue links when needed). Prefer:
 
 ```bash
-uv run --project scripts/ai m42-ai pr-strip-footer --pr <pr_number>
+m42-ai issue-start --issue <issue_number> --channel <build|ci|docs> [--slug <slug>] --body-file /tmp/pr-body.md
+```
+
+with `/tmp/pr-body.md` like:
+
+```markdown
+## Summary
+- <what changed and why>
+
+Fixes #<issue_number>
+```
+
+If `--body-file` is omitted, the CLI default (title + commit subjects) is acceptable. Do **not** leave a
+`MVP scope: (fill in)` stub. If a footer appears after create, remove it immediately with:
+
+```bash
+m42-ai pr-strip-footer --pr <pr_number>
 ```
 
 Manual equivalent if the CLI is unavailable:
@@ -205,7 +228,7 @@ Manual equivalent if the CLI is unavailable:
    ```bash
    gh pr create --draft --base main --title "..." --body "$(cat <<'EOF'
    ## Summary
-   - MVP scope: …
+   - <what changed and why>
 
    Fixes #<issue_number>
    EOF
@@ -266,6 +289,34 @@ implementation — not only to review triage.
 happy-path contract. Do not expand the MVP with “also support worktrees / host X / legacy Y”. If that work is real but
 out of done-when, split via `/create-issue` (`relation: linked`) — do not sneak it into the MVP slice.
 
+## Handoff commit message
+
+Whenever this skill **pauses and returns control to the user** after it has left **uncommitted** changes in the working
+tree or index (propose artifacts, apply/implement edits, archive move/sync, Bug/Task fixes, etc.), the pause message
+**MUST** include a ready-to-use **Conventional Commits** subject (and a short body only when needed for multiple
+independent themes).
+
+Rules for that subject:
+
+- Follow fleet Conventional Commits + hard overrides in synced `.cursorrules` / `docs/quality.md` (scan the **full**
+  dirty/staged diff — not only the last hunk or OpenSpec folder title).
+- **OpenSpec archive / opsx-archive** (move under `openspec/changes/archive/` and/or sync into `openspec/specs/`) →
+  always `chore` (optional scope `openspec`), never `feat`.
+- Propose/apply planning-only trees → `chore` / `docs`, not `feat`, unless shipped runtime also changed in the same
+  tree.
+- Prefer an optional short scope when one area is clear from the paths.
+- Do **not** auto-commit. Do **not** tell the user to use Cursor Source Control sparkle for that handoff — paste or
+  `git commit -m '…'` / `-F` is enough.
+- If the pause has **no** dirty tree (explore-only lock-in, Discussion decision, auth wait), omit the commit-message
+  block.
+
+Format in the user-visible pause (example):
+
+```text
+Suggested commit message:
+fix(quality): soft-load MYPYPATH from product.env with file wins
+```
+
 ## Output to the user
 
 Provide:
@@ -277,3 +328,4 @@ Provide:
 - Draft PR URL when opened (or “PR deferred until real commits” / “skipped PR creation”)
 - Created sub-issue / linked-issue URLs (or none)
 - Reminder: user commits, pushes, and marks the PR ready; agent does not auto-commit fix commits
+- When applicable: the [Handoff commit message](#handoff-commit-message) block
