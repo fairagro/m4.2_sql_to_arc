@@ -30,6 +30,15 @@ repos:
 
   - repo: local
     hooks:
+      - id: commitlint
+        name: commitlint (Conventional Commits)
+        # Requires commit-msg stage: uv run pre-commit install --hook-type commit-msg
+        # pass_filenames must stay true (default): commit-msg stage passes the message file
+        # (COMMIT_EDITMSG / MERGE_MSG / SQUASH_MSG) so --edit lints that path, not a stale default.
+        entry: npx --no -- commitlint --edit
+        language: system
+        stages: [commit-msg]
+
       - id: ggshield
         name: ggshield secret scan
         # Fleet CLI via scripts/run-quality-cli.sh (no product pyproject dep required)
@@ -122,6 +131,14 @@ repos:
         files: \.(md|mdc)$
         pass_filenames: false
         exclude: ^\.agents/skills/(gh|docker|hadolint|uv|scan-secrets)/
+
+      - id: helm-lint
+        name: helm lint
+        # Discovers helmchart/<chart>/ and helm/<chart>/; no-op without charts (scripts/run-helm-lint.sh).
+        entry: bash scripts/run-helm-lint.sh
+        language: system
+        files: ^(helm|helmchart)/
+        pass_filenames: false
 
       - id: pytest
         name: pytest
