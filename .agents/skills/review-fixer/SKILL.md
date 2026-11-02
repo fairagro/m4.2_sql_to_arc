@@ -52,9 +52,9 @@ Do **not** commit. Do **not** push. Never create a git commit to obtain a SHA fo
 **First action — before any checklist, reply, or `fix` edit:**
 
 ```bash
-uv run --project scripts/ai m42-ai review-open --pr PR
+m42-ai review-open --pr PR
 # optional permalink scope:
-uv run --project scripts/ai m42-ai review-open --pr PR --review-id ID
+m42-ai review-open --pr PR --review-id ID
 ```
 
 Trust the CLI JSON (do not invent checkout workarounds):
@@ -74,8 +74,9 @@ Dirty on the PR head is allowed by the CLI. Paste-only triage without a PR does 
 2. Apply all `fix` changes locally only (working tree / index — no commit).
 3. Immediately reply + resolve for **`dismiss`** and **`follow-up`** (and open the follow-up issue if needed). These
    need no commit SHA.
-4. **Stop** before any `Fixed in …` reply. Show the user table, files changed, suggested commit message, and ask them to
-   commit (and push if the PR should see it). Wait for confirmation or a SHA.
+4. **Stop** before any `Fixed in …` reply. Show the user table, files changed, and a **required**
+   [Handoff commit message](#handoff-commit-message). Ask them to commit (and push if the PR should see it). Wait for
+   confirmation or a SHA.
 
 **Phase 2 — after the user commits**
 
@@ -89,8 +90,10 @@ a SHA.
 
 ## Auth (`gh`)
 
-Prefer `uv run --project scripts/ai m42-ai …` (works in Devinfra and product checkouts). Bare `uv run m42-ai` is only OK
-when `scripts/ai` is a root workspace member (Devinfra).
+Prefer `m42-ai …` when `scripts/bin` is on `PATH` (synced wrapper unsets conflicting `VIRTUAL_ENV`, then
+`uv run --project scripts/ai m42-ai`). Portable without the wrapper:
+`env -u VIRTUAL_ENV uv run --project scripts/ai m42-ai …`. Bare `uv run m42-ai` is only OK when `scripts/ai` is a root
+workspace member (Devinfra). Do **not** use `uv run --active` to silence the warning.
 
 `gh` is wrapped (`scripts/bin/gh`, on `PATH` in the Dev Container via `remoteEnv`). Missing `GH_TOKEN` prompts on
 `/dev/tty` and is saved to `/commandhistory/tokens.env` (Linux Dev Container only — see `docs/conventions.md`). The
@@ -108,7 +111,7 @@ do not invent them. Never ask the user to paste a PAT into chat.
 
    Then reply here when done (or decline).
 
-3. After they confirm, retry `uv run --project scripts/ai m42-ai auth-status` (or `gh auth status` / the GraphQL fetch).
+3. After they confirm, retry `m42-ai auth-status` (or `gh auth status` / the GraphQL fetch).
    If auth works, continue with fetch / replies / resolves as usual.
 4. Only if they decline or auth still fails: skip GitHub writes, print the intended replies/resolves, and stop that
    part. Still apply local code fixes when triage says `fix`.
@@ -278,10 +281,10 @@ On nit fixes only, append a plain line: `nit-lines this run: N` (budget tracking
 Prefer the CLI (auth still via `scripts/bin/gh` / `GH_TOKEN`):
 
 ```bash
-uv run --project scripts/ai m42-ai review-reply --pr PR --in-reply-to COMMENT_DATABASE_ID --body-file /tmp/reply.md
-uv run --project scripts/ai m42-ai review-resolve --thread-id THREAD_NODE_ID
+m42-ai review-reply --pr PR --in-reply-to COMMENT_DATABASE_ID --body-file /tmp/reply.md
+m42-ai review-resolve --thread-id THREAD_NODE_ID
 # summary-only / suppressed:
-uv run --project scripts/ai m42-ai review-reply --pr PR --conversation --body-file /tmp/reply.md
+m42-ai review-reply --pr PR --conversation --body-file /tmp/reply.md
 ```
 
 ## Follow-up issue
@@ -317,8 +320,29 @@ A table, one row per thread:
 **End of Phase 1:** files changed, tests run, dismiss/follow-up reply status, follow-up issue URL or “none”, **Fixed
 non-nit this run** (integer), and **Remaining risk** (integer, merge channel). If **Fixed non-nit this run: 0**, state
 explicitly that the **review cycle should stop** (abort criterion). If Fixed non-nit ≥ 1, do **not** abort — note that
-another finder pass is allowed after the fixes land. If any `fix` — “paused for your commit” with a suggested message.
-Do not claim Fixed replies are done yet.
+another finder pass is allowed after the fixes land. If any `fix` — “paused for your commit” plus the mandatory
+[Handoff commit message](#handoff-commit-message). Do not claim Fixed replies are done yet.
+
+## Handoff commit message
+
+Whenever this skill **pauses and returns control to the user** after it applied local `fix` edits (dirty working tree
+or index), the Phase-1 pause **MUST** include a ready-to-use **Conventional Commits** subject (short body only when
+multiple independent themes share one commit).
+
+Rules:
+
+- Follow fleet Conventional Commits + hard overrides in synced `.cursorrules` / `docs/quality.md` (full dirty/staged
+  diff).
+- Prefer an optional short scope when one area is clear from the paths.
+- Do **not** auto-commit. Do **not** steer the user to Cursor Source Control sparkle for this handoff.
+- Dismiss/follow-up-only runs with **no** local edits omit the commit-message block.
+
+Format:
+
+```text
+Suggested commit message:
+fix(docs): mention QUALITY_PATH_LOADED in ci and devcontainer prose
+```
 
 **GitHub Code Quality:** Threads from `github-code-quality` (see `code_quality_finding` on `review-open` JSON when
 enriched) are still open work, but **thread resolve ≠ Code Quality Dismiss finding**. After `dismiss` / `fix` +
