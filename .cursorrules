@@ -1,0 +1,34 @@
+# Cursor commit-message generation (sparkle)
+
+Fleet guidance for Cursor Source Control "Generate commit message". Newer `.cursor/rules` / `AGENTS.md` are not applied
+to that button today — this legacy file is. Keep in sync with `commitlint.config.cjs` and `docs/quality.md`.
+
+When generating a Git commit message for this repository:
+
+- Use Conventional Commits only: `type(optional-scope): subject`
+- Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, deps
+- Choose `type` from the **full staged diff**, not from OpenSpec change names, folder titles, or only the last hunk
+
+## Hard type overrides (apply before guessing feat)
+
+- **OpenSpec /opsx-archive is always `chore` (optional scope `openspec`), never `feat`.** If the staged diff moves a
+  change under `openspec/changes/archive/` and/or syncs delta specs into `openspec/specs/`, that commit is opsx cleanup —
+  even when main specs gain new `### Requirement:` text. New requirements in `openspec/specs/` from archive sync do
+  **not** mean type `feat` (that would falsely minor-bump Release `version_bump: auto`). Example:
+  `chore(openspec): archive <change-name> and sync specs`
+- Other opsx housekeeping alone (propose/apply planning files without shipping runtime) → `chore` / `docs`, not `feat`
+- `feat` / `fix` only when the commit changes **shipped** behaviour (workflows, scripts, runtime configs, product code)
+  — not planning trees alone
+
+## Other rules
+
+- **Prefer a short scope** naming the primary component or area when one is clear from the staged paths (e.g.
+  `fix(payload): …`, `feat(api): …`). Scope is encouraged for Release changelogs, but optional — there is no fleet
+  commitlint `scope-enum`; omit the scope when nothing clear fits
+- **Cover every intentional change in the commit.** Scan all touched paths; do not write a subject that only describes
+  one file when others also change behaviour. Prefer one subject that names the shared theme; if two+ independent fixes
+  share the commit, add a short body with one bullet per fix
+- Docs-only → `docs`; CI workflow wiring → `ci`; Renovate-style dependency bumps → `deps`
+- Breaking changes: `feat!:` / `fix!:` or a `BREAKING CHANGE:` footer
+- Subject: imperative mood, ~72 chars when possible, no trailing period — accuracy over brevity if the subject would
+  otherwise omit a real change
