@@ -137,11 +137,16 @@ default and may be omitted there.
 
 ### Trivy: licenses vs vulnerabilities
 
-**Binary pin:** `reusable-check.yml` (Licence Check + Security Check) and `reusable-release.yml` (release-body license
-scan) pass `version:` into `aquasecurity/trivy-action` from the **caller** checkout’s `versions.env` (`TRIVY_VERSION`),
-fail closed if missing — same SoT as the Dev Container / Renovate CLI pin. The Action **SHA** pin is independent:
-bumping `TRIVY_VERSION` moves the scanned binary without waiting for a new Action release. Products that temporarily
-vendor `reusable-check-local.yml` should mirror this wiring when syncing.
+**Trivy binary pin:** `reusable-check.yml` (Licence Check + Security Check) and `reusable-release.yml` (release-body
+license scan) pass `version:` into `aquasecurity/trivy-action` from the **caller** checkout’s `versions.env`
+(`TRIVY_VERSION`), fail closed if missing — same SoT as the Dev Container / Renovate CLI pin. The Action **SHA** pin is
+independent: bumping `TRIVY_VERSION` moves the scanned binary without waiting for a new Action release.
+
+**CST binary pin:** `reusable-check.yml` **Container Structure Tests** install the official `container-structure-test`
+release via `scripts/install-cst.sh` from the **caller** checkout’s `versions.env` (`CST_VERSION`), fail closed if
+missing — same SoT as the Dev Container / Renovate pin. This replaces the former
+`plexsystems/container-structure-test-action` (opaque bundled binary). Products that temporarily vendor
+`reusable-check-local.yml` should mirror both wirings when syncing.
 
 - **Licences (report-only):** `reusable-check` **Licence Check** still runs Trivy `scanners: license` and uploads a JSON
   artifact, but **does not fail** the job on findings (Alpine base GPL / `restricted` is expected). When
