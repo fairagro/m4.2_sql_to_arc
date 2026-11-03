@@ -6,6 +6,9 @@
   // Test roots: each repo pyproject.toml testpaths — keep python.testing.pytestArgs empty so discovery
   // is not overridden.
 
+  // Allow JSON language service to fetch SchemaStore schemas (e.g. package.json $schema).
+  "json.schemaDownload.enable": true,
+
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python-envs.defaultEnvManager": "ms-python.python:venv",
 
@@ -102,5 +105,13 @@
   ],
   "cursorpyright.analysis.extraPaths": [
     "${workspaceFolder}/scripts/ai/src"
+  ],
+
+  // Conventional Commits for release version_bump=auto — VS Code Copilot only.
+  // Cursor SCM sparkle uses repo-root `.cursorrules` (not this key). See docs/quality.md.
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "text": "Use Conventional Commits: type(optional-scope): subject. Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, deps. HARD OVERRIDE: if the staged diff is /opsx-archive (move under openspec/changes/archive/ and/or sync deltas into openspec/specs/), type MUST be chore (optional scope openspec), NEVER feat — even when openspec/specs gains new Requirement text (false minor bump for version_bump=auto). Example: chore(openspec): archive <name> and sync specs. feat/fix only for shipped runtime behaviour (workflows/scripts/product code), not planning trees alone. Prefer optional short scope when clear (e.g. fix(payload): …); no fleet scope-enum. Cover full staged diff. Docs-only → docs; CI → ci; Renovate → deps. Breaking: feat!: or BREAKING CHANGE:. Subject imperative, no trailing period."
+    }
   ]
 }
