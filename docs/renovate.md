@@ -10,6 +10,19 @@ product repos ([#13](https://github.com/fairagro/m4.2_middleware_devinfra/issues
 
 **Do not** hand-edit these after sync in product checkouts — see [`docs/synced-paths.yaml`](synced-paths.yaml).
 
+## Workflow must not pass `configurationFile: renovate.json`
+
+[`renovatebot/github-action`](https://github.com/renovatebot/github-action) treats `configurationFile` as **global**
+config (`RENOVATE_CONFIG_FILE`). Renovate still loads the cloned repo’s `renovate.json` as **repository** config.
+`customManagers` is mergeable, so the same regex managers are registered twice → Dependency Extraction `regex`
+`fileCount` ≈ 2× pins, then `Cannot find replaceString` / `Error updating branch: update failure` on `versions.env-*`
+branches (Dependency Dashboard #80).
+
+The shared workflow therefore passes only `token` and lets Renovate discover in-repo `renovate.json` once. If you need a
+separate global/bot config file, name it something that is **not** a
+[repository config filename](https://docs.renovatebot.com/configuration-options/) (e.g. `renovate-global.json`) and keep
+repo rules in `renovate.json` only.
+
 ## GitHub Actions secret: `DEVINFRA_BOT_TOKEN`
 
 The workflow does **not** use SOPS and does **not** rely on `GITHUB_TOKEN` alone.
@@ -78,7 +91,7 @@ match (or set `RENOVATE_GIT_AUTHOR` in the workflow instead).
 
 The Dev Container pins the **Renovate npm CLI** via `RENOVATE_VERSION` in [`versions.env`](../versions.env) (`renovate`
 on `PATH`). That pin is for local dry-runs only. CI runs
-[`renovatebot/github-action`](../.github/workflows/renovate.yml) at its own Action version (currently `v46.2.6`) — keep
+[`renovatebot/github-action`](../.github/workflows/renovate.yml) at its own Action version (currently `v46.3.12`) — keep
 the Action major aware of the CLI major when bumping either pin; they are not the same artifact.
 
 The **npm CLI** itself is pinned as `NPM_VERSION` in `versions.env` (regex custom manager, `datasourceTemplate: npm`).
@@ -86,20 +99,26 @@ It is independent of `NODE_VERSION` (Node tarball). Bump npm in Devinfra via Ren
 product checkouts.
 
 **Grouping (`versions.env` SoT):** updates that touch `versions.env` / `.python-version` are split so one stale branch
-cannot abort the whole toolchain (#316):
+cannot abort the whole toolchain (#316 / Dependency Dashboard #80):
 
-| Group                            | Contents                                                                                          |
-| -------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `versions.env mirrored npm pins` | `prettier` / `markdownlint-cli2` in `package.json` / lock **and** their `versions.env` regex pins |
-| `versions.env uv pin`            | `UV_VERSION` only (keeps `vulnerabilityAlerts` uv bumps off the daily CLI mega-branch)            |
-| `versions.env CLI pins`          | Remaining `versions.env` / `.python-version` pins (CLIs, Node, OpenSpec, Renovate, …)             |
+| Group                            | Contents                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `versions.env mirrored npm pins` | `prettier` / `markdownlint-cli2` in `package.json` / lock **and** their `versions.env` regex pins     |
+| `versions.env uv pin`            | `UV_VERSION` only (keeps `vulnerabilityAlerts` uv bumps off the daily CLI mega-branch)                |
+| `versions.env runtime pins`      | `python` (incl. `.python-version`), `node`, `npm`, `alpine`, `pip`, `pyinstaller`, Dev Container base |
+| `versions.env CLI pins`          | Remaining `versions.env` tool pins (kubectl/helm/trivy/…, OpenSpec, Renovate CLI, …)                  |
 
-All three use **`recreateWhen: always`** so Renovate recreates the group branch from base instead of patching an
-inconsistent branch (`Cannot find replaceString` / `update failure`). Mirrored npm stays one group so Prettier /
-markdownlint SoT cannot diverge from the lockfile. `NPM_VERSION` / `RENOVATE_VERSION` / `OPENSPEC_VERSION` live only in
-`versions.env` (not in `package.json`) and stay in the CLI-pins group. Other managers (Actions, Dockerfiles outside
-those files) keep their own groups. Product Renovate still has those synced files **disabled** (bump in Devinfra, then
-sync).
+All four use **`recreateWhen: always`** so Renovate recreates the group branch from base instead of patching an
+inconsistent branch (`Cannot find replaceString` / `update failure`). The former single “CLI pins” mega-branch mixed
+runtime + tool bumps and failed when a mid-group replace missed an already-updated string (#80). Mirrored npm stays one
+group so Prettier / markdownlint SoT cannot diverge from the lockfile. `NPM_VERSION` lives in the **runtime** group;
+`RENOVATE_VERSION` / `OPENSPEC_VERSION` stay in the CLI-pins group (not in `package.json`).
+
+**Symlink:** `.devcontainer/.env` → `versions.env` is Compose SoT only. It is listed in Renovate `ignorePaths` so the
+regex managers do not scan the same pin file twice via the symlink (duplicate Detection / double apply).
+
+Other managers (Actions, Dockerfiles outside those files) keep their own groups. Product Renovate still has those synced
+files **disabled** (bump in Devinfra, then sync).
 
 From the repo root (no PR creation):
 
@@ -188,9 +207,11 @@ ARG CA_CERTIFICATES_VERSION=20260611-r0
 RUN apk add --no-cache "ca-certificates=${CA_CERTIFICATES_VERSION}"
 ```
 
-`ARG FOO_BAR_VERSION` maps to apk package `foo-bar`. Do **not** use inline literals `pkg=X.Y.Z-rN` (style A) — the
-updater fails loud if it finds them. Toolchain pins (`PYTHON_VERSION`, …) stay in `versions.env`, not as apk ARG
-defaults.
+`ARG FOO_BAR_VERSION` maps to apk package `foo-bar` when that name exists in APKINDEX. If the derived name is missing
+(e.g. `LIBSTDCXX_VERSION` → `libstdcxx`), the updater resolves the package from the first `"pkg=${ARG}"` / `pkg=${ARG}`
+usage in the same Dockerfile, then from a small override map (`LIBSTDCXX_VERSION` → `libstdc++`). Do **not** use inline
+literals `pkg=X.Y.Z-rN` (style A) — the updater fails loud if it finds them. Toolchain pins (`PYTHON_VERSION`, …) stay
+in `versions.env`, not as apk ARG defaults.
 
 For those pins, run the synced helper:
 
