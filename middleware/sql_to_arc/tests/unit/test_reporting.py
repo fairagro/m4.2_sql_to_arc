@@ -19,6 +19,7 @@ def test_finished_report_uses_shared_jsonld_vocabulary() -> None:
     report = HarvestReport(
         name="SQL to ARC Conversion Run",
         start_time=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        software_version="1.2.3",
     )
     scope = report.open_repository("edaphobase")
     scope.set_expected_datasets(expected_datasets)
@@ -32,6 +33,8 @@ def test_finished_report_uses_shared_jsonld_vocabulary() -> None:
 
     assert doc["@type"] == "schema:Action"
     assert doc["name"] == "SQL to ARC Conversion Run"
+    assert doc["schema:instrument"]["@type"] == "schema:SoftwareApplication"
+    assert doc["schema:instrument"]["schema:softwareVersion"] == "1.2.3"
     assert "schema:startTime" in doc
     assert "schema:endTime" in doc
     entry = doc["schema:result"][0]
