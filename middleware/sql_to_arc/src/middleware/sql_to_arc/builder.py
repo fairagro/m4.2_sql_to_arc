@@ -20,7 +20,6 @@ from arctrl.py.Core.Table.composite_cell import Data
 from middleware.shared.json_types import JsonValue
 from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.mapper import (
-    _make_oa,
     map_assay,
     map_contact,
     map_investigation,
@@ -34,7 +33,7 @@ from middleware.sql_to_arc.models import (
     PublicationRow,
     StudyRow,
 )
-from middleware.sql_to_arc.ontology import OntologySourceRegistry
+from middleware.sql_to_arc.ontology import OntologySourceRegistry, make_ontology_annotation
 
 
 @dataclass
@@ -362,7 +361,7 @@ def _build_header(
     """Build a CompositeHeader from a column key tuple."""
     c_type, c_io, c_val, c_ann_term, c_ann_uri, c_ann_ver, c_name = key
     try:
-        oa = _make_oa(c_ann_term, c_ann_uri, c_ann_ver, registry)
+        oa = make_ontology_annotation(c_ann_term, c_ann_uri, c_ann_ver, registry)
 
         if c_type in {"input", "output"} and not c_io:
             default_io = "Source Name" if c_type == "input" else "Sample Name"
@@ -413,11 +412,11 @@ def _build_single_cell(
 
     # Unitized cell (value + ontology term)
     if cv is not None and cat is not None:
-        return CompositeCell.unitized(str(cv), _make_oa(cat, cau, cav, registry))
+        return CompositeCell.unitized(str(cv), make_ontology_annotation(cat, cau, cav, registry))
 
     # Term cell (ontology term only)
     if cat is not None:
-        return CompositeCell.term(_make_oa(cat, cau, cav, registry))
+        return CompositeCell.term(make_ontology_annotation(cat, cau, cav, registry))
 
     # Data cell (file path) — required when header is a Data-type IO column
     if header.IsDataColumn:
@@ -428,7 +427,7 @@ def _build_single_cell(
     if val_to_use is not None:
         if header.IsTermColumn:
             # If the column expects a term, wrap the text in an annotation
-            return CompositeCell.term(_make_oa(str(val_to_use), None, None, registry))
+            return CompositeCell.term(make_ontology_annotation(str(val_to_use), None, None, registry))
         return CompositeCell.free_text(str(val_to_use))
 
     return CompositeCell.free_text("")

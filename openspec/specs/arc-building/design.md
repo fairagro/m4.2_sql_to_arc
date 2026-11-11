@@ -57,10 +57,11 @@ build_single_arc_task(data)
    processes from accumulating memory across many investigations.
 
 5. **OntologySourceReference from URI + version** — `OntologyAnnotation` is built only from view triples (`term`→`name`,
-   `uri`→`tan`). `TermSourceREF` (`tsr`) is the ontology short name derived from the term-accession URI (OBO/purl
-   `PREFIX_digits`). `xxx_version` is stored on a matching `OntologySourceReference` (unique per `(name, version)`) on
-   the investigation, not on the annotation. Unparseable/missing URI → empty `tsr`, no OSR. Note: arctrl RO-Crate export
-   may omit the `ontologySourceReferences` array while preserving annotation `tsr`.
+   `uri`→`tan`). `TermSourceREF` (`tsr`) is the ontology short name derived from the term-accession URI: uppercase
+   OBO/purl `PREFIX_digits` as the final path segment (e.g. `…/ENVO_00002001`). `xxx_version` is stored on a matching
+   `OntologySourceReference` (unique per `(name, version)`) on the investigation, not on the annotation.
+   Unparseable/missing URI → empty `tsr`, no OSR. Note: arctrl RO-Crate export may omit the `ontologySourceReferences`
+   array while preserving annotation `tsr`.
 
 ## OntologyAnnotation Mapping Convention
 

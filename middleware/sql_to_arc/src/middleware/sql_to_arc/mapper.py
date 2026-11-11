@@ -6,7 +6,6 @@ from arctrl import (
     ArcAssay,
     ArcInvestigation,
     ArcStudy,
-    OntologyAnnotation,
     Person,
     Publication,
 )
@@ -18,31 +17,10 @@ from middleware.sql_to_arc.models import (
     PublicationRow,
     StudyRow,
 )
-from middleware.sql_to_arc.ontology import OntologySourceRegistry, derive_ontology_source_name
+from middleware.sql_to_arc.ontology import OntologySourceRegistry, make_ontology_annotation
 
-
-def _make_oa(
-    term: str | None,
-    uri: str | None,
-    version: str | None,
-    registry: OntologySourceRegistry | None = None,
-) -> OntologyAnnotation:
-    """Map a view ontology triple to OntologyAnnotation; optionally register an OSR.
-
-    Does not invent terms or URIs when absent. TermSourceREF is set only when a source
-    short name can be derived from the URI. An OntologySourceReference is registered
-    when both a derived source name and a non-empty version are present.
-    """
-    if not term:
-        return OntologyAnnotation()
-
-    source = derive_ontology_source_name(uri)
-    if registry is not None and source is not None and version and version.strip():
-        registry.register(source, version.strip())
-
-    if source is not None:
-        return OntologyAnnotation(name=term, tan=uri or "", tsr=source)
-    return OntologyAnnotation(name=term, tan=uri or "")
+# Mapper-local alias; shared implementation lives in ontology.py.
+_make_oa = make_ontology_annotation
 
 
 def _format_date(d: datetime | None) -> str | None:
