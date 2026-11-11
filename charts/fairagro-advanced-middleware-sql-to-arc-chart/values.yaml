@@ -24,7 +24,7 @@ postgres:
     # ~0.9Gi SQL dump expands to several Gi of heap+indexes; bulk COPY also
     # writes WAL until checkpoint. 10Gi was enough for data but not for WAL
     # spikes during import (OOM/crash under memory pressure is worse, but
-    # ENOSPC can abort the same COPY). 30Gi leaves headroom for both.
+    # ENOSPC can abort the same COPY). 20Gi leaves headroom for both.
     size: 20Gi
     storageClass: ""
   resources:
@@ -79,6 +79,8 @@ bootstrap:
       memory: 2Gi
 
 # -- Converter Job / CronJob
+# -- When enabling job/cronjob, also set tls.enabled=true and tls.clientCert/clientKey
+# -- (SOPS overlay); config.api_client still points at tls.mountPath PEM paths.
 converter:
   job:
     enabled: false

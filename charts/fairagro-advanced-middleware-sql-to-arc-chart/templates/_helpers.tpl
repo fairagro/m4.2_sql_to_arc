@@ -57,9 +57,16 @@ Operator-managed credentials Secret for the app DB user.
 {{- end }}
 
 {{- define "fairagro-advanced-middleware-sql-to-arc-chart.tlsSecretName" -}}
-{{- printf "%s-tls" (include "fairagro-advanced-middleware-sql-to-arc-chart.fullname" .) }}
+{{- printf "%s-tls" (include "fairagro-advanced-middleware-sql-to-arc-chart.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{- define "fairagro-advanced-middleware-sql-to-arc-chart.configMapName" -}}
-{{- printf "%s-config" (include "fairagro-advanced-middleware-sql-to-arc-chart.fullname" .) }}
+{{- printf "%s-config" (include "fairagro-advanced-middleware-sql-to-arc-chart.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Job/CronJob metadata.name — truncate after -convert so long release+chart fullnames stay ≤63.
+*/}}
+{{- define "fairagro-advanced-middleware-sql-to-arc-chart.converterJobName" -}}
+{{- printf "%s-convert" (include "fairagro-advanced-middleware-sql-to-arc-chart.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}

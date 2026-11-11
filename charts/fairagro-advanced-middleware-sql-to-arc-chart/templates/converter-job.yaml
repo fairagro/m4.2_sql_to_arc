@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "fairagro-advanced-middleware-sql-to-arc-chart.fullname" . }}-convert
+  name: {{ include "fairagro-advanced-middleware-sql-to-arc-chart.converterJobName" . }}
   labels:
     {{- include "fairagro-advanced-middleware-sql-to-arc-chart.labels" . | nindent 4 }}
     app.kubernetes.io/component: converter
