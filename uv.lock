@@ -692,6 +692,18 @@ wheels = [
 ]
 
 [[package]]
+name = "fairagro-middleware-arc-validation"
+version = "14.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "arctrl" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/49/78/9df5a25bf1bbef12fc68d563ed5d0adfd1208447699ddfcf07245131f5c3/fairagro_middleware_arc_validation-14.2.0.tar.gz", hash = "sha256:5e07fb29cc3d54deff36eb931af5e9321c01e49a332827ad895163c14eb7626a", size = 7274, upload-time = "2026-11-05T16:21:28.122Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/22/65a440fe7780e986cfacb9ae67b3b457cc3af6a9476287b755b40af92adf/fairagro_middleware_arc_validation-14.2.0-py3-none-any.whl", hash = "sha256:d7d69716333e998cfe9ad9dc9380e40375b3de1042444844bd907e5eb16dfb26", size = 6939, upload-time = "2026-11-05T16:21:27.094Z" },
+]
+
+[[package]]
 name = "fairagro-middleware-shared"
 version = "14.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2012,6 +2024,11 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "fairagro-middleware-arc-validation" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiomysql", specifier = ">=0.2.0" },
@@ -2025,6 +2042,9 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.51" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "fairagro-middleware-arc-validation", specifier = ">=14.2.0" }]
 
 [[package]]
 name = "sqlalchemy"
