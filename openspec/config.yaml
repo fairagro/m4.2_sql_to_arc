@@ -19,6 +19,8 @@ context: |
       cross-cutting / project-level
     sql-to-arc-conversion, arc-building, database-access, api-upload —
       converter internals (code under middleware/sql_to_arc/)
+    arc-export-validation —
+      DataHUB-equivalent arc-export fixture gate (system_local + CI)
 
   Hard constraints (also in openspec/specs/principles/):
     - No os.environ in app code; use Config / ConfigWrapper (prefix SQL_TO_ARC)
