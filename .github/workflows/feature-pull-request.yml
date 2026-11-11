@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.changes.outputs.code }}
+      helm: ${{ steps.changes.outputs.helm }}
     steps:
       - uses: actions/checkout@v7
 
@@ -42,6 +43,10 @@ jobs:
               - '.bandit'
               - 'dev_environment/**'
               - 'versions.env'
+              # Do NOT put chart paths only here — that forces Docker build/check
+              # without a separate Helm lint job.
+            helm:
+              - 'charts/**'
 
   code-quality:
     name: Code Quality
@@ -76,4 +81,13 @@ jobs:
       components: '["sql_to_arc"]'
       image_base_name: fairagro-advanced-middleware
       skip: ${{ needs.detect-changes.outputs.code != 'true' || needs.build.result != 'success' }}
+    secrets: inherit
+
+  helm-lint:
+    name: Helm Lint
+    needs: [detect-changes]
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-helm-lint.yml@main
+    with:
+      chart_dir: charts/fairagro-advanced-middleware-sql-to-arc-chart
+      skip: ${{ needs.detect-changes.outputs.helm != 'true' }}
     secrets: inherit
