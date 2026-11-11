@@ -4,6 +4,7 @@ import gc
 import json
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 
 from arctrl import (
     ARC,
@@ -13,13 +14,13 @@ from arctrl import (
     CompositeCell,
     CompositeHeader,
     IOType,
-    OntologyAnnotation,
 )
 from arctrl.py.Core.Table.composite_cell import Data
 
 from middleware.shared.json_types import JsonValue
 from middleware.sql_to_arc.context import ArcBuildData
 from middleware.sql_to_arc.mapper import (
+    _make_oa,
     map_assay,
     map_contact,
     map_investigation,
@@ -33,6 +34,17 @@ from middleware.sql_to_arc.models import (
     PublicationRow,
     StudyRow,
 )
+from middleware.sql_to_arc.ontology import OntologySourceRegistry
+
+
+@dataclass
+class _BuildContext:
+    """Shared study/assay maps and ontology registry for one ARC assemble."""
+
+    study_map: dict[str, ArcStudy]
+    assay_map: dict[str, ArcAssay]
+    registry: OntologySourceRegistry
+
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +181,7 @@ def _add_assays_to_arc(
     investigation_id: str,
     assay_rows: list[AssayRow],
     study_map: dict[str, ArcStudy],
+    registry: OntologySourceRegistry,
 ) -> dict[str, ArcAssay]:
     """Add assays to ARC, link to studies, and return assay map."""
     assay_map: dict[str, ArcAssay] = {}
@@ -189,7 +202,7 @@ def _add_assays_to_arc(
             _link_assay_to_studies(assay_map[assay_id], a_row.study_ref, study_map)
             continue
 
-        assay = map_assay(a_row)
+        assay = map_assay(a_row, registry)
         arc.AddAssay(assay)
         assay_map[assay_id] = assay
         assay_row_by_id[assay_id] = a_row
@@ -248,8 +261,7 @@ def _add_contacts_to_arc(
     arc: ARC,
     inv_id: str,
     contacts: list[ContactRow],
-    study_map: dict[str, ArcStudy],
-    assay_map: dict[str, ArcAssay],
+    ctx: _BuildContext,
 ) -> None:
     """Add contacts to investigation, studies, and assays."""
     # Investigation contacts
@@ -257,10 +269,10 @@ def _add_contacts_to_arc(
         c for c in contacts if str(c.investigation_ref) == inv_id and getattr(c, "target_type", None) == "investigation"
     ]
     for c_row in inv_contacts:
-        arc.Contacts.append(map_contact(c_row))
+        arc.Contacts.append(map_contact(c_row, ctx.registry))
 
     # Study contacts
-    for s_id, study in study_map.items():
+    for s_id, study in ctx.study_map.items():
         stu_contacts = [
             c
             for c in contacts
@@ -269,10 +281,10 @@ def _add_contacts_to_arc(
             and str(getattr(c, "target_ref", None)) == s_id
         ]
         for c_row in stu_contacts:
-            study.Contacts.append(map_contact(c_row))
+            study.Contacts.append(map_contact(c_row, ctx.registry))
 
     # Assay contacts
-    for a_id, assay in assay_map.items():
+    for a_id, assay in ctx.assay_map.items():
         ass_contacts = [
             c
             for c in contacts
@@ -281,7 +293,7 @@ def _add_contacts_to_arc(
             and str(getattr(c, "target_ref", None)) == a_id
         ]
         for c_row in ass_contacts:
-            assay.Performers.append(map_contact(c_row))
+            assay.Performers.append(map_contact(c_row, ctx.registry))
 
     inv_contacts_for_warnings = [c for c in contacts if str(c.investigation_ref) == inv_id]
     _log_edaphobase_contact_warnings(
@@ -295,7 +307,7 @@ def _add_publications_to_arc(
     arc: ARC,
     inv_id: str,
     publications: list[PublicationRow],
-    study_map: dict[str, ArcStudy],
+    ctx: _BuildContext,
 ) -> None:
     """Add publications to investigation and studies."""
     # Investigation publications
@@ -305,10 +317,10 @@ def _add_publications_to_arc(
         if str(p.investigation_ref) == inv_id and getattr(p, "target_type", None) == "investigation"
     ]
     for p_row in inv_pubs:
-        arc.Publications.append(map_publication(p_row))
+        arc.Publications.append(map_publication(p_row, ctx.registry))
 
     # Study publications
-    for s_id, study in study_map.items():
+    for s_id, study in ctx.study_map.items():
         stu_pubs = [
             p
             for p in publications
@@ -317,7 +329,7 @@ def _add_publications_to_arc(
             and str(getattr(p, "target_ref", None)) == s_id
         ]
         for p_row in stu_pubs:
-            study.Publications.append(map_publication(p_row))
+            study.Publications.append(map_publication(p_row, ctx.registry))
 
 
 # Maps DB schema column_io_type values (snake_case DB contract) to the canonical
@@ -343,11 +355,14 @@ def _get_column_key(r: AnnotationTableRow) -> AnnotationColumnKey:
     )
 
 
-def _build_header(key: AnnotationColumnKey) -> CompositeHeader | None:
+def _build_header(
+    key: AnnotationColumnKey,
+    registry: OntologySourceRegistry | None = None,
+) -> CompositeHeader | None:
     """Build a CompositeHeader from a column key tuple."""
     c_type, c_io, c_val, c_ann_term, c_ann_uri, c_ann_ver, c_name = key
     try:
-        oa = OntologyAnnotation(c_ann_term or "", c_ann_uri or "", c_ann_ver or "")
+        oa = _make_oa(c_ann_term, c_ann_uri, c_ann_ver, registry)
 
         if c_type in {"input", "output"} and not c_io:
             default_io = "Source Name" if c_type == "input" else "Sample Name"
@@ -385,20 +400,24 @@ def _build_header(key: AnnotationColumnKey) -> CompositeHeader | None:
     return None
 
 
-def _build_single_cell(cell_row: AnnotationTableRow, header: CompositeHeader) -> CompositeCell:
+def _build_single_cell(
+    cell_row: AnnotationTableRow,
+    header: CompositeHeader,
+    registry: OntologySourceRegistry | None = None,
+) -> CompositeCell:
     """Build a single CompositeCell from a database row."""
     cv = cell_row.cell_value
     cat = cell_row.cell_annotation_term
-    cau = cell_row.cell_annotation_uri or ""
-    cav = cell_row.cell_annotation_version or ""
+    cau = cell_row.cell_annotation_uri
+    cav = cell_row.cell_annotation_version
 
     # Unitized cell (value + ontology term)
     if cv is not None and cat is not None:
-        return CompositeCell.unitized(str(cv), OntologyAnnotation(cat, cau, cav))
+        return CompositeCell.unitized(str(cv), _make_oa(cat, cau, cav, registry))
 
     # Term cell (ontology term only)
     if cat is not None:
-        return CompositeCell.term(OntologyAnnotation(cat, cau, cav))
+        return CompositeCell.term(_make_oa(cat, cau, cav, registry))
 
     # Data cell (file path) — required when header is a Data-type IO column
     if header.IsDataColumn:
@@ -409,14 +428,17 @@ def _build_single_cell(cell_row: AnnotationTableRow, header: CompositeHeader) ->
     if val_to_use is not None:
         if header.IsTermColumn:
             # If the column expects a term, wrap the text in an annotation
-            return CompositeCell.term(OntologyAnnotation(str(val_to_use), "", ""))
+            return CompositeCell.term(_make_oa(str(val_to_use), None, None, registry))
         return CompositeCell.free_text(str(val_to_use))
 
     return CompositeCell.free_text("")
 
 
 def _build_column_cells(
-    rows_map: dict[int, AnnotationTableRow], max_row_idx: int, header: CompositeHeader
+    rows_map: dict[int, AnnotationTableRow],
+    max_row_idx: int,
+    header: CompositeHeader,
+    registry: OntologySourceRegistry,
 ) -> list[CompositeCell]:
     """Build a list of CompositeCell objects for a column."""
     col_cells = []
@@ -425,11 +447,15 @@ def _build_column_cells(
         if not cell_row:
             col_cells.append(CompositeCell.free_text(""))
         else:
-            col_cells.append(_build_single_cell(cell_row, header))
+            col_cells.append(_build_single_cell(cell_row, header, registry))
     return col_cells
 
 
-def _build_arc_table(t_name: str, rows: list[AnnotationTableRow]) -> ArcTable | None:
+def _build_arc_table(
+    t_name: str,
+    rows: list[AnnotationTableRow],
+    registry: OntologySourceRegistry,
+) -> ArcTable | None:
     """Build an ArcTable from flat database rows."""
     if not rows:
         return None
@@ -453,12 +479,12 @@ def _build_arc_table(t_name: str, rows: list[AnnotationTableRow]) -> ArcTable | 
         col_to_rows[key][r.row_index] = r
 
     for key in col_keys:
-        header = _build_header(key)
+        header = _build_header(key, registry)
         if not header:
             continue
 
         # Build Cells for this column
-        col_cells = _build_column_cells(col_to_rows[key], max_row_idx, header)
+        col_cells = _build_column_cells(col_to_rows[key], max_row_idx, header, registry)
         table.AddColumn(header, col_cells)
 
     return table
@@ -467,8 +493,7 @@ def _build_arc_table(t_name: str, rows: list[AnnotationTableRow]) -> ArcTable | 
 def _process_annotation_tables(
     inv_id: str,
     annotations: list[AnnotationTableRow],
-    study_map: dict[str, ArcStudy],
-    assay_map: dict[str, ArcAssay],
+    ctx: _BuildContext,
 ) -> None:
     """Process and add annotation tables."""
     tables_groups: dict[AnnotationTableKey, list[AnnotationTableRow]] = defaultdict(list)
@@ -483,12 +508,12 @@ def _process_annotation_tables(
 
         target = None
         if t_type == "study" and isinstance(t_ref, str):
-            target = study_map.get(t_ref)
+            target = ctx.study_map.get(t_ref)
         elif t_type == "assay" and isinstance(t_ref, str):
-            target = assay_map.get(t_ref)
+            target = ctx.assay_map.get(t_ref)
 
         if target:
-            table = _build_arc_table(t_name, rows)
+            table = _build_arc_table(t_name, rows, ctx.registry)
             if table:
                 target.AddTable(table)
         else:
@@ -500,46 +525,40 @@ def _process_annotation_tables(
             )
 
 
+def _assemble_arc(data: ArcBuildData) -> ARC:
+    """Assemble an ARC object model (including OntologySourceReferences) from build data."""
+    inv_id = str(data.investigation_row.identifier)
+    arc_inv = map_investigation(data.investigation_row)
+    arc = ARC.from_arc_investigation(arc_inv)
+    ontology_registry = OntologySourceRegistry()
+
+    relevant_studies = [s for s in data.studies if str(s.investigation_ref) == inv_id]
+    relevant_assays = [a for a in data.assays if str(a.investigation_ref) == inv_id]
+
+    study_map = _add_studies_to_arc(arc, investigation_id=inv_id, study_rows=relevant_studies)
+    assay_map = _add_assays_to_arc(arc, inv_id, relevant_assays, study_map, ontology_registry)
+    ctx = _BuildContext(study_map=study_map, assay_map=assay_map, registry=ontology_registry)
+
+    _add_contacts_to_arc(arc, inv_id, data.contacts, ctx)
+    _add_publications_to_arc(arc, inv_id, data.publications, ctx)
+    _process_annotation_tables(inv_id, data.annotations, ctx)
+
+    ontology_registry.apply_to_investigation(arc)
+    return arc
+
+
 def build_single_arc_task(data: ArcBuildData) -> str:
     """Build a single ARC object from data.
 
     This function is designed to run in a separate process.
     It returns the JSON representation to minimize memory footprint in the main process.
     """
-    inv_id = str(data.investigation_row.identifier)
-
     try:
-        # Map Investigation and create ARC
-        arc_inv = map_investigation(data.investigation_row)
-        arc = ARC.from_arc_investigation(arc_inv)
-
-        # Identify relevant studies and assays
-        relevant_studies = [s for s in data.studies if str(s.investigation_ref) == inv_id]
-        relevant_assays = [a for a in data.assays if str(a.investigation_ref) == inv_id]
-
-        # Add studies and assays
-        study_map = _add_studies_to_arc(arc, investigation_id=inv_id, study_rows=relevant_studies)
-        assay_map = _add_assays_to_arc(arc, inv_id, relevant_assays, study_map)
-
-        # Add contacts and publications
-        _add_contacts_to_arc(arc, inv_id, data.contacts, study_map, assay_map)
-        _add_publications_to_arc(arc, inv_id, data.publications, study_map)
-
-        # Process annotation tables
-        _process_annotation_tables(inv_id, data.annotations, study_map, assay_map)
-
-        # Serialize immediately in the worker process
+        arc = _assemble_arc(data)
         json_str: str = arc.ToROCrateJsonString()
-
-        # Explicitly clean up memory before returning
         del arc
-        del arc_inv
-        del study_map
-        del assay_map
         gc.collect()
-
         return json_str
-
     except Exception:
         gc.collect()
         raise

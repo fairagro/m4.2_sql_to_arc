@@ -10,7 +10,7 @@ derive `OntologySourceReference.Name` / `OA.tsr` from the term-accession URI; pu
 - Non-empty `ArcInvestigation.OntologySourceReferences` when the DB provides ontology version (and a derivable source
   name from URI).
 - `OntologyAnnotation.tsr` matches the corresponding OSR `Name`.
-- Serialized RO-Crate includes a populated `ontologySourceReferences` array in that case.
+- TermSourceREF on annotations is preserved through `ToROCrateJsonString` when set.
 - Fix annotation-table builder misuse of positional `OntologyAnnotation(term, uri, version)` (version was landing in
   `tsr`).
 
@@ -37,6 +37,15 @@ derive `OntologySourceReference.Name` / `OA.tsr` from the term-accession URI; pu
    versions; wire the model fields through. Contact roles already have `version` in JSON.
 
 5. **Replace KD5** — reasoning: “no OSR” is obsolete; document URI derivation + version-on-OSR instead.
+   **Sync-on-archive text for `openspec/specs/arc-building/design.md` KD5 + mapping line:**
+
+   > 5. **OntologySourceReference from URI + version** — `OntologyAnnotation` is built only from view triples
+   >    (`term`→`name`, `uri`→`tan`). `TermSourceREF` (`tsr`) is the ontology short name derived from the term-accession
+   >    URI (OBO/purl `PREFIX_digits`). `xxx_version` is stored on a matching `OntologySourceReference` (unique per
+   >    `(name, version)`) on the investigation, not on the annotation. Unparseable/missing URI → empty `tsr`, no OSR.
+   >    Note: arctrl RO-Crate export may omit the `ontologySourceReferences` array while preserving annotation `tsr`.
+
+   > `xxx_version` → `OntologySourceReference.version` (with URI-derived `Name` / OA `tsr`)
 
 ## Risks / Trade-offs
 
@@ -44,6 +53,9 @@ derive `OntologySourceReference.Name` / `OA.tsr` from the term-accession URI; pu
 - [Conflicting file/description for same name+version] → Mitigate: first-wins or URI-as-file only; keep MVP minimal
   (`name`, `version`, optional `file` from ontology IRI if known).
 - [Builder positional OA args] → Mitigate: switch to kwargs `name=` / `tan=` / `tsr=` with version only on OSR.
+- [arctrl RO-Crate omits OSR array] → `ToROCrateJsonString` (arctrl 3.2.3) preserves annotation `TermSourceREF` but does
+  not emit / round-trip `ontologySourceReferences`. Contract is the ARC object model before serialize; document on
+  archive when syncing KD5. Revisit if a later arctrl release serializes OSRs into RO-Crate.
 
 ## Migration Plan
 
