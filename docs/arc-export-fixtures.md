@@ -29,8 +29,9 @@ Base image digest SoT: `middleware/sql_to_arc/tests/system_local/arc-export-base
 both read it). Override the final image anytime:
 
 ```bash
-export FAIRAGRO_ARC_EXPORT_IMAGE='ghcr.io/nfdi4plants/arc-export@sha256:…'  # only if PATH is fixed
-# or any image where `arc-export` is on PATH
+# Must be an image where the command `arc-export` is on PATH (wrapper tag or custom image).
+# Do NOT point this at the raw upstream digest alone — that image only has `/arc-export`.
+export FAIRAGRO_ARC_EXPORT_IMAGE=fairagro-arc-export-path:ci
 ```
 
 ## Fixture layout
@@ -41,8 +42,11 @@ middleware/sql_to_arc/tests/fixtures/arc_export/<name>/ro-crate-metadata.json
 
 MVP names:
 
-- `known_good` — must pass `validate_rocrate`
-- `known_bad` — must fail with a readable `cause_excerpt`
+- `known_good` — must pass `validate_rocrate` (RO-Crate JSON produced via `build_single_arc_task` from representative
+  view-row models, not a hand-built arctrl-only crate)
+- `known_bad` — **reserved negative directory**; must fail with a readable `cause_excerpt`. Names in
+  `NEGATIVE_FIXTURE_DIR_NAMES` (`conftest.py`) are never parametrized as known-good. Add further negatives only by
+  extending that frozenset **and** an explicit failing test — do not drop a new fail-dir into the tree without wiring.
 
 ## Add a fixture after a DataHUB / production failure
 

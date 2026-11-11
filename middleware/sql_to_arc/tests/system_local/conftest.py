@@ -17,6 +17,10 @@ IMAGE_ENV_VAR = "FAIRAGRO_ARC_EXPORT_IMAGE"
 
 FIXTURES_ROOT = _SYSTEM_LOCAL_DIR.parents[0] / "fixtures" / "arc_export"
 
+# Directory names under FIXTURES_ROOT that must never be parametrized as known-good.
+# Negative cases are asserted explicitly in test_known_bad_fixture_fails_with_cause_excerpt.
+NEGATIVE_FIXTURE_DIR_NAMES = frozenset({"known_bad"})
+
 
 def _docker_available() -> bool:
     if shutil.which("docker") is None:
@@ -62,7 +66,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     """Parametrize each known-good RO-Crate fixture directory as its own test case."""
     if "arc_export_fixture_dir" not in metafunc.fixturenames:
         return
-    dirs = _discover_fixture_dirs(exclude={"known_bad"})
+    dirs = _discover_fixture_dirs(exclude=set(NEGATIVE_FIXTURE_DIR_NAMES))
     metafunc.parametrize(
         "arc_export_fixture_dir",
         dirs,
@@ -84,7 +88,7 @@ def arc_export_image() -> str:
 @pytest.fixture(scope="session")
 def arc_export_fixture_dirs() -> list[Path]:
     """Known-good fixture directories that contain ``ro-crate-metadata.json``."""
-    dirs = _discover_fixture_dirs(exclude={"known_bad"})
+    dirs = _discover_fixture_dirs(exclude=set(NEGATIVE_FIXTURE_DIR_NAMES))
     if not FIXTURES_ROOT.is_dir():
         pytest.fail(f"Missing fixtures root: {FIXTURES_ROOT}")
     if not dirs:
