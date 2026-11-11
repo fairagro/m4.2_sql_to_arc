@@ -11,8 +11,8 @@ NOT call `create_or_update_arc`.
 
 ```text
 process_investigations()
-  ├── build workers enqueue BuiltArc (validated JSON) on a queue
-  ├── async generator yields ARC dicts into harvest_arcs
+  ├── build workers enqueue BuiltArc (worker JSON string) on a queue
+  ├── async generator yields ARC JSON strings into harvest_arcs
   │     (ArcStreamState tracks investigation id + study/assay counts)
   ├── client.harvest_arcs(rdi, stream, expected_datasets=…)
   └── on HarvestResult:
@@ -28,8 +28,9 @@ process_investigations()
 1. **`harvest_arcs`, not per-investigation create/update** — Aligns with the shared Middleware harvester. The client
    owns parallel submit, retries, and per-item vs catastrophic error classification.
 
-2. **JSON string → dict at enqueue / stream boundary** — Workers return a JSON string (clean IPC). The main process
-   validates and parses before enqueue so invalid JSON never enters the harvest stream.
+2. **Pass arctrl JSON strings into `harvest_arcs` (no converter parse)** — Workers return `ToROCrateJsonString()` for
+   IPC. The main process enqueues/yields that string without `json.loads`; the ApiClient accepts `str` (API #191). JSON
+   validity for string inputs is the client’s concern (bad `str` aborting the whole harvest is API #667).
 
 3. **Single `ApiClient` for the entire run** — `ApiClient` is used as an async context manager in `main.py`. One harvest
    session covers the RDI run.
