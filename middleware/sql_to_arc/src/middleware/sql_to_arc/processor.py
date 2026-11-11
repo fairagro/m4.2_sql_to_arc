@@ -100,7 +100,7 @@ def _apply_upload_aborted(
         scope.record_failed(detail, record_id=inv_id)
 
 
-def _built_arc_from_json(
+def _built_arc_from_worker_json(
     arc_json: str,
     *,
     inv_id: str,
@@ -183,7 +183,7 @@ async def _build_single_arc(
                 logger.error("%s: Build returned None for investigation %s", inv_info, inv_id)
                 scope.record_failed("Build returned no ARC JSON", record_id=inv_id)
                 return None
-            return _built_arc_from_json(
+            return _built_arc_from_worker_json(
                 arc_json,
                 inv_id=inv_id,
                 inv_info=inv_info,
