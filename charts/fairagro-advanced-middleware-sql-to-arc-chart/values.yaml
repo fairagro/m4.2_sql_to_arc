@@ -1,0 +1,127 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Container image for sql-to-arc converter
+image:
+  repository: zalf/fairagro-advanced-middleware-sql_to_arc
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# -- Zalando Postgres Operator CR (acid.zalan.do/v1). Requires cluster-wide postgres-operator.
+# -- Declares database `rdi` owned by `postgres.user`; dump reload is converter init container.
+postgres:
+  # -- metadata.name of the postgresql CR (and Service DNS name)
+  clusterName: fairagro-postgresql-sql-to-arc
+  teamId: fairagro
+  # -- DB role that owns `rdi` (operator creates credentials Secret)
+  user: sqltoarc
+  database: rdi
+  numberOfInstances: 1
+  version: "16"
+  volume:
+    # ~0.9Gi SQL dump expands to several Gi of heap+indexes; bulk COPY also
+    # writes WAL until checkpoint. 10Gi was enough for data but not for WAL
+    # spikes during import (OOM/crash under memory pressure is worse, but
+    # ENOSPC can abort the same COPY). 30Gi leaves headroom for both.
+    size: 20Gi
+    storageClass: ""
+  resources:
+    # Dump import is a single huge COPY (~881Mi SQL). 4Gi limit OOMs the
+    # backend (postmaster then kills the rest: "crash of another server
+    # process" / "corrupted shared memory"). Request close to limit so the
+    # pod is not the first eviction target; hugepages 0 matches Spilo/K8s.
+    requests:
+      cpu: "1"
+      memory: 4Gi
+      hugepages-2Mi: 0Mi
+      hugepages-1Gi: 0Mi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+      hugepages-2Mi: 0Mi
+      hugepages-1Gi: 0Mi
+  # Patroni/Spilo postgresql.conf. Strings required by the operator CR.
+  # shared_buffers is capped (not 25% of the 8Gi cgroup) so the COPY backend
+  # and CREATE INDEX (maintenance_work_mem) still fit. Larger max_wal_size
+  # avoids checkpoint storms mid-COPY, which also spike RSS.
+  parameters:
+    password_encryption: scram-sha-256
+    huge_pages: "off"
+    shared_buffers: "1GB"
+    work_mem: "32MB"
+    maintenance_work_mem: "512MB"
+    effective_cache_size: "4GB"
+    max_wal_size: "4GB"
+    min_wal_size: "512MB"
+    checkpoint_timeout: "15min"
+    checkpoint_completion_target: "0.9"
+    wal_compression: "on"
+    max_parallel_maintenance_workers: "2"
+    # Workaround: Spilo 4.0-p3 ships a buggy bg_mon that segfaults ~every 5s and
+    # kills all backends (zalf-rdm/misc#558 / zalando/spilo#1039). Drop bg_mon
+    # from the default Spilo preload list until the platform Spilo image is
+    # upgraded to >= 4.1-p1. sql-to-arc does not need bg_mon.
+    shared_preload_libraries: "pg_stat_statements,pgextwlist,pg_auth_mon,set_user,timescaledb,pg_cron,pg_stat_kcache"
+
+# -- Edaphobase dump reload (init container on converter Job/CronJob)
+bootstrap:
+  dumpUrl: https://repo.edaphobase.org/rep/dumps/FAIRagro.sql
+# Client tools for dump init (psql/pg_isready/wget); init script uses /bin/sh.
+  image: postgres:16-alpine
+  resources:
+    requests:
+      cpu: "250m"
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+# -- Converter Job / CronJob
+converter:
+  job:
+    enabled: false
+    backoffLimit: 1
+    activeDeadlineSeconds: 14400
+  cronjob:
+    enabled: false
+    schedule: "0 3 * * 0"
+    concurrencyPolicy: Forbid
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+  resources:
+    requests:
+      cpu: "500m"
+      memory: 1Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+# -- mTLS client material (PEM content from SOPS .enc.yaml overlays)
+tls:
+  # -- Default false so helm lint/template need no real PEMs; enable in cluster overlays with SOPS.
+  enabled: false
+  mountPath: /run/secrets/tls
+  # -- Set via encrypted values: tls.clientCert / tls.clientKey
+  clientCert: ""
+  clientKey: ""
+
+# -- Non-secret sql-to-arc config.yaml.
+# -- DB URL is set as env SQL_TO_ARC_CONNECTION_STRING in the chart (K8s expands
+# -- $(PGUSER)/$(PGPASSWORD)/$(PGHOST)/$(PGDATABASE) from operator Secret + Service DNS).
+config:
+  log_level: INFO
+  rdi: edaphobase
+  rdi_url: https://edaphobase.org
+  max_concurrent_arc_builds: 4
+  api_client:
+    api_url: "https://middleware-dev.fairagro.net"
+    timeout: 600
+    client_cert_path: /run/secrets/tls/client.crt
+    client_key_path: /run/secrets/tls/client.key
+    verify_ssl: true
+  otel:
+    endpoint: null
+    log_console_spans: false
+    log_level: INFO
