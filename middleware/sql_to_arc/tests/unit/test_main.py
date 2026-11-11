@@ -22,7 +22,6 @@ from middleware.api_client import (
     HarvestResult,
     HarvestStatus,
 )
-from middleware.shared.json_types import RoCrateContent
 from middleware.shared.report import HarvestReport, JsonLdReportSerializer, RepositoryScope
 from middleware.sql_to_arc.builder import DuplicateAssayRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
@@ -62,8 +61,8 @@ def _harvest_ok(rdi: str = "test", harvest_id: str = "harvest-1") -> HarvestResu
     )
 
 
-async def _consume_arcs(arcs: AsyncIterator[RoCrateContent]) -> list[RoCrateContent]:
-    collected: list[RoCrateContent] = []
+async def _consume_arcs(arcs: AsyncIterator[str]) -> list[str]:
+    collected: list[str] = []
     async for arc in arcs:
         collected.append(arc)
     return collected
@@ -169,19 +168,20 @@ async def test_process_investigation_builds_and_enqueues(monkeypatch: pytest.Mon
 
 
 @pytest.mark.asyncio
-async def test_process_investigation_invalid_arc_json_records_failed(
+async def test_process_investigation_enqueues_worker_json_string_without_parse(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Malformed ARC JSON must record failed with investigation id, not enqueue."""
+    """Worker JSON string is enqueued as-is; converter does not json.loads for upload gating."""
     mock_client = AsyncMock(spec=ApiClient)
 
-    investigation = InvestigationRow(identifier="inv-bad-json", title="Inv", description_text="Desc")
+    investigation = InvestigationRow(identifier="inv-raw-json", title="Inv", description_text="Desc")
     report = HarvestReport()
     scope = report.open_repository("test_rdi")
     built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
 
+    raw_json = '{"identifier": "inv-raw-json", "@graph": []}'
     loop_future: asyncio.Future[str] = asyncio.Future()
-    loop_future.set_result("not-json")
+    loop_future.set_result(raw_json)
     loop_mock = MagicMock()
     loop_mock.run_in_executor.return_value = loop_future
     monkeypatch.setattr("asyncio.get_running_loop", MagicMock(return_value=loop_mock))
@@ -209,13 +209,12 @@ async def test_process_investigation_invalid_arc_json_records_failed(
     )
     report.finish()
 
-    assert built_queue.empty()
+    built = built_queue.get_nowait()
+    assert built is not None
+    assert built.arc_payload is raw_json
+    assert built.investigation_id == "inv-raw-json"
     entry = report.repository_reports[0]
-    assert entry.harvested_datasets == 0
-    assert entry.failed_datasets == 1
-    assert entry.failures[0].record_id == "inv-bad-json"
-    assert entry.failures[0].kind.value == "dataset"
-    assert "Invalid ARC JSON" in entry.failures[0].message
+    assert entry.failed_datasets == 0
     mock_client.harvest_arcs.assert_not_called()
 
 
@@ -439,7 +438,7 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     async def mock_harvest_arcs(
         *,
         rdi: str,
-        arcs: AsyncIterator[RoCrateContent],
+        arcs: AsyncIterator[str],
         expected_datasets: int | None = None,
     ) -> HarvestResult:
         await _consume_arcs(arcs)
@@ -490,7 +489,7 @@ def test_enqueue_queue_sentinel_does_not_block_on_full_queue() -> None:
     queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue(maxsize=1)
     queue.put_nowait(
         BuiltArc(
-            arc_payload={"identifier": "full-1"},
+            arc_payload='{"identifier": "full-1"}',
             investigation_id="full-1",
             inv_info="Inv",
             composition=CompositionCounts(studies=0, assays=0),
@@ -653,7 +652,7 @@ async def test_process_investigations_records_harvest_item_errors(
         inv_id = str(investigation.identifier)
         await res.built_queue.put(
             BuiltArc(
-                arc_payload={"identifier": inv_id},
+                arc_payload=f'{{"identifier": "{inv_id}"}}',
                 investigation_id=inv_id,
                 inv_info=inv_info,
                 composition=CompositionCounts(studies=1, assays=0),
@@ -667,7 +666,7 @@ async def test_process_investigations_records_harvest_item_errors(
     async def mock_harvest_arcs(
         *,
         rdi: str,
-        arcs: AsyncIterator[RoCrateContent],
+        arcs: AsyncIterator[str],
         expected_datasets: int | None = None,
     ) -> HarvestResult:
         _ = expected_datasets
@@ -749,7 +748,7 @@ async def test_process_investigations_aborted_harvest_records_failed(
         inv_id = str(investigation.identifier)
         await res.built_queue.put(
             BuiltArc(
-                arc_payload={"identifier": inv_id},
+                arc_payload=f'{{"identifier": "{inv_id}"}}',
                 investigation_id=inv_id,
                 inv_info=inv_info,
                 composition=CompositionCounts(studies=0, assays=0),
@@ -763,7 +762,7 @@ async def test_process_investigations_aborted_harvest_records_failed(
     async def mock_harvest_arcs(
         *,
         rdi: str,
-        arcs: AsyncIterator[RoCrateContent],
+        arcs: AsyncIterator[str],
         expected_datasets: int | None = None,
     ) -> HarvestResult:
         _ = rdi

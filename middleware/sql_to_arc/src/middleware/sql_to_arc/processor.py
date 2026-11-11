@@ -4,18 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import json
 import logging
 import multiprocessing
 from dataclasses import dataclass, field
 from importlib.metadata import version
-from typing import cast
 
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
 from middleware.api_client import ApiClient, ApiClientError, HarvestError
-from middleware.shared.json_types import RoCrateContent
 from middleware.shared.report import HarvestReport, RepositoryScope
 from middleware.sql_to_arc.builder import DuplicateAssayRowError, DuplicateStudyRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
@@ -60,10 +57,7 @@ class ArcStreamState:
         """Record metadata for a yielded ARC payload."""
         self.submitted_ids.append(built.investigation_id)
         self.compositions[built.investigation_id] = built.composition
-        raw_id = built.arc_payload.get("identifier")
-        if isinstance(raw_id, str) and raw_id:
-            self.arc_id_to_investigation[raw_id] = built.investigation_id
-        # Also map investigation id itself for clients that echo it as arc_id.
+        # Investigation id is the ARC identifier from mapper/arctrl; clients echo it as arc_id.
         self.arc_id_to_investigation.setdefault(built.investigation_id, built.investigation_id)
 
 
@@ -112,22 +106,11 @@ def _built_arc_from_json(
     inv_id: str,
     inv_info: str,
     composition: CompositionCounts,
-    scope: RepositoryScope,
-) -> BuiltArc | None:
-    """Validate ARC JSON and wrap it as a ``BuiltArc``, or record failure and return None."""
-    try:
-        payload = json.loads(arc_json)
-    except json.JSONDecodeError as e:
-        logger.error("%s: Invalid ARC JSON for investigation %s: %s", inv_info, inv_id, e, exc_info=True)
-        scope.record_failed(f"Invalid ARC JSON: {e}", record_id=inv_id)
-        return None
-    if not isinstance(payload, dict):
-        logger.error("%s: ARC JSON for investigation %s is not an object", inv_info, inv_id)
-        scope.record_failed("ARC JSON is not an object", record_id=inv_id)
-        return None
+) -> BuiltArc:
+    """Wrap worker ARC JSON as a ``BuiltArc`` for the harvest stream (no converter parse)."""
     logger.info("%s: ARC JSON created: size=%.2fKB", inv_info, len(arc_json.encode("utf-8")) / 1024)
     return BuiltArc(
-        arc_payload=cast(RoCrateContent, payload),
+        arc_payload=arc_json,
         investigation_id=inv_id,
         inv_info=inv_info,
         composition=composition,
@@ -205,7 +188,6 @@ async def _build_single_arc(
                 inv_id=inv_id,
                 inv_info=inv_info,
                 composition=CompositionCounts(studies=len(studies), assays=len(assays)),
-                scope=scope,
             )
         except TimeoutError:
             logger.error("%s: ARC generation timed out for investigation %s", inv_info, inv_id)

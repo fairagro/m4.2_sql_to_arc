@@ -12,7 +12,7 @@ from arctrl import ARC
 
 from middleware.api_client import ApiClient, HarvestResult, HarvestStatus
 from middleware.shared.config.config_base import OtelConfig
-from middleware.shared.json_types import JsonObject, JsonValue, RoCrateContent
+from middleware.shared.json_types import JsonObject, JsonValue
 from middleware.shared.report import HarvestReport
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import WorkerContext
@@ -81,7 +81,7 @@ def mock_api_client() -> AsyncMock:
     async def _empty_harvest(
         *,
         rdi: str,
-        arcs: AsyncIterator[RoCrateContent],
+        arcs: AsyncIterator[str],
         expected_datasets: int | None = None,
     ) -> HarvestResult:
         _ = expected_datasets
@@ -155,14 +155,12 @@ class WorkflowTester:
         async def capture_harvest(
             *,
             rdi: str,
-            arcs: AsyncIterator[RoCrateContent],
+            arcs: AsyncIterator[str],
             expected_datasets: int | None = None,
         ) -> HarvestResult:
             _ = expected_datasets
             async for arc in arcs:
-                serialized_arc = arc
-                if isinstance(arc, dict):
-                    serialized_arc = ARC.from_rocrate_json_string(json.dumps(arc))
+                serialized_arc = ARC.from_rocrate_json_string(arc) if isinstance(arc, str) else arc
                 self.captured_arcs.append(serialized_arc)
             return HarvestResult(
                 harvest_id="harvest-test",
@@ -339,8 +337,8 @@ async def test_process_worker_investigations(mock_api_client: AsyncMock) -> None
         built = await built_queue.get()
         assert built is not None
         payload = built.arc_payload
-        assert isinstance(payload, dict)
-        assert "@graph" in payload
+        assert isinstance(payload, str)
+        assert '"@graph"' in payload or "@graph" in payload
     mock_api_client.harvest_arcs.assert_not_called()
     mock_api_client.create_or_update_arc.assert_not_called()
 
