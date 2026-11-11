@@ -8,6 +8,7 @@ import asyncio
 import concurrent.futures
 from collections.abc import AsyncGenerator, AsyncIterator
 from datetime import UTC, datetime
+from importlib.metadata import version
 from pathlib import Path
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -472,6 +473,7 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
     report = await process_investigations(mock_db, mock_client, mock_config)
 
     assert isinstance(report, HarvestReport)
+    assert report.software_version == version("sql_to_arc")
     assert len(report.repository_reports) == 1
     assert report.repository_reports[0].expected_datasets == 2  # noqa: PLR2004
     assert report.repository_reports[0].harvest_id == "harvest-1"
@@ -816,3 +818,44 @@ async def test_main_serializer_failure_is_logged(caplog: pytest.LogCaptureFixtur
         await main(["-c", "config.yaml"])
 
     assert "Failed to serialise harvest report" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_main_logs_software_version_at_start(caplog: pytest.LogCaptureFixture) -> None:
+    """Normal conversion logs the installed PEP 440 version once near start."""
+    finished = HarvestReport(
+        start_time=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        software_version=version("sql_to_arc"),
+    )
+    finished.open_repository("test-rdi")
+    finished.finish(end_time=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+
+    mock_config = MagicMock(spec=Config)
+    mock_config.log_level = "INFO"
+    mock_config.otel = MagicMock(endpoint=None, log_console_spans=False)
+
+    with (
+        patch("middleware.sql_to_arc.main.ConfigWrapper") as mock_wrapper_cls,
+        patch("middleware.sql_to_arc.main.Config.from_config_wrapper", return_value=mock_config),
+        patch("middleware.sql_to_arc.main.configure_logging"),
+        patch("middleware.sql_to_arc.main.initialize_tracing") as mock_tracing,
+        patch("middleware.sql_to_arc.main.run_conversion", new=AsyncMock(return_value=finished)),
+        patch.object(JsonLdReportSerializer, "render", return_value="{}\n"),
+        caplog.at_level("INFO"),
+    ):
+        mock_wrapper_cls.from_yaml_file.return_value = MagicMock()
+        mock_tracing.return_value = (MagicMock(), MagicMock())
+        await main(["-c", "config.yaml"])
+
+    assert f"sql_to_arc version: {version('sql_to_arc')}" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_main_version_flag_prints_and_exits(capsys: pytest.CaptureFixture[str]) -> None:
+    """--version prints the package version and does not start conversion."""
+    with patch("middleware.sql_to_arc.main.run_conversion", new=AsyncMock()) as mock_run:
+        await main(["--version"])
+
+    captured = capsys.readouterr()
+    assert f"sql_to_arc version: {version('sql_to_arc')}" in captured.out
+    mock_run.assert_not_called()

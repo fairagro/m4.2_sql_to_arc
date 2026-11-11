@@ -8,6 +8,7 @@ import json
 import logging
 import multiprocessing
 from dataclasses import dataclass, field
+from importlib.metadata import version
 from typing import cast
 
 from opentelemetry import trace
@@ -367,7 +368,10 @@ async def process_investigations(
     config: Config,
 ) -> HarvestReport:
     """Fetch investigations from DB, build ARCs, and upload via harvest_arcs."""
-    report = HarvestReport(name="SQL to ARC Conversion Run")
+    report = HarvestReport(
+        name="SQL to ARC Conversion Run",
+        software_version=version("sql_to_arc"),
+    )
     scope = report.open_repository(config.rdi)
 
     expected_count = await db.count_investigations()

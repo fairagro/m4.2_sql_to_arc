@@ -80,6 +80,7 @@ async def main(argv: list[str] | None = None) -> None:
     )
 
     with tracer.start_as_current_span("sql_to_arc.main"):
+        logger.info("sql_to_arc version: %s", version("sql_to_arc"))
         logger.info("Starting SQL-to-ARC conversion with config: %s", args.config)
         try:
             report = await run_conversion(config)
