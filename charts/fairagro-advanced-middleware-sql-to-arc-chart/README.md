@@ -31,4 +31,4 @@ helm lint charts/fairagro-advanced-middleware-sql-to-arc-chart
 helm template test charts/fairagro-advanced-middleware-sql-to-arc-chart
 ```
 
-Feature-PR `helm-lint` wiring is tracked separately (issue #272).
+Feature-PR CI runs `reusable-helm-lint.yml` when `charts/**` changes (see `.github/workflows/feature-pull-request.yml`).

@@ -15,5 +15,6 @@
 4. **Defaults lint without real TLS** — `tls.enabled` defaults to `false` so `helm lint` / `helm template` need no
    client PEMs; cluster overlays enable TLS with SOPS values.
 
-5. **Feature-PR helm-lint wiring deferred** — Chart SoT lands first; Feature-PR detect-changes / `reusable-helm-lint`
-   wiring is issue #272.
+5. **Feature-PR helm-lint via separate `helm` filter** — `.github/workflows/feature-pull-request.yml` detects
+   `charts/**` as `helm` (not Docker `code`) and calls `reusable-helm-lint.yml@main` with
+   `chart_dir: charts/fairagro-advanced-middleware-sql-to-arc-chart` so chart-only PRs lint without build/check.
