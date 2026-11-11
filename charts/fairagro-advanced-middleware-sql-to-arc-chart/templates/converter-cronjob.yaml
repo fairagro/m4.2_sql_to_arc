@@ -1,0 +1,27 @@
+{{- if .Values.converter.cronjob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fairagro-advanced-middleware-sql-to-arc-chart.converterJobName" . }}
+  labels:
+    {{- include "fairagro-advanced-middleware-sql-to-arc-chart.labels" . | nindent 4 }}
+    app.kubernetes.io/component: converter
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  schedule: {{ .Values.converter.cronjob.schedule | quote }}
+  concurrencyPolicy: {{ .Values.converter.cronjob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.converter.cronjob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.converter.cronjob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.converter.job.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.converter.job.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "fairagro-advanced-middleware-sql-to-arc-chart.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: converter
+        spec:
+          {{- include "fairagro-advanced-middleware-sql-to-arc-chart.converterPodSpec" . | nindent 10 }}
+{{- end }}

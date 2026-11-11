@@ -1,0 +1,38 @@
+apiVersion: acid.zalan.do/v1
+kind: postgresql
+metadata:
+  name: {{ include "fairagro-advanced-middleware-sql-to-arc-chart.postgresClusterName" . }}
+  labels:
+    {{- include "fairagro-advanced-middleware-sql-to-arc-chart.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  teamId: {{ .Values.postgres.teamId | quote }}
+  enableMasterLoadBalancer: false
+  enableMasterPoolerLoadBalancer: false
+  enableReplicaLoadBalancer: false
+  enableReplicaPoolerLoadBalancer: false
+  volume:
+    size: {{ .Values.postgres.volume.size | quote }}
+    {{- if .Values.postgres.volume.storageClass }}
+    storageClass: {{ .Values.postgres.volume.storageClass | quote }}
+    {{- end }}
+  resources:
+    {{- toYaml .Values.postgres.resources | nindent 4 }}
+  numberOfInstances: {{ .Values.postgres.numberOfInstances }}
+  users:
+    {{ .Values.postgres.user }}:
+      - createdb
+  databases:
+    {{ .Values.postgres.database }}: {{ .Values.postgres.user }}
+  preparedDatabases:
+    {{ .Values.postgres.database }}:
+      schemas:
+        public: {}
+  postgresql:
+    version: {{ .Values.postgres.version | quote }}
+    parameters:
+      {{- toYaml .Values.postgres.parameters | nindent 6 }}
+  patroni:
+    initdb:
+      set: huge_pages="off"

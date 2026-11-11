@@ -1,0 +1,9 @@
+apiVersion: v2
+name: fairagro-advanced-middleware-sql-to-arc-chart
+description: >
+  Deploys sql-to-arc (Edaphobase SQL → ARC → Middleware API) with a Zalando
+  Postgres Operator CR and converter Job/CronJob (dump reload via init container).
+  Requires the cluster-wide postgres-operator (acid.zalan.do/v1).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
