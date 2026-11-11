@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from typing import Protocol, TypeVar
 
 from middleware.api_client import ApiClient
-from middleware.shared.json_types import RoCrateContent
 from middleware.shared.report import RepositoryScope
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
@@ -38,7 +37,7 @@ class CompositionCounts:
 class BuiltArc:
     """A successfully built ARC waiting to be submitted in the harvest stream."""
 
-    arc_payload: RoCrateContent
+    arc_payload: str
     investigation_id: str
     inv_info: str
     composition: CompositionCounts
@@ -265,8 +264,8 @@ async def drive_builds(
 async def stream_arcs_from_queue(
     built_queue: asyncio.Queue[BuiltArc | None],
     state: _ArcStreamTracker,
-) -> AsyncGenerator[RoCrateContent, None]:
-    """Yield ARC payloads from the queue into ``harvest_arcs``."""
+) -> AsyncGenerator[str, None]:
+    """Yield worker ARC JSON strings from the queue into ``harvest_arcs``."""
     while True:
         item = await built_queue.get()
         if item is None:
