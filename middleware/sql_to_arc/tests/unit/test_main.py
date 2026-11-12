@@ -23,7 +23,7 @@ from middleware.api_client import (
     HarvestStatus,
 )
 from middleware.shared.report import HarvestReport, JsonLdReportSerializer, RepositoryScope
-from middleware.sql_to_arc.builder import DuplicateAssayRowError, build_single_arc_task
+from middleware.sql_to_arc.builder import ArcBuildResult, DuplicateAssayRowError, build_single_arc_task
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import RelatedDataBatch, WorkerContext
 from middleware.sql_to_arc.database import Database
@@ -122,8 +122,8 @@ async def test_process_investigation_builds_and_enqueues(monkeypatch: pytest.Mon
     scope = report.open_repository("test_rdi")
     built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
 
-    loop_future: asyncio.Future[str] = asyncio.Future()
-    loop_future.set_result('{"identifier": "1"}')
+    loop_future: asyncio.Future[ArcBuildResult] = asyncio.Future()
+    loop_future.set_result(ArcBuildResult(arc_json='{"identifier": "1"}'))
 
     loop_mock = MagicMock()
     loop_mock.run_in_executor.return_value = loop_future
@@ -180,8 +180,8 @@ async def test_process_investigation_enqueues_worker_json_string_without_parse(
     built_queue: asyncio.Queue[BuiltArc | None] = asyncio.Queue()
 
     raw_json = '{"identifier": "inv-raw-json", "@graph": []}'
-    loop_future: asyncio.Future[str] = asyncio.Future()
-    loop_future.set_result(raw_json)
+    loop_future: asyncio.Future[ArcBuildResult] = asyncio.Future()
+    loop_future.set_result(ArcBuildResult(arc_json=raw_json))
     loop_mock = MagicMock()
     loop_mock.run_in_executor.return_value = loop_future
     monkeypatch.setattr("asyncio.get_running_loop", MagicMock(return_value=loop_mock))
@@ -499,6 +499,30 @@ def test_enqueue_queue_sentinel_does_not_block_on_full_queue() -> None:
     assert len(displaced) == 1
     assert displaced[0].investigation_id == "full-1"
     assert queue.get_nowait() is None
+
+
+def test_apply_upload_outcomes_records_warnings_on_harvest_success() -> None:
+    """Build warnings are recorded after harvest success without changing fail/skip counts."""
+    report = HarvestReport()
+    scope = report.open_repository("test_rdi")
+    state = ArcStreamState()
+    state.submitted_ids.append("ok-1")
+    state.compositions["ok-1"] = CompositionCounts(studies=1, assays=2)
+    state.warnings["ok-1"] = (("plain study_ref coerced", "plain_study_ref"),)
+    state.arc_id_to_investigation["ok-1"] = "ok-1"
+
+    _apply_upload_outcomes([], state, scope)
+    report.finish()
+
+    entry = report.repository_reports[0]
+    assert entry.harvested_datasets == 1
+    assert entry.failed_datasets == 0
+    assert entry.skipped_datasets == 0
+    assert entry.warned_datasets == 1
+    assert entry.warnings[0].record_id == "ok-1"
+    assert entry.warnings[0].message == "plain study_ref coerced"
+    assert entry.total_studies == 1
+    assert entry.total_assays == 2  # noqa: PLR2004
 
 
 def test_apply_upload_outcomes_unattributed_error_uses_repository_issue() -> None:
