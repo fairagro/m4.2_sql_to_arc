@@ -129,47 +129,49 @@ def _add_studies_to_arc(arc: ARC, investigation_id: str, study_rows: list[StudyR
     return study_map
 
 
-def _log_edaphobase_contact_warnings(
+def _log_nonspec_contact_warnings(
     investigation_id: str,
     *,
     native_roles_count: int,
     missing_given_name_count: int,
 ) -> None:
-    """Emit aggregated warnings per investigation for non-spec Edaphobase contact shapes."""
+    """Emit aggregated warnings per investigation for non-spec contact shapes."""
     if native_roles_count:
         logger.warning(
             'Investigation "%s": %d contact(s) use native JSON roles (list) instead of '
-            "a JSON string per SQL-to-ARC view spec; coerced automatically (common in Edaphobase exports).",
+            "a JSON string per SQL-to-ARC view spec; coerced automatically "
+            "(common in some RDI exports).",
             investigation_id,
             native_roles_count,
         )
     if missing_given_name_count:
         logger.warning(
             'Investigation "%s": %d contact(s) have no first_name in vContact; using an empty '
-            "given name for ARCtrl serialization (common in Edaphobase exports).",
+            "given name for ARCtrl serialization (common in some RDI exports).",
             investigation_id,
             missing_given_name_count,
         )
 
 
-def _log_edaphobase_study_ref_warnings(
+def _log_nonspec_study_ref_warnings(
     investigation_id: str,
     *,
     plain_study_ref_count: int,
     duplicate_row_merge_count: int,
 ) -> None:
-    """Emit at most two warnings per investigation for non-spec Edaphobase study_ref shapes."""
+    """Emit at most two warnings per investigation for non-spec study_ref shapes."""
     if plain_study_ref_count:
         logger.warning(
             'Investigation "%s": %d assay(s) use plain-text study_ref (single study ID) instead of '
-            "a JSON array per SQL-to-ARC view spec; coerced automatically (common in Edaphobase exports).",
+            "a JSON array per SQL-to-ARC view spec; coerced automatically "
+            "(common in some RDI exports).",
             investigation_id,
             plain_study_ref_count,
         )
     if duplicate_row_merge_count:
         logger.warning(
             'Investigation "%s": merged %d duplicate vAssay row(s) with the same assay identifier '
-            "(Edaphobase export format). Spec expects one row with study_ref as a JSON array.",
+            "(non-spec multi-row export). Spec expects one row with study_ref as a JSON array.",
             investigation_id,
             duplicate_row_merge_count,
         )
@@ -208,7 +210,7 @@ def _add_assays_to_arc(
         _link_assay_to_studies(assay, a_row.study_ref, study_map)
 
     plain_study_ref_count = sum(1 for row in assay_rows if row.study_ref_plain_coerced)
-    _log_edaphobase_study_ref_warnings(
+    _log_nonspec_study_ref_warnings(
         investigation_id,
         plain_study_ref_count=plain_study_ref_count,
         duplicate_row_merge_count=duplicate_row_merge_count,
@@ -295,7 +297,7 @@ def _add_contacts_to_arc(
             assay.Performers.append(map_contact(c_row, ctx.registry))
 
     inv_contacts_for_warnings = [c for c in contacts if str(c.investigation_ref) == inv_id]
-    _log_edaphobase_contact_warnings(
+    _log_nonspec_contact_warnings(
         inv_id,
         native_roles_count=sum(1 for c in inv_contacts_for_warnings if c.roles_native_json_coerced),
         missing_given_name_count=sum(1 for c in inv_contacts_for_warnings if c.given_name_missing_coerced),

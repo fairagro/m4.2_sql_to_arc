@@ -143,7 +143,7 @@ def test_map_assay_with_platform() -> None:
 
 
 def test_assay_row_accepts_plain_study_identifier() -> None:
-    """Edaphobase stores study_ref as a single identifier, not a JSON array string."""
+    """Some RDI exports store study_ref as a single identifier, not a JSON array string."""
     study_id = "dc5f4b5fe59878af4daef6f170adac54"
     row = AssayRow(
         identifier="asy1",
@@ -178,7 +178,7 @@ def test_map_publication() -> None:
 
 
 def test_contact_row_accepts_parsed_roles_list() -> None:
-    """Edaphobase may return roles as native JSON instead of a JSON string."""
+    """Some RDI exports may return roles as native JSON instead of a JSON string."""
     roles_list: list[JsonValue] = [
         {
             "term": "Autor, Author",
@@ -197,7 +197,7 @@ def test_contact_row_accepts_parsed_roles_list() -> None:
 
 
 def test_map_contact_without_first_name_uses_empty_given_name() -> None:
-    """Edaphobase contacts may omit first_name; ARCtrl rejects None but accepts empty string."""
+    """Some RDI exports omit first_name; ARCtrl rejects None but accepts empty string."""
     row = ContactRow(
         investigation_ref="inv1",
         target_type="investigation",

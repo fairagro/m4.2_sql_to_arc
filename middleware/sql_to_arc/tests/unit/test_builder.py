@@ -294,7 +294,7 @@ def test_build_arc_warns_on_native_json_roles(
     sample_investigation: JsonObject,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Native JSON roles from Edaphobase must be coerced with one aggregated warning."""
+    """Native JSON roles from some RDI exports must be coerced with one aggregated warning."""
     roles_list = [{"term": "Author", "uri": "http://example.org/obo/NCIT_C42781", "version": ""}]
     contacts = [
         ContactRow.model_validate({
