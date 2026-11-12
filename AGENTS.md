@@ -134,10 +134,10 @@ In Cursor chat: `/opsx-explore`, `/opsx-propose`, `/opsx-apply`, `/opsx-archive`
 
 ### CI (Wave C)
 
-Callers: `.github/workflows/feature-pull-request.yml`, `pre-release.yml`, `release.yml` → Devinfra reusables
-(`docs/ci.md`). Temporary `reusable-check-local.yml` omits Trivy licence scan until Devinfra #74 — do not hand-edit
-synced trees. CQ `@main` with product `mypy_path` / `pylint_source_roots`. Keep `.pre-commit-config.yaml` **verbatim**;
-product overlays via `.devcontainer/product.env` / CI inputs (`MYPYPATH`, `CST_*`).
+Callers: `.github/workflows/feature-pull-request.yml`, `pre-release.yml`, `release.yml`, `main-docker-check.yml` →
+Devinfra reusables (`docs/ci.md`), including `reusable-check.yml` (report-only licence scan + pinned CST). Do not
+hand-edit synced trees. CQ `@main` with product `mypy_path` / `pylint_source_roots`. Keep `.pre-commit-config.yaml`
+**verbatim**; product overlays via `.devcontainer/product.env` / CI inputs (`MYPYPATH`, `CST_*`).
 
 Bake: `docker-bake.hcl` targets `sql_to_arc-base` + `sql_to_arc` (synced `Dockerfile.product-app.base` + thin last
 stage).
