@@ -1,5 +1,7 @@
 """ARC object building logic for the SQL-to-ARC conversion process."""
 
+from __future__ import annotations
+
 import gc
 import json
 import logging
@@ -36,6 +38,22 @@ from middleware.sql_to_arc.models import (
 from middleware.sql_to_arc.ontology import OntologySourceRegistry, make_ontology_annotation
 
 
+@dataclass(frozen=True, slots=True)
+class BuildWarning:
+    """Non-fatal accommodation recorded during a successful ARC build."""
+
+    message: str
+    kind: str
+
+
+@dataclass(frozen=True, slots=True)
+class ArcBuildResult:
+    """Worker IPC payload: ARC JSON string plus structured build warnings."""
+
+    arc_json: str
+    warnings: tuple[BuildWarning, ...] = ()
+
+
 @dataclass
 class _BuildContext:
     """Shared study/assay maps and ontology registry for one ARC assemble."""
@@ -43,6 +61,7 @@ class _BuildContext:
     study_map: dict[str, ArcStudy]
     assay_map: dict[str, ArcAssay]
     registry: OntologySourceRegistry
+    warnings: list[BuildWarning]
 
 
 logger = logging.getLogger(__name__)
@@ -64,7 +83,7 @@ class DuplicateAssayRowError(ValueError):
         field_list = ", ".join(fields)
         super().__init__(f'Duplicate assay identifier "{assay_id}" with conflicting fields: {field_list}')
 
-    def __reduce__(self) -> tuple[type["DuplicateAssayRowError"], tuple[str, list[str]]]:
+    def __reduce__(self) -> tuple[type[DuplicateAssayRowError], tuple[str, list[str]]]:
         """Preserve assay_id and fields when the exception crosses a process pool boundary."""
         return (self.__class__, (self.assay_id, self.fields))
 
@@ -79,7 +98,7 @@ class DuplicateStudyRowError(ValueError):
         field_list = ", ".join(fields)
         super().__init__(f'Duplicate study identifier "{study_id}" with conflicting fields: {field_list}')
 
-    def __reduce__(self) -> tuple[type["DuplicateStudyRowError"], tuple[str, list[str]]]:
+    def __reduce__(self) -> tuple[type[DuplicateStudyRowError], tuple[str, list[str]]]:
         """Preserve study_id and fields when the exception crosses a process pool boundary."""
         return (self.__class__, (self.study_id, self.fields))
 
@@ -134,22 +153,25 @@ def _log_edaphobase_contact_warnings(
     *,
     native_roles_count: int,
     missing_given_name_count: int,
+    warnings: list[BuildWarning],
 ) -> None:
     """Emit aggregated warnings per investigation for non-spec Edaphobase contact shapes."""
     if native_roles_count:
-        logger.warning(
-            'Investigation "%s": %d contact(s) use native JSON roles (list) instead of '
-            "a JSON string per SQL-to-ARC view spec; coerced automatically (common in Edaphobase exports).",
-            investigation_id,
-            native_roles_count,
+        message = (
+            f'Investigation "{investigation_id}": {native_roles_count} contact(s) use native JSON roles '
+            "(list) instead of a JSON string per SQL-to-ARC view spec; coerced automatically "
+            "(common in Edaphobase exports)."
         )
+        logger.warning("%s", message)
+        warnings.append(BuildWarning(message=message, kind="contact_native_roles"))
     if missing_given_name_count:
-        logger.warning(
-            'Investigation "%s": %d contact(s) have no first_name in vContact; using an empty '
-            "given name for ARCtrl serialization (common in Edaphobase exports).",
-            investigation_id,
-            missing_given_name_count,
+        message = (
+            f'Investigation "{investigation_id}": {missing_given_name_count} contact(s) have no '
+            "first_name in vContact; using an empty given name for ARCtrl serialization "
+            "(common in Edaphobase exports)."
         )
+        logger.warning("%s", message)
+        warnings.append(BuildWarning(message=message, kind="contact_missing_given_name"))
 
 
 def _log_edaphobase_study_ref_warnings(
@@ -157,22 +179,25 @@ def _log_edaphobase_study_ref_warnings(
     *,
     plain_study_ref_count: int,
     duplicate_row_merge_count: int,
+    warnings: list[BuildWarning],
 ) -> None:
     """Emit at most two warnings per investigation for non-spec Edaphobase study_ref shapes."""
     if plain_study_ref_count:
-        logger.warning(
-            'Investigation "%s": %d assay(s) use plain-text study_ref (single study ID) instead of '
-            "a JSON array per SQL-to-ARC view spec; coerced automatically (common in Edaphobase exports).",
-            investigation_id,
-            plain_study_ref_count,
+        message = (
+            f'Investigation "{investigation_id}": {plain_study_ref_count} assay(s) use plain-text '
+            "study_ref (single study ID) instead of a JSON array per SQL-to-ARC view spec; "
+            "coerced automatically (common in Edaphobase exports)."
         )
+        logger.warning("%s", message)
+        warnings.append(BuildWarning(message=message, kind="plain_study_ref"))
     if duplicate_row_merge_count:
-        logger.warning(
-            'Investigation "%s": merged %d duplicate vAssay row(s) with the same assay identifier '
-            "(Edaphobase export format). Spec expects one row with study_ref as a JSON array.",
-            investigation_id,
-            duplicate_row_merge_count,
+        message = (
+            f'Investigation "{investigation_id}": merged {duplicate_row_merge_count} duplicate '
+            "vAssay row(s) with the same assay identifier (Edaphobase export format). Spec expects "
+            "one row with study_ref as a JSON array."
         )
+        logger.warning("%s", message)
+        warnings.append(BuildWarning(message=message, kind="duplicate_assay_rows"))
 
 
 def _add_assays_to_arc(
@@ -181,10 +206,11 @@ def _add_assays_to_arc(
     assay_rows: list[AssayRow],
     study_map: dict[str, ArcStudy],
     registry: OntologySourceRegistry,
-) -> dict[str, ArcAssay]:
-    """Add assays to ARC, link to studies, and return assay map."""
+) -> tuple[dict[str, ArcAssay], list[BuildWarning]]:
+    """Add assays to ARC, link to studies, and return assay map plus accommodation warnings."""
     assay_map: dict[str, ArcAssay] = {}
     assay_row_by_id: dict[str, AssayRow] = {}
+    warnings: list[BuildWarning] = []
     duplicate_row_merge_count = 0
     if assay_rows and not study_map:
         logger.warning(
@@ -212,9 +238,10 @@ def _add_assays_to_arc(
         investigation_id,
         plain_study_ref_count=plain_study_ref_count,
         duplicate_row_merge_count=duplicate_row_merge_count,
+        warnings=warnings,
     )
 
-    return assay_map
+    return assay_map, warnings
 
 
 type AnnotationColumnKey = tuple[
@@ -299,6 +326,7 @@ def _add_contacts_to_arc(
         inv_id,
         native_roles_count=sum(1 for c in inv_contacts_for_warnings if c.roles_native_json_coerced),
         missing_given_name_count=sum(1 for c in inv_contacts_for_warnings if c.given_name_missing_coerced),
+        warnings=ctx.warnings,
     )
 
 
@@ -524,40 +552,47 @@ def _process_annotation_tables(
             )
 
 
-def _assemble_arc(data: ArcBuildData) -> ARC:
+def _assemble_arc(data: ArcBuildData) -> tuple[ARC, tuple[BuildWarning, ...]]:
     """Assemble an ARC object model (including OntologySourceReferences) from build data."""
     inv_id = str(data.investigation_row.identifier)
     arc_inv = map_investigation(data.investigation_row)
     arc = ARC.from_arc_investigation(arc_inv)
     ontology_registry = OntologySourceRegistry()
+    warnings: list[BuildWarning] = []
 
     relevant_studies = [s for s in data.studies if str(s.investigation_ref) == inv_id]
     relevant_assays = [a for a in data.assays if str(a.investigation_ref) == inv_id]
 
     study_map = _add_studies_to_arc(arc, investigation_id=inv_id, study_rows=relevant_studies)
-    assay_map = _add_assays_to_arc(arc, inv_id, relevant_assays, study_map, ontology_registry)
-    ctx = _BuildContext(study_map=study_map, assay_map=assay_map, registry=ontology_registry)
+    assay_map, assay_warnings = _add_assays_to_arc(arc, inv_id, relevant_assays, study_map, ontology_registry)
+    warnings.extend(assay_warnings)
+    ctx = _BuildContext(
+        study_map=study_map,
+        assay_map=assay_map,
+        registry=ontology_registry,
+        warnings=warnings,
+    )
 
     _add_contacts_to_arc(arc, inv_id, data.contacts, ctx)
     _add_publications_to_arc(arc, inv_id, data.publications, ctx)
     _process_annotation_tables(inv_id, data.annotations, ctx)
 
     ontology_registry.apply_to_investigation(arc)
-    return arc
+    return arc, tuple(warnings)
 
 
-def build_single_arc_task(data: ArcBuildData) -> str:
+def build_single_arc_task(data: ArcBuildData) -> ArcBuildResult:
     """Build a single ARC object from data.
 
     This function is designed to run in a separate process.
-    It returns the JSON representation to minimize memory footprint in the main process.
+    It returns ARC JSON plus structured warnings to minimize memory in the main process.
     """
     try:
-        arc = _assemble_arc(data)
+        arc, warnings = _assemble_arc(data)
         json_str: str = arc.ToROCrateJsonString()
         del arc
         gc.collect()
-        return json_str
+        return ArcBuildResult(arc_json=json_str, warnings=warnings)
     except Exception:
         gc.collect()
         raise

@@ -49,6 +49,29 @@ def test_finished_report_uses_shared_jsonld_vocabulary() -> None:
     assert failure["fairagro:kind"] == "dataset"
 
 
+def test_finished_report_includes_shared_warnings_vocabulary() -> None:
+    """Warned datasets render fairagro:warnedDatasets and fairagro:warnings."""
+    report = HarvestReport(
+        name="SQL to ARC Conversion Run",
+        start_time=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        software_version="1.2.3",
+    )
+    scope = report.open_repository("edaphobase")
+    scope.record_harvested()
+    scope.record_warning("plain study_ref coerced", record_id="inv-warn")
+    report.finish(end_time=datetime(2026, 1, 1, 0, 1, tzinfo=UTC))
+
+    doc = json.loads(JsonLdReportSerializer().render(report))
+    entry = doc["schema:result"][0]
+    assert entry["fairagro:harvestedDatasets"] == 1
+    assert entry["fairagro:warnedDatasets"] == 1
+    assert entry["fairagro:failedDatasets"] == 0
+    warning = entry["fairagro:warnings"][0]
+    assert warning["fairagro:recordId"] == "inv-warn"
+    assert warning["fairagro:kind"] == "dataset"
+    assert "plain study_ref" in warning["fairagro:message"]
+
+
 def test_failed_investigations_exclude_composition_from_totals() -> None:
     """Study/assay totals only include successfully harvested investigations."""
     total_studies = 2
