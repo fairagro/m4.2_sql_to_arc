@@ -56,7 +56,8 @@ openspec/                  # OpenSpec source of truth + changes
 │   ├── sql-to-arc-conversion/
 │   ├── arc-building/
 │   ├── database-access/
-│   └── api-upload/
+│   ├── api-upload/
+│   └── arc-export-validation/
 └── changes/               # Active change proposals (delta specs)
 
 middleware/
@@ -204,6 +205,8 @@ under `openspec/changes/` when one exists for the work in progress.
   `builder.py`).
 - **[`openspec/specs/database-access/`](openspec/specs/database-access/)** — DB access patterns, row models, SQL views.
 - **[`openspec/specs/api-upload/`](openspec/specs/api-upload/)** — Upload to the Middleware API.
+- **[`openspec/specs/arc-export-validation/`](openspec/specs/arc-export-validation/)** — DataHUB-equivalent `arc-export`
+  fixture gate (`system_local` + CI).
 
 Each domain has `spec.md` (behavior). Domains with non-obvious architecture also keep `design.md` (current Key
 Decisions).
