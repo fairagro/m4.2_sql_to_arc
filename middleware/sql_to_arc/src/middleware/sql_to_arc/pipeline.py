@@ -41,6 +41,8 @@ class BuiltArc:
     investigation_id: str
     inv_info: str
     composition: CompositionCounts
+    warnings: tuple[tuple[str, str], ...] = ()
+    """Pairs of ``(message, kind)`` from the worker build (JSON-safe)."""
 
 
 @dataclass(slots=True)

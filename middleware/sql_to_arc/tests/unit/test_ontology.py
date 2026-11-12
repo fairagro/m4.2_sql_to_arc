@@ -111,7 +111,7 @@ def test_assemble_arc_includes_ontology_source_references() -> None:
         publications=[],
         annotations=[],
     )
-    arc = _assemble_arc(data)
+    arc, _warnings = _assemble_arc(data)
     assert len(arc.OntologySourceReferences) == 1
     assert arc.OntologySourceReferences[0].Name == "ENVO"
     assert arc.OntologySourceReferences[0].Version == "2024-01-01"
@@ -147,7 +147,7 @@ def test_annotation_table_registers_osr_and_sets_tsr() -> None:
             )
         ],
     )
-    arc = _assemble_arc(data)
+    arc, _warnings = _assemble_arc(data)
     assert len(arc.OntologySourceReferences) == 1
     assert arc.OntologySourceReferences[0].Name == "ENVO"
     assert arc.OntologySourceReferences[0].Version == "2024-01-01"
@@ -182,7 +182,7 @@ def test_build_preserves_tsr_in_rocrate_json() -> None:
         publications=[],
         annotations=[],
     )
-    arc_json = build_single_arc_task(data)
+    arc_json = build_single_arc_task(data).arc_json
     arc = ARC.from_rocrate_json_string(arc_json)
     assay = arc.GetAssay("asy1")
     assert assay.MeasurementType is not None

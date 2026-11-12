@@ -122,7 +122,7 @@ def test_build_simple_arc(sample_investigation: JsonObject) -> None:
         publications=[],
         annotations=[],
     )
-    arc_json = build_single_arc_task(arc_data)
+    arc_json = build_single_arc_task(arc_data).arc_json
     assert isinstance(arc_json, str)
 
     res = json.loads(arc_json)
@@ -172,8 +172,8 @@ def test_build_arc_deduplicates_assay_rows_per_study_link(
         annotations=[],
     )
     with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
-        arc_json = build_single_arc_task(arc_data)
-    res = json.loads(arc_json)
+        result = build_single_arc_task(arc_data)
+    res = json.loads(result.arc_json)
     graph = res.get("@graph", [])
     assay_nodes = [
         item for item in graph if item.get("@id") == shared_assay_id or item.get("identifier") == shared_assay_id
@@ -183,6 +183,9 @@ def test_build_arc_deduplicates_assay_rows_per_study_link(
     assert len(warning_records) == 1
     assert "merged 1 duplicate vAssay row" in warning_records[0].message
     assert "inv1" in warning_records[0].message
+    assert len(result.warnings) == 1
+    assert result.warnings[0].kind == "duplicate_assay_rows"
+    assert "merged 1 duplicate vAssay row" in result.warnings[0].message
 
 
 def test_build_arc_deduplicates_study_rows(
@@ -212,7 +215,7 @@ def test_build_arc_deduplicates_study_rows(
         annotations=[],
     )
     with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
-        arc_json = build_single_arc_task(arc_data)
+        arc_json = build_single_arc_task(arc_data).arc_json
     res = json.loads(arc_json)
     graph = res.get("@graph", [])
     study_nodes = [
@@ -282,12 +285,14 @@ def test_build_arc_warns_on_missing_first_name(
         annotations=[],
     )
     with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
-        build_single_arc_task(arc_data)
+        result = build_single_arc_task(arc_data)
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warning_records) == 1
     assert "no first_name" in warning_records[0].message
     assert "1 contact" in warning_records[0].message
     assert "inv1" in warning_records[0].message
+    assert len(result.warnings) == 1
+    assert result.warnings[0].kind == "contact_missing_given_name"
 
 
 def test_build_arc_warns_on_native_json_roles(
@@ -321,12 +326,48 @@ def test_build_arc_warns_on_native_json_roles(
         annotations=[],
     )
     with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
-        build_single_arc_task(arc_data)
+        result = build_single_arc_task(arc_data)
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warning_records) == 1
     assert "native JSON roles" in warning_records[0].message
     assert "1 contact" in warning_records[0].message
     assert "inv1" in warning_records[0].message
+    assert len(result.warnings) == 1
+    assert result.warnings[0].kind == "contact_native_roles"
+
+
+def test_build_arc_warns_on_plain_study_ref(
+    sample_investigation: JsonObject,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Plain-text study_ref must coerce and emit a structured plain_study_ref warning."""
+    studies = [
+        StudyRow.model_validate({
+            "identifier": "sty1",
+            "investigation_ref": "inv1",
+            "title": "Study 1",
+        }),
+    ]
+    assays = [
+        AssayRow.model_validate({
+            "identifier": "asy-plain",
+            "investigation_ref": "inv1",
+            "study_ref": "sty1",
+        }),
+    ]
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=studies,
+        assays=assays,
+        contacts=[],
+        publications=[],
+        annotations=[],
+    )
+    with caplog.at_level(logging.WARNING, logger="middleware.sql_to_arc.builder"):
+        result = build_single_arc_task(arc_data)
+    assert result.arc_json
+    assert any(w.kind == "plain_study_ref" for w in result.warnings)
+    assert any("plain-text study_ref" in r.message for r in caplog.records if r.levelno == logging.WARNING)
 
 
 def test_duplicate_assay_row_error_pickle_roundtrip() -> None:
@@ -383,7 +424,7 @@ def test_build_arc_with_study_and_assay(
         publications=[],
         annotations=[],
     )
-    arc_json = build_single_arc_task(arc_data)
+    arc_json = build_single_arc_task(arc_data).arc_json
     res = json.loads(arc_json)
     graph = res.get("@graph", [])
 
@@ -410,7 +451,7 @@ def test_build_arc_with_contacts_and_pubs(
         publications=[PublicationRow.model_validate(p) for p in sample_publications],
         annotations=[],
     )
-    arc_json = build_single_arc_task(arc_data)
+    arc_json = build_single_arc_task(arc_data).arc_json
     res = json.loads(arc_json)
     graph = res.get("@graph", [])
 
@@ -439,7 +480,7 @@ def test_build_ignores_irrelevant_data(sample_investigation: JsonObject) -> None
         publications=[],
         annotations=[],
     )
-    arc_json = build_single_arc_task(arc_data)
+    arc_json = build_single_arc_task(arc_data).arc_json
     res = json.loads(arc_json)
     graph = res.get("@graph", [])
 

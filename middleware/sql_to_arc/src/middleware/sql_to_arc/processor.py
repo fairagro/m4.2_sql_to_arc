@@ -14,7 +14,12 @@ from opentelemetry.trace import Status, StatusCode
 
 from middleware.api_client import ApiClient, ApiClientError, HarvestError
 from middleware.shared.report import HarvestReport, RepositoryScope
-from middleware.sql_to_arc.builder import DuplicateAssayRowError, DuplicateStudyRowError, build_single_arc_task
+from middleware.sql_to_arc.builder import (
+    ArcBuildResult,
+    DuplicateAssayRowError,
+    DuplicateStudyRowError,
+    build_single_arc_task,
+)
 from middleware.sql_to_arc.config import Config
 from middleware.sql_to_arc.context import ArcBuildData, WorkerContext
 from middleware.sql_to_arc.database import Database
@@ -46,6 +51,7 @@ class ArcStreamState:
 
     submitted_ids: list[str] = field(default_factory=list)
     compositions: dict[str, CompositionCounts] = field(default_factory=dict)
+    warnings: dict[str, tuple[tuple[str, str], ...]] = field(default_factory=dict)
     arc_id_to_investigation: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -57,6 +63,7 @@ class ArcStreamState:
         """Record metadata for a yielded ARC payload."""
         self.submitted_ids.append(built.investigation_id)
         self.compositions[built.investigation_id] = built.composition
+        self.warnings[built.investigation_id] = built.warnings
         # Investigation id is the ARC identifier from mapper/arctrl; clients echo it as arc_id.
         self.arc_id_to_investigation.setdefault(built.investigation_id, built.investigation_id)
 
@@ -79,12 +86,13 @@ def _apply_upload_outcomes(errors: list[HarvestError], state: ArcStreamState, sc
             continue
         scope.record_harvested()
         composition = state.compositions.get(inv_id)
-        if composition is None:
-            continue
-        if composition.studies:
-            scope.add_studies(composition.studies)
-        if composition.assays:
-            scope.add_assays(composition.assays)
+        if composition is not None:
+            if composition.studies:
+                scope.add_studies(composition.studies)
+            if composition.assays:
+                scope.add_assays(composition.assays)
+        for message, _kind in state.warnings.get(inv_id, ()):
+            scope.record_warning(message, record_id=inv_id)
 
 
 def _apply_upload_aborted(
@@ -100,20 +108,23 @@ def _apply_upload_aborted(
         scope.record_failed(detail, record_id=inv_id)
 
 
-def _built_arc_from_worker_json(
-    arc_json: str,
+def _built_arc_from_worker_result(
+    result: ArcBuildResult,
     *,
     inv_id: str,
     inv_info: str,
     composition: CompositionCounts,
 ) -> BuiltArc:
-    """Wrap worker ARC JSON as a ``BuiltArc`` for the harvest stream (no converter parse)."""
+    """Wrap worker build result as a ``BuiltArc`` for the harvest stream (no converter parse)."""
+    arc_json = result.arc_json
     logger.info("%s: ARC JSON created: size=%.2fKB", inv_info, len(arc_json.encode("utf-8")) / 1024)
+    warning_pairs = tuple((w.message, w.kind) for w in result.warnings)
     return BuiltArc(
         arc_payload=arc_json,
         investigation_id=inv_id,
         inv_info=inv_info,
         composition=composition,
+        warnings=warning_pairs,
     )
 
 
@@ -175,16 +186,16 @@ async def _build_single_arc(
         loop = asyncio.get_running_loop()
         executor = ctx.pool_holder.get_executor()
         try:
-            arc_json = await asyncio.wait_for(
+            build_result = await asyncio.wait_for(
                 loop.run_in_executor(executor, build_single_arc_task, build_data),
                 timeout=getattr(ctx, "arc_generation_timeout_minutes", 30) * 60,
             )
-            if arc_json is None:
-                logger.error("%s: Build returned None for investigation %s", inv_info, inv_id)
+            if not isinstance(build_result, ArcBuildResult) or not build_result.arc_json:
+                logger.error("%s: Build returned no ARC JSON for investigation %s", inv_info, inv_id)
                 scope.record_failed("Build returned no ARC JSON", record_id=inv_id)
                 return None
-            return _built_arc_from_worker_json(
-                arc_json,
+            return _built_arc_from_worker_result(
+                build_result,
                 inv_id=inv_id,
                 inv_info=inv_info,
                 composition=CompositionCounts(studies=len(studies), assays=len(assays)),
