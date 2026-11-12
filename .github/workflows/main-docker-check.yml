@@ -29,8 +29,7 @@ jobs:
   check:
     name: Check
     needs: [build]
-    # Local until Devinfra #74: omit Trivy licence-check (Alpine GPL noise).
-    uses: ./.github/workflows/reusable-check-local.yml
+    uses: fairagro/m4.2_middleware_devinfra/.github/workflows/reusable-check.yml@main
     with:
       version: ${{ needs.build.outputs.version }}
       components: '["sql_to_arc"]'
