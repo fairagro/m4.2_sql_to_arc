@@ -161,7 +161,7 @@ class AssayRow(BaseRow):
     @model_validator(mode="before")
     @classmethod
     def normalize_study_ref(cls, data: Any) -> Any:
-        """Accept JSON array strings or a single study identifier (Edaphobase export)."""
+        """Accept JSON array strings or a single study identifier (e.g. some RDI exports)."""
         if isinstance(data, dict) and "study_ref" in data:
             raw_study_ref = data.get("study_ref")
             if isinstance(raw_study_ref, (list, dict)):
@@ -222,7 +222,7 @@ class ContactRow(BaseRow):
     @model_validator(mode="before")
     @classmethod
     def normalize_roles(cls, data: Any) -> Any:
-        """Accept JSON string or native JSON list from drivers (e.g. Edaphobase)."""
+        """Accept JSON string or native JSON list from drivers (e.g. some RDI exports)."""
         if isinstance(data, dict) and "roles" in data:
             raw_roles = data.get("roles")
             if isinstance(raw_roles, (list, dict)):
