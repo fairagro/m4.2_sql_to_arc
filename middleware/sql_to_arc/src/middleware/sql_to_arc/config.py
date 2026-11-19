@@ -23,10 +23,7 @@ class Config(ConfigBase):
     rdi_url: Annotated[
         str,
         Field(
-            description=(
-                "Public URL of the source RDI; written as investigation Comment "
-                "'RDI URL' in each ARC and used for harvest-report provenance"
-            ),
+            description=("Public URL of the source RDI; written as investigation Comment 'RDI URL' in each ARC"),
         ),
     ]
     max_concurrent_arc_builds: Annotated[
