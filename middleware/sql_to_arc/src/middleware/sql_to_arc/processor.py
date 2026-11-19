@@ -181,6 +181,7 @@ async def _build_single_arc(
             contacts=ctx.contacts_by_inv.get(inv_id, []),
             publications=ctx.pubs_by_inv.get(inv_id, []),
             annotations=ctx.anns_by_inv.get(inv_id, []),
+            rdi_url=ctx.rdi_url,
         )
 
         loop = asyncio.get_running_loop()

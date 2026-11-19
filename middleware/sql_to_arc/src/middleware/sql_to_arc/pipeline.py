@@ -141,6 +141,7 @@ def _spawn_investigation_task(
         arc_generation_timeout_minutes=res.config.arc_generation_timeout_minutes,
         max_studies=res.config.max_studies,
         max_assays=res.config.max_assays,
+        rdi_url=res.config.rdi_url,
     )
 
     inv_info = f"Investigation {idx}"

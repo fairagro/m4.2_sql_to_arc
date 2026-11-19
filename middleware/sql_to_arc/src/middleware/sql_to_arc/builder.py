@@ -11,8 +11,10 @@ from dataclasses import dataclass
 from arctrl import (
     ARC,
     ArcAssay,
+    ArcInvestigation,
     ArcStudy,
     ArcTable,
+    Comment,
     CompositeCell,
     CompositeHeader,
     IOType,
@@ -552,10 +554,18 @@ def _process_annotation_tables(
             )
 
 
+def _apply_rdi_provenance_comments(arc_inv: ArcInvestigation, rdi_url: str | None) -> None:
+    """Attach non-empty RDI URL as an investigation Comment for RO-Crate provenance."""
+    if not rdi_url or not rdi_url.strip():
+        return
+    arc_inv.Comments.append(Comment(name="RDI URL", value=rdi_url.strip()))
+
+
 def _assemble_arc(data: ArcBuildData) -> tuple[ARC, tuple[BuildWarning, ...]]:
     """Assemble an ARC object model (including OntologySourceReferences) from build data."""
     inv_id = str(data.investigation_row.identifier)
     arc_inv = map_investigation(data.investigation_row)
+    _apply_rdi_provenance_comments(arc_inv, data.rdi_url)
     arc = ARC.from_arc_investigation(arc_inv)
     ontology_registry = OntologySourceRegistry()
     warnings: list[BuildWarning] = []

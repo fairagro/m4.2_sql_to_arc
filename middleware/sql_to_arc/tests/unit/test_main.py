@@ -78,6 +78,7 @@ def _make_worker_res(
 ) -> WorkerResources:
     config = MagicMock(spec=Config)
     config.rdi = rdi
+    config.rdi_url = "https://example.org"
     config.max_concurrent_arc_builds = 1
     config.max_concurrent_tasks = 1
     config.arc_generation_timeout_minutes = 1
@@ -453,6 +454,7 @@ async def test_process_investigations_flow(monkeypatch: pytest.MonkeyPatch) -> N
         max_concurrent_tasks=4,
         db_batch_size=10,
         rdi="test",
+        rdi_url="https://example.org",
         debug_limit=10,
         arc_generation_timeout_minutes=30,
         max_studies=5000,
@@ -716,6 +718,7 @@ async def test_process_investigations_records_harvest_item_errors(
         max_concurrent_tasks=4,
         db_batch_size=10,
         rdi="test",
+        rdi_url="https://example.org",
         debug_limit=None,
         arc_generation_timeout_minutes=30,
         max_studies=5000,
@@ -802,6 +805,7 @@ async def test_process_investigations_aborted_harvest_records_failed(
         max_concurrent_tasks=2,
         db_batch_size=10,
         rdi="test",
+        rdi_url="https://example.org",
         debug_limit=None,
         arc_generation_timeout_minutes=30,
         max_studies=5000,

@@ -24,6 +24,7 @@ class ArcBuildData:
     contacts: list[ContactRow]
     publications: list[PublicationRow]
     annotations: list[AnnotationTableRow]
+    rdi_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,7 @@ class WorkerContext:
     arc_generation_timeout_minutes: int = 30
     max_studies: int = 5000
     max_assays: int = 10000
+    rdi_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
