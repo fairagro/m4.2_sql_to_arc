@@ -88,6 +88,10 @@ This view presents an investigation.
 Note: the ISA XLSX spec does not define a comments field for investigations, but the `ARCtrl` library as well as
 `ARCitect` both offer this field. We currently opt to omit it to be compatible to all flavors.
 
+Note: there is no licence / rights column on `vInvestigation`. sql-to-arc does not set an ARC licence; ARCtrl’s RO-Crate
+encoder therefore emits the library default text `ALL RIGHTS RESERVED BY THE AUTHORS` (`#LICENSE` CreativeWork). See
+`openspec/specs/arc-building/design.md` (Key Decision on licence default).
+
 ### View `vPublication`
 
 This view represents a publication for an investigation or study.
