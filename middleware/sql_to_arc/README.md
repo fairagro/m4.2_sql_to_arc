@@ -49,7 +49,7 @@ api_client:
 | :------------------------------- | :------- | :----------------------------------------------------------------------- | :----------- |
 | `connection_string`              | `string` | Database URI (e.g., `postgresql+psycopg://user:pass@host:5432/db`).      | **Required** |
 | `rdi`                            | `string` | Unique identifier for your RDI (e.g., `edaphobase`).                     | **Required** |
-| `rdi_url`                        | `string` | Public URL of your RDI (used for provenance metadata).                   | **Required** |
+| `rdi_url`                        | `string` | Public RDI URL (ARC investigation Comment `RDI URL` + harvest report).   | **Required** |
 | `api_client`                     | `object` | Configuration for the Middleware API connection (see below).             | **Required** |
 | `log_level`                      | `string` | Console logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). | `INFO`       |
 | `otel`                           | `object` | OpenTelemetry configuration (see below).                                 | `defaults`   |

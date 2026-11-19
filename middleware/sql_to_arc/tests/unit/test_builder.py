@@ -133,6 +133,43 @@ def test_build_simple_arc(sample_investigation: JsonObject) -> None:
     assert inv is not None
 
 
+def test_build_arc_writes_rdi_url_comment(sample_investigation: JsonObject) -> None:
+    """Configured rdi_url must appear as investigation Comment 'RDI URL' in RO-Crate JSON."""
+    rdi_url = "https://edaphobase.org"
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[],
+        assays=[],
+        contacts=[],
+        publications=[],
+        annotations=[],
+        rdi_url=rdi_url,
+    )
+    res = json.loads(build_single_arc_task(arc_data).arc_json)
+    graph = res.get("@graph", [])
+    rdi_comments = [item for item in graph if item.get("@type") == "Comment" and item.get("name") == "RDI URL"]
+    assert len(rdi_comments) == 1
+    assert rdi_comments[0].get("text") == rdi_url
+    # No empty RDI Description comment — config has no description field yet
+    assert not any(item.get("name") == "RDI Description" for item in graph if item.get("@type") == "Comment")
+
+
+def test_build_arc_omits_rdi_url_comment_when_blank(sample_investigation: JsonObject) -> None:
+    """Blank rdi_url must not emit an empty RDI URL comment."""
+    arc_data = ArcBuildData(
+        investigation_row=InvestigationRow.model_validate(sample_investigation),
+        studies=[],
+        assays=[],
+        contacts=[],
+        publications=[],
+        annotations=[],
+        rdi_url="   ",
+    )
+    res = json.loads(build_single_arc_task(arc_data).arc_json)
+    graph = res.get("@graph", [])
+    assert not any(item.get("name") == "RDI URL" for item in graph if item.get("@type") == "Comment")
+
+
 def test_build_arc_deduplicates_assay_rows_per_study_link(
     sample_investigation: JsonObject,
     caplog: pytest.LogCaptureFixture,

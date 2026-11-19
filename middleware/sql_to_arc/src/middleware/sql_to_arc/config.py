@@ -20,7 +20,15 @@ class Config(ConfigBase):
         Field(description="Debug limit for investigations (optional)", gt=0),
     ] = None
     rdi: Annotated[str, Field(description="RDI identifier (e.g. edaphobase)")]
-    rdi_url: Annotated[str, Field(description="URL of the Source RDI (for provenance in report)")]
+    rdi_url: Annotated[
+        str,
+        Field(
+            description=(
+                "Public URL of the source RDI; written as investigation Comment "
+                "'RDI URL' in each ARC and used for harvest-report provenance"
+            ),
+        ),
+    ]
     max_concurrent_arc_builds: Annotated[
         int,
         Field(
