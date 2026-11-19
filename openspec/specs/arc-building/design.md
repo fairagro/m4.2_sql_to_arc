@@ -63,6 +63,12 @@ build_single_arc_task(data)
    Unparseable/missing URI → empty `tsr`, no OSR. Note: arctrl RO-Crate export may omit the `ontologySourceReferences`
    array while preserving annotation `tsr`.
 
+6. **Licence text is ARCtrl’s RO-Crate default** — `vInvestigation` has no licence column and sql-to-arc never calls
+   `SetLicenseFulltext`. A minimal `build_single_arc_task` / `ToROCrateJsonString()` payload therefore emits
+   `@id: #LICENSE` / `CreativeWork` with text **`ALL RIGHTS RESERVED BY THE AUTHORS`** from ARCtrl
+   (`License.GetDefaultLicense`, `ROCrate_createLicenseNode_*` when `license is None`; observed with arctrl 3.2.3). This
+   is not Middleware API / DataHUB post-processing. A configurable or view-backed licence would be a separate Feature.
+
 ## OntologyAnnotation Mapping Convention
 
 ```text
