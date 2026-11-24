@@ -106,7 +106,7 @@ jobs:
 
       - name: Install uv
         if: ${{ needs.detect-changes.outputs.code == 'true' }}
-        uses: astral-sh/setup-uv@v10.3.3
+        uses: astral-sh/setup-uv@v10.4.0
 
       - name: Sync workspace
         if: ${{ needs.detect-changes.outputs.code == 'true' }}
